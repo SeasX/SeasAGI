@@ -1,0 +1,198 @@
+[🇬🇧 English](SeasAGI.v5.md) | [🇨🇳 中文](SeasAGI.v5.zh-CN.md) | [🇯🇵 日本語](SeasAGI.v5.ja.md) | [🇰🇷 한국어](SeasAGI.v5.ko.md)
+
+---
+
+# SeasAGI v5 一页纸摘要
+
+## 1. 一句话定位
+
+SeasAGI 是面向 AI 重度用户和开发者的本地统一模型网关，让用户像管理网络出口一样管理 LLM API 出口。
+
+SeasAGI 不只是一个"Key 切换工具" — 它在 AI 基础设施消费侧构建了一个"本地统一模型网关"入口。
+
+其价值在于：
+
+- 将多模型集成复杂度从"每个客户端重复配置"降低为"一次本地配置"
+- 将用户对 Key 安全的焦虑转化为可感知的产品信任
+- 将运行时 Provider 不稳定转化为自适应路由降级，对用户透明
+- 将用量黑盒转化为全维度洞察（模型/渠道/时间线/成本/错误）
+- 在已运行的本地网关基础上，构建未来更高价值的策略路由、团队版和订阅服务
+
+## 2. 用户痛点
+
+当前 AI 客户端和 IDE 插件存在以下高频痛点：
+
+- 不同模型平台需要重复配置 `Base URL`、`API Key`、模型名称
+- 平台渠道和用户自购 Key 混杂，切换成本高
+- 上游服务不稳定时无统一回退或诊断
+- 用户普遍担心 Key 被平台收集或明文存储
+- 对话中途切换模型导致上下文断裂和幻觉
+- Provider 频繁 429 限流，无自适应路由优先级调整
+- 无法直观洞察哪个模型/渠道用量最高、成本最优
+
+## 3. 我们的方案
+
+SeasAGI 在本地提供统一的 OpenAI 兼容入口，所有第三方客户端只需配置一次本地地址即可访问多个模型出口。
+
+核心能力：
+
+- 本地统一入口：默认 `http://127.0.0.1:4318/v1`，随监听端口动态变化
+- 双渠道架构：平台渠道 + 自定义渠道
+- 用户提供的 Key 永不上传，仅存储于本地 Keychain
+- 路由策略：`fallback`、`round_robin`、`sticky`
+- 模型级 Combo：显式 `channel + model` 步骤链 + 拖拽排序 + 主/备/兜底角色语义
+- 导航融合：左侧导航合并为"Combo 优化"单一入口，工作台四个标签页（我的方案 / 优化建议 / 模板中心 / 执行分析）
+- Playground 调试：Combo 选择器 + 执行链可视化 + 步骤回退状态显示（step_role 标记）
+- 默认入口支持 Combo：首页默认 Combo 选择器 + Wails 持久化
+- Combo 云同步：三层视图（本地/官方/团队）+ Fetch/Push/Update/Delete 全同步能力
+- Combo 指标：请求次数 / 回退次数 / Step1 命中率 / 末步命中率
+- 智能优化与 Combo 协作：多步骤回退建议、结构化差异预览、一键应用为 Combo
+- 逐步骤 Provider/Channel 候选池：每个 Step 支持多个候选 + 自动排序
+- 请求级执行约束：max_price / max_latency_ms / data_policy
+- Tool-call 专用路由策略：优先选择工具成功率高的 Provider
+- 快速策略别名：stability-first / cost-first / speed-first / tool-first
+- 任务类型感知：chat / tools / json / long_context / batch_low_cost 差异化执行
+- 企业 BYOK / 平台共享容量双层回退
+- 会话粘性路由：基于首条用户消息的 SHA1 哈希，30 分钟 TTL，防止对话中途切换模型
+- 动态 429 惩罚降级：PenaltyManager，429 +3，成功 -1，2 分钟自然衰减
+- 回退排序预设：智能 / 速度 / 预算 一键重排
+- 8 个 Provider 执行器：OpenAI、Azure、Anthropic、Gemini、Ollama、DeepSeek、Grok、平台中继
+- 6 个格式转换器：OpenAI Chat/Responses、Anthropic、Gemini、Vertex AI、Passthrough
+- Key 健康检查：5 分钟周期探测，连续 3 次失败自动标记不健康
+- 逐 Key Cooldown：每 Key 120 秒 TTL，429 精确冷却，不影响其他 Key
+- 多模态内容展平：纯文本数组内容自动合并为字符串
+- Playground 即时测试：聊天 UI + 模型选择 + 本地网关通信
+- 恒定时间 Key 比较：crypto/subtle.ConstantTimeCompare，消除时序侧信道
+- Zod 前端校验：8 个 Schema + 表单集成
+- 日志与诊断：链路可视化、CSV 导出、结构化错误复制
+- RTK Token 压缩：9 种输出类型自动检测 + 压缩
+- 全模态 API：Embeddings / Image / TTS / STT
+- 隧道远程访问：Cloudflare Tunnel + Tailscale Funnel
+- 多账号容错：多 Key 轮换 + 指数退避 + 熔断器 + 7 条错误规则
+- OAuth 生态：PKCE + 4 个 Provider 注册 + 本地回环回调 + Token 自动刷新
+- 本地访问令牌：左侧导航独立页面，查看 / 复制 / 重置
+- 云端能力：注册 / 登录，平台渠道同步，用量 / 账单查询
+- 云端分析：按模型/渠道分组 + 成本估算（GPT-4o 定价）+ 近期错误 + 请求时间线 + 错误分类分布
+- 管理可视化：Recharts BarChart / LineChart / PieChart，6 标签页 UsagePage
+- Caveman 简洁输出：4 种风格注入
+- Reasoning Content：DeepSeek-R1/Kimi/QwQ 推理链注入
+- MCP 工具去重：12 条等价映射
+- 国际化：中文、英文、日文、韩文，跟随系统语言
+
+## 4. 为什么是现在
+
+- AI 用户同时使用多个客户端和多个模型已成为常态
+- 本地优先、安全优先、统一入口的需求快速上升
+- "云端聚合平台"已有，但具备"本地网关 + 强安全边界 + 自适应路由 + 全链路可观测性"的成熟产品仍然稀缺
+- SeasAGI 可先渗透个人开发者市场，再扩展至团队版和跨平台版
+
+## 5. 产品定位
+
+- 目标用户：
+  - AI 重度用户
+  - 个人开发者
+  - 独立开发者
+  - 小型 AI 团队技术负责人
+- 当前形态：
+  - Wails 桌面客户端（主要验证平台 macOS，代码结构覆盖 Windows / Linux）
+  - 本地 OpenAI 兼容 API 网关
+- 核心场景：
+  - 统一接入多个模型平台
+  - 平台渠道与自购 Key 切换
+  - 渠道故障回退与自适应降级
+  - 请求失败链路诊断
+  - 多轮对话会话粘性
+  - 用量洞察与成本优化
+
+## 6. 差异化壁垒
+
+### 6.1 清晰的安全边界
+
+- 用户提供的 Key 永不上传至平台
+- Key 存储于 macOS Keychain
+- 本地访问令牌存储于本地 SQLite，永不进入云端
+- Token 验证使用恒定时间比较，消除时序侧信道攻击
+- 平台渠道与用户渠道边界在 UI 中清晰展示
+
+### 6.2 自适应智能路由
+
+- 不是简单的"默认渠道切换器"
+- 会话粘性：多轮对话自动路由至同一模型，防止幻觉
+- 动态 429 惩罚：Provider 限流自动降低优先级，成功后自动恢复
+- 排序预设：智能 / 速度 / 预算 一键重排
+- Key 健康检查：自动探测，失败 Key 自动禁用
+- 逐 Key Cooldown：精确控制，不影响其他 Key
+- 多模态内容展平：兼容更多客户端格式
+- 逐步骤 Provider/Channel 候选池 + 自动排序：同一步骤内按稳定性/成本/延迟动态选择最优
+- Tool-call 独立路由策略：按工具成功率排序，而非仅按价格优先
+- 请求级动态约束：每次调用可附加 max_price / max_latency_ms / data_policy
+
+### 6.3 模型级 Combo 编排与治理
+
+- 故障回退编排：不是静态模型列表，而是"主 → 备 → 兜底"显式回退链
+- 导航融合：左侧导航单一入口"Combo 优化"，工作台统一流程：配置→建议→应用→验证
+- 智能优化与 Combo 协作：多步骤回退建议 + 结构化差异预览 + 一键应用
+- 云同步：三层视图（本地/官方/团队）+ 全同步（Fetch/Push/Update/Delete）
+- 执行分析：Combo 命中率 / 回退率 / 平均尝试次数仪表盘
+- 服务端控制面：三级 Combo 管理 + 版本发布/回滚 + 差异化灰度
+- 企业治理：可见性策略（角色/方案/用户组/租户四级）+ 部署审批流
+- Combo 运行时插桩：请求次数 / 回退次数 / Step1 命中率 / 末步命中率
+- 快速策略别名：stability-first / cost-first / speed-first / tool-first
+- 任务类型感知：按 chat/tools/json/long_context 差异化执行
+
+### 6.4 全链路可观测性
+
+- 日志包含命中链和逐步骤失败原因
+- 错误分类分布（429/401/403/404/timeout/500/503）
+- 请求时间线图表（24 小时/7 天/30 天）
+- 按模型/渠道分组分析
+- 近期错误快速查看
+- 成本估算（GPT-4o 定价基准）
+- 管理图表可视化（BarChart / LineChart / PieChart）
+
+### 6.5 本地网关体验
+
+- 所有客户端只需配置一次本地地址
+- 用户无需在 Chatbox、Cherry Studio、Cursor 等中反复修改配置
+- Playground 即时测试，配置渠道后立即验证
+
+### 6.6 可扩展架构
+
+- 对外统一 OpenAI 兼容
+- 对内通过协议归一化 + Provider 执行器扩展更多上游
+- 执行器注册表支持动态注册新 Provider
+- OAuth PKCE 流程支持任意 OAuth 2.0 Provider
+- 平滑扩展至团队版、策略灰度、配置同步
+
+## 7. 三子项目组织
+
+- `SeasAGI-Client/`：客户端子项目，内部保留 `src-app` 原始结构，承载 Wails 桌面客户端主线源码和客户端构建脚本
+- `SeasAGI-Server/`：服务端子项目，内部保留 `platform-api`、`relay-gateway`、`src-admin`、`deploy` 原始结构，承载控制面、数据面、管理后台和部署脚本
+- `web-docs/`：官网与文档子项目，内部保留 `src-web`，主线架构/PRD/排期文档，以及 `cc-switch`、`9router` 等历史或参考目录
+- 根目录：仅保留顶层 `README.md`、`SeasAGI.v5.md` 和一键构建脚本 `build-all.sh`
+
+## 8. 当前进度
+
+当前 `v5` 已完成的关键能力：
+
+- Wails + Go 客户端运行
+- 本地网关支持 `/v1/models`、`/v1/chat/completions` + 全模态 API
+- 平台渠道与自定义渠道双渠道管理
+- 路由策略 `fallback` / `round_robin` / `sticky` + Combo 步骤链
+- 会话粘性路由（SHA1 + 会话→步骤 + 30 分钟 TTL）
+- 动态 429 惩罚降级（PenaltyManager + 时间衰减 + 熔断器协作）
+- 回退排序预设（智能 / 速度 / 预算）
+- Key 健康检查（5 分钟探测 + 连续 3 次失败自动禁用）
+- 逐 Key Cooldown（每 Key 120 秒 TTL + 自动清理）
+- 恒定时间 Key 比较（crypto/subtle）
+- 多模态内容展平
+- Playground 即时测试页面
+- 8 个 Provider 执行器 + 6 个格式转换器
+- 日志过滤、排序、CSV 导出、结构化错误复制
+- RTK Token 压缩 + 隧道远程访问
+- 多账号容错 + OAuth 2.0 PKCE
+- Caveman + Reasoning + MCP 工具去重
+- Zod 前端校验 + Combo 拖拽排序
+- 云端分析 API（按模型/渠道分组 + 成本估算 + 近期错误 + 时间线 + 错误分类分布）
+- 管理可视化（Recharts BarChart / LineChart / PieChart）
+- 国际化（中文/英文/日文/韩文）
