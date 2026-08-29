@@ -1,0 +1,22 @@
+[Unit]
+Description=SeasAGI Platform API
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seasagi
+Group=seasagi
+WorkingDirectory=/opt/seasagi/platform-api
+ExecStart=/opt/seasagi/platform-api/platform-api
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+Environment=API_PORT=9318
+Environment=DB_PATH=/var/lib/seasagi/platform-api.db
+Environment=GIN_MODE=release
+EnvironmentFile=-/etc/seasagi/platform-api.env
+
+[Install]
+WantedBy=multi-user.target

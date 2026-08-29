@@ -12,11 +12,11 @@
 
 SeasAGI는 세 개의 하위 프로젝트로 구성된 계층형 AI 게이트웨이 플랫폼입니다:
 
-| 하위 프로젝트 | 라이선스 | 설명 |
-|-------------|---------|-------------|
-| `SeasAGI-Client/` | **GPL 3.0** 완전 오픈소스 | 네이티브 데스크톱 클라이언트 (Wails + Go + React), 로컬 통합 게이트웨이, API Keys 절대 업로드 안 함 |
-| `SeasAGI-Server/` | **AGPL 3.0** 오픈소스 자체 호스팅 가능 | 커뮤니티 에디션 클라우드 제어 평면, 기본 인증 / Combo CRUD / 기본 사용량 / 기본 릴레이 포워딩 |
-| `SeasAGI-Server-Enterprise/` | 폐쇄소스 | 엔터프라이즈 에디션 클라우드, Stripe 결제 / 멀티 테넌트 거버넌스 / Combo 거버넌스 승인 / 관리자 대시보드 포함. [엔터프라이즈 README](SeasAGI-Server-Enterprise/README.md) 참조 |
+| 하위 프로젝트 | 라이선스 | 빌드 | 설명 |
+|-------------|---------|------|-------------|
+| `SeasAGI-Client/` | **GPL 3.0** 완전 오픈소스 | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | 네이티브 데스크톱 클라이언트 (Wails + Go + React), 로컬 통합 게이트웨이, API Keys 절대 업로드 안 함 |
+| `SeasAGI-Server/` | **AGPL 3.0** 오픈소스 자체 호스팅 가능 | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | 커뮤니티 에디션 클라우드 제어 평면: 인증 / 채널 / Provider 리소스 풀 / 모델 카탈로그 / Combo CRUD / 사용량 / 임베디드 관리자 대시보드 / 기본 릴레이 포워딩 |
+| `SeasAGI-Server-Enterprise/` | 폐쇄소스 | — | 엔터프라이즈 에디션 클라우드, Stripe 결제 / 멀티 테넌트 거버넌스 / Combo 거버넌스 승인 / 관리자 대시보드 포함. [엔터프라이즈 README](SeasAGI-Server-Enterprise/README.md) 참조 |
 
 클라이언트는 **독립 실행**이 가능합니다 — 서버 없이도 모든 로컬 게이트웨이 기능이 작동합니다. 클라우드는 원격 가속 채널, 사용량 동기화, 팀 협업 및 엔터프라이즈 거버넌스를 제공하는 선택적 부가 서비스입니다.
 
@@ -45,13 +45,18 @@ SeasAGI는 세 개의 하위 프로젝트로 구성된 계층형 AI 게이트웨
 
 | 기능 | 설명 |
 |------------|-------------|
-| 기본 인증 | 로그인 / 회원가입 / 토큰 갱신 |
-| 기본 채널 관리 | 플랫폼 채널 CRUD |
+| 기본 인증 | 로그인 / 회원가입 / 토큰 갱신 (bcrypt + JWT HS256) |
+| 기본 채널 관리 | 플랫폼 채널 CRUD, API Keys AES-256-GCM 암호화 |
+| Provider 리소스 풀 | 채널별 API Key / 리전 / 환경 리소스, 상태 + 가중치 + 우선순위 선택 |
+| 모델 카탈로그 | 모델 메타데이터 (컨텍스트 창 / 가격 / 모달리티)를 `model-catalog.yaml`에서 로드 |
 | 기본 Combo | 사용자 수준 Combo CRUD + 공식 템플릿 가져오기 |
 | 기본 사용량 통계 | 사용자 사용량, 모델별/채널별 그룹화, 타임라인, 오류 분포 |
 | 기본 테넌트 관리 | 멤버, 초대 링크, 커스텀 채널 동기화, 설정 스냅샷 |
+| 임베디드 관리자 대시보드 | `/admin` SPA — 대시보드 / 사용자 / 사용량 / 릴레이 게이트웨이 / 채널 / Combo / 토큰 마켓 |
+| SQLite 백업 | 온라인 백업 (`VACUUM INTO`) / SHA-256 검증 / 복원 |
 | 기본 관리자 API | 사용자 / 계획 / 채널 / Combo / 릴레이 게이트웨이 관리 |
-| 릴레이 기본 포워딩 | 요청 통과, 상태 확인, 속도 제한, 추적 |
+| i18n | zh-CN / en / ja / ko |
+| 릴레이 기본 포워딩 | 요청 통과, 상태 확인, 속도 제한, 추적, 모델 카탈로그 |
 
 ---
 
@@ -115,12 +120,17 @@ SeasAGI/
 ├── SeasAGI-Server/                오픈소스 서버 커뮤니티 에디션 (AGPL 3.0)
 │   ├── platform-api/               커뮤니티 제어 평면
 │   ├── relay-gateway/              커뮤니티 릴레이 데이터 평면
+│   ├── src-admin/                  관리자 대시보드 프론트엔드 (7개 페이지)
+│   ├── data/                       모델 카탈로그 (model-catalog.yaml)
+│   ├── locales/                    i18n 언어 파일 (zh-CN/en/ja/ko)
 │   ├── deploy/                     배포 스크립트 + systemd + nginx
 │   └── scripts/                    빌드 스크립트
-├── web-docs/                      공식 웹사이트 및 문서
-│   ├── src-web/                    정적 웹사이트
-│   └── ...
-├── build-all.sh                   원클릭 빌드 스크립트
+├── src-web/                       공식 웹사이트 (정적 HTML)
+│   ├── index.html                  랜딩 페이지
+│   └── assets/                     아이콘 및 이미지
+├── test-all.sh                    전체 테스트 스위트 엔트리
+├── test-client.sh                 클라이언트 테스트
+├── test-server.sh                 서버 테스트
 ├── SeasAGI.v5.md                  한 페이지 요약
 ```
 

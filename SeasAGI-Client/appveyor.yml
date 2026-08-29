@@ -1,0 +1,184 @@
+version: '0.1.{build}'
+
+# Skip tags to avoid double builds on tagged releases
+skip_tags: true
+
+# Matrix: run on all three platforms in parallel
+image:
+  - macos-monterey
+  - Ubuntu2204
+  - Visual Studio 2022
+
+# Disable default MSBuild on Windows
+init:
+  - cmd: cd C:\projects\seasagi-client
+
+environment:
+  SEASAGI_VERSION: 0.1.0
+  GOPATH: $(HOME)/go
+  GOROOT: /usr/local/go
+  # Wails platform override (auto-detected per OS below)
+  WAILS_PLATFORM: darwin/amd64
+  # Cache marker
+  CACHE_NODE_MODULES: false
+
+# Cache node_modules to speed up builds
+cache:
+  - src-app/frontend/node_modules -> src-app/frontend/package-lock.json
+
+install:
+  #############################################################################
+  # macOS
+  #############################################################################
+  - sh: |
+      if [ "$(uname)" = "Darwin" ]; then
+        echo "=== macOS Build ==="
+        export WAILS_PLATFORM="darwin/amd64"
+        # Xcode, Go, Node.js are pre-installed on AppVeyor macOS image
+        echo "Go: $(go version 2>/dev/null || echo 'NOT FOUND')"
+        echo "Node: $(node --version 2>/dev/null || echo 'NOT FOUND')"
+        echo "npm: $(npm --version 2>/dev/null || echo 'NOT FOUND')"
+      fi
+
+  #############################################################################
+  # Linux
+  #############################################################################
+  - sh: |
+      if [ "$(uname)" = "Linux" ]; then
+        echo "=== Linux Build ==="
+        export WAILS_PLATFORM="linux/amd64"
+        # Install GTK3 and WebKit2GTK (required by Wails)
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.0-dev build-essential pkg-config
+        echo "Go: $(go version 2>/dev/null || echo 'NOT FOUND')"
+        echo "Node: $(node --version 2>/dev/null || echo 'NOT FOUND')"
+        echo "npm: $(npm --version 2>/dev/null || echo 'NOT FOUND')"
+      fi
+
+  #############################################################################
+  # Windows
+  #############################################################################
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "=== Windows Build ==="
+        $env:WAILS_PLATFORM = "windows/amd64"
+        # WebView2 is pre-installed on Windows Server 2022+
+        # Go, Node.js are pre-installed on AppVeyor Windows image
+        Write-Host "Go: $(go version 2>&1)"
+        Write-Host "Node: $(node --version 2>&1)"
+        Write-Host "npm: $(npm --version 2>&1)"
+      }
+
+  #############################################################################
+  # Common: Install Wails CLI
+  #############################################################################
+  - sh: |
+      echo "Installing Wails CLI..."
+      go install github.com/wailsapp/wails/v2/cmd/wails@latest
+      echo "Wails: $(wails version 2>/dev/null || echo 'installed')"
+
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "Installing Wails CLI..."
+        go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        Write-Host "Wails installed"
+      }
+
+before_build:
+  #############################################################################
+  # Build frontend (common for all platforms)
+  #############################################################################
+  - sh: |
+      echo "Building frontend..."
+      cd src-app/frontend
+      npm install --prefer-offline --no-audit --no-fund 2>&1 | tail -5
+      npm run build 2>&1 | tail -10
+      cd ../..
+
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "Building frontend..."
+        cd src-app\frontend
+        npm install --prefer-offline --no-audit --no-fund 2>&1 | Select-Object -Last 5
+        npm run build 2>&1 | Select-Object -Last 10
+        cd ..\..
+      }
+
+build_script:
+  #############################################################################
+  # Build Wails application (platform-specific)
+  #############################################################################
+  - sh: |
+      echo "Building Wails app for ${WAILS_PLATFORM:-darwin/amd64}..."
+      cd src-app
+      wails build -s -platform "${WAILS_PLATFORM:-darwin/amd64}" -ldflags "-s -w" -o SeasAGI
+      echo "Build complete"
+      ls -la build/bin/ 2>/dev/null || echo "build/bin/ not found (check artifact path)"
+      cd ..
+
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "Building Wails app for Windows..."
+        cd src-app
+        wails build -s -platform "windows/amd64" -ldflags "-s -w" -o SeasAGI
+        Write-Host "Build complete"
+        Get-ChildItem build\bin\ -ErrorAction SilentlyContinue
+        cd ..
+      }
+
+test_script:
+  #############################################################################
+  # Run Go tests
+  #############################################################################
+  - sh: |
+      echo "Running Go tests..."
+      cd src-app
+      go test ./... 2>&1
+      cd ..
+
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "Running Go tests..."
+        cd src-app
+        go test ./... 2>&1
+        cd ..
+      }
+
+after_test:
+  #############################################################################
+  # Package artifacts
+  #############################################################################
+  - sh: |
+      echo "Packaging artifacts..."
+      mkdir -p artifacts
+      if [ -f src-app/build/bin/SeasAGI ]; then
+        cp src-app/build/bin/SeasAGI artifacts/
+      elif [ -d src-app/build/bin/SeasAGI.app ]; then
+        cp -R src-app/build/bin/SeasAGI.app artifacts/
+      fi
+      ls -la artifacts/
+
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "Packaging artifacts..."
+        if (-not (Test-Path artifacts)) { New-Item -ItemType Directory -Path artifacts }
+        if (Test-Path src-app\build\bin\SeasAGI.exe) {
+          Copy-Item src-app\build\bin\SeasAGI.exe artifacts\
+        }
+        Get-ChildItem artifacts
+      }
+
+# Upload build artifacts
+artifacts:
+  - path: artifacts/
+    name: SeasAGI-$(APPVEYOR_BUILD_WORKER_IMAGE)
+    type: File
+
+# Notifications (optional)
+notifications:
+  - provider: Email
+    to:
+      - $(APPVEYOR_REPO_COMMIT_AUTHOR_EMAIL)
+    on_build_success: false
+    on_build_failure: true
+    on_build_status_changed: true

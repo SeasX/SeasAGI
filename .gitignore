@@ -1,0 +1,48 @@
+# === 构建产物 ===
+
+# 根目录构建输出（DMG 安装包、Go 编译产物）
+/build/
+
+# 社区版服务器编译产物
+/SeasAGI-Server/build/
+
+# 企业版服务器编译产物
+/SeasAGI-Server-Enterprise/build/
+
+# 客户端编译产物
+/SeasAGI-Client/build/
+
+# Wails 客户端构建输出
+/SeasAGI-Client/src-app/build/
+
+# 前端构建输出
+SeasAGI-Server/src-admin/dist/
+
+# Go 编译产物
+*.exe
+
+# macOS 磁盘映像
+*.dmg
+
+# === 依赖 ===
+
+# Node.js
+node_modules/
+
+# === 环境变量 ===
+
+.env
+.env.local
+
+# === 操作系统 ===
+
+.DS_Store
+Thumbs.db
+
+# === IDE / 编辑器 ===
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

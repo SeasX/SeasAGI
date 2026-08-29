@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="./assets/favicon.png">
+<title>隐私政策 — SeasAGI</title>
+<meta name="description" content="SeasAGI 隐私政策 — 说明我们如何收集、使用、存储和共享您的个人信息，以及您依法享有的相关权利。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://SeasAGI.SeasX.ai/privacy.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary:#0A0F1A; --bg-surface:#121726; --bg-card:#1A2136;
+  --accent:#22C55E; --accent-light:#4ADE80; --accent-cyan:#06B6D4;
+  --text-primary:#F7FAFC; --text-secondary:#94A3B8; --text-muted:#64748B;
+  --border-subtle:#1F293B;
+  --radius-sm:10px; --radius-md:16px;
+  --font-sans:"Noto Sans SC","Geist",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:"Geist Mono",ui-monospace,monospace;
+  --maxw:860px;
+}
+*,*::before,*::after{box-sizing:border-box;}
+html{scroll-behavior:smooth;scroll-padding-top:80px;}
+body{margin:0;font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-primary);line-height:1.8;-webkit-font-smoothing:antialiased;}
+a{color:var(--accent-light);text-decoration:none;}
+a:hover{text-decoration:underline;}
+img{display:block;max-width:100%;}
+h1,h2,h3,h4,p{margin:0;}
+.container{max-width:var(--maxw);margin:0 auto;padding:0 24px;}
+
+/* Header */
+.site-header{position:sticky;top:0;z-index:100;background:rgba(10,15,26,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border-subtle);}
+.header-inner{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;max-width:var(--maxw);margin:0 auto;}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;}
+.brand img{width:32px;height:32px;}
+.back-link{font-size:14px;color:var(--text-secondary);transition:color .2s;}
+.back-link:hover{color:var(--accent-light);text-decoration:none;}
+
+/* Content */
+.legal-content{padding:48px 0 80px;}
+.legal-content h1{font-size:32px;font-weight:700;margin-bottom:8px;}
+.legal-meta{color:var(--text-muted);font-size:14px;margin-bottom:40px;padding-bottom:24px;border-bottom:1px solid var(--border-subtle);}
+.legal-content h2{font-size:22px;font-weight:600;margin-top:40px;margin-bottom:16px;color:var(--accent-light);}
+.legal-content h3{font-size:17px;font-weight:600;margin-top:28px;margin-bottom:12px;color:var(--text-primary);}
+.legal-content p{margin-bottom:14px;color:var(--text-secondary);}
+.legal-content ul{margin:0 0 16px;padding-left:20px;}
+.legal-content li{margin-bottom:8px;color:var(--text-secondary);}
+.legal-content strong{color:var(--text-primary);}
+.legal-content table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;}
+.legal-content th,.legal-content td{border:1px solid var(--border-subtle);padding:10px 14px;text-align:left;color:var(--text-secondary);}
+.legal-content th{background:var(--bg-card);color:var(--text-primary);font-weight:600;}
+.legal-content .callout{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:16px 20px;margin:20px 0;font-size:14px;color:var(--text-secondary);}
+
+/* Footer */
+.site-footer{border-top:1px solid var(--border-subtle);padding:32px 0;text-align:center;}
+.footer-copy{color:var(--text-muted);font-size:13px;}
+.footer-copy a{margin:0 6px;}
+
+/* zh/en/ja/ko toggle */
+.lang-en-i,.lang-ja-i,.lang-ko-i{display:none;}
+body.lang-en .lang-zh-i{display:none;}
+body.lang-en .lang-en-i{display:inline;}
+body.lang-ja .lang-zh-i{display:none;}
+body.lang-ja .lang-ja-i{display:inline;}
+body.lang-ko .lang-zh-i{display:none;}
+body.lang-ko .lang-ko-i{display:inline;}
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="./index.html" class="brand">
+      <img src="./assets/seasagi-icon.png" alt="SeasAGI Logo">
+      <span>SeasAGI</span>
+    </a>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <button id="langToggle" onclick="toggleLang()" style="background:var(--bg-card);border:1px solid var(--border-subtle);color:var(--text-secondary);padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer;">EN</button>
+      <a href="./index.html" class="back-link">← <span class="lang-zh-i">返回首页</span><span class="lang-en-i">Back to Home</span><span class="lang-ja-i">ホームに戻る</span><span class="lang-ko-i">홈으로</span></a>
+    </div>
+  </div>
+</header>
+
+<main class="container legal-content">
+
+<h1><span class="lang-zh-i">隐私政策</span><span class="lang-en-i">Privacy Policy</span><span class="lang-ja-i">プライバシーポリシー</span><span class="lang-ko-i">개인정보 처리방침</span></h1>
+<p class="legal-meta"><span class="lang-zh-i">最后更新：</span><span class="lang-en-i">Last updated: </span><span class="lang-ja-i">最終更新：</span><span class="lang-ko-i">최종 업데이트: </span>2026-08-22 · SeasAGI · <a href="https://SeasAGI.SeasX.ai">https://SeasAGI.SeasX.ai</a></p>
+
+<p><span class="lang-zh-i">SeasAGI（以下简称"我们"）尊重并保护您的隐私权。本隐私政策（"本政策"）说明我们在您使用 SeasAGI 本地 LLM API 智能网关（"服务"）时，如何收集、使用、存储和共享您的个人信息，以及您依法享有的相关权利。</span><span class="lang-en-i">SeasAGI ("we") respects and protects your privacy. This Privacy Policy ("this Policy") explains how we collect, use, store, and share your personal information when you use the SeasAGI Local LLM API Intelligent Gateway (the "Service"), as well as your relevant rights under applicable law.</span><span class="lang-ja-i">SeasAGI（以下「当社」といいます）は、お客様のプライバシーを尊重し保護します。本プライバシーポリシー（「本ポリシー」）は、お客様がSeasAGIローカルLLM APIインテリジェントゲートウェイ（「本サービス」）をご利用になる際、当社が個人情報をどのように収集、利用、保管、および共有するか、ならびにお客様が適用法に基づき享有する関連権利について説明するものです。</span><span class="lang-ko-i">SeasAGI(이하 "당사")는 귀하의 개인정보를 존중하고 보호합니다. 본 개인정보 처리방침(이하 "본 방침")은 귀하가 SeasAGI 로컬 LLM API 인텔리전트 게이트웨이(이하 "서비스")를 이용하시는 과정에서 당사가 귀하의 개인정보를 수집, 이용, 저장 및 공유하는 방법과 적용 법률에 따라 귀하가 향유하는 관련 권리에 대해 설명합니다.</span></p>
+<p><span class="lang-zh-i">请您在使用本服务前仔细阅读本政策。使用本服务即表示您已阅读并同意本政策。我们可能不时更新本政策，如发生重大变更将通过邮件或站内通知提前告知您。</span><span class="lang-en-i">Please read this Policy carefully before using the Service. Your use of the Service indicates that you have read and agree to this Policy. We may update this Policy from time to time, and in the event of material changes, we will notify you in advance via email or in-platform notification.</span><span class="lang-ja-i">本サービスをご利用の前に、本ポリシーを慎重にお読みください。本サービスの利用は、お客様が本ポリシーを読み、同意したことを意味します。当社は適宜本ポリシーを更新する場合があり、重要な変更が生じた場合は、メールまたはプラットフォーム内通知にて事前にお知らせします。</span><span class="lang-ko-i">본 서비스를 이용하시기 전에 본 방침을 주의 깊게 읽어 주십시오. 본 서비스를 이용하시면 본 방침을 읽고 동의한 것으로 간주됩니다. 당사는 수시로 본 방침을 업데이트할 수 있으며, 중대한 변경이 발생할 경우 이메일 또는 플랫폼 내 알림을 통해 사전에 귀하에게 알려드립니다.</span></p>
+
+<h2><span class="lang-zh-i">1. 数据控制者</span><span class="lang-en-i">1. Data Controller</span><span class="lang-ja-i">1. データ管理者</span><span class="lang-ko-i">1. 개인정보 처리자</span></h2>
+<p><span class="lang-zh-i">本服务的数据控制者为：</span><span class="lang-en-i">The data controller of this Service is:</span><span class="lang-ja-i">本サービスのデータ管理者は以下のとおりです。</span><span class="lang-ko-i">본 서비스의 개인정보 처리자는 다음과 같습니다.</span></p>
+<ul>
+  <li><span class="lang-zh-i">公司名称：</span><span class="lang-en-i">Company Name: </span><span class="lang-ja-i">会社名：</span><span class="lang-ko-i">회사명: </span>SEASXAI TECHNOLOGY LIMITED</li>
+  <li><span class="lang-zh-i">注册地址：香港</span><span class="lang-en-i">Registered Address: Hong Kong</span><span class="lang-ja-i">登録住所：香港</span><span class="lang-ko-i">등록 주소: 홍콩</span></li>
+  <li><span class="lang-zh-i">隐私联系邮箱：</span><span class="lang-en-i">Privacy Contact Email: </span><span class="lang-ja-i">プライバシー連絡先メール：</span><span class="lang-ko-i">개인정보 연락처 이메일: </span>privacy@SeasX.ai</li>
+</ul>
+
+<h2><span class="lang-zh-i">2. 我们收集的个人信息</span><span class="lang-en-i">2. Information We Collect</span><span class="lang-ja-i">2. 収集する個人情報</span><span class="lang-ko-i">2. 당사가 수집하는 개인정보</span></h2>
+<h3><span class="lang-zh-i">2.1 您主动提供的信息</span><span class="lang-en-i">2.1 Information You Provide</span><span class="lang-ja-i">2.1 お客様が自発的に提供する情報</span><span class="lang-ko-i">2.1 귀하가 자발적으로 제공하는 정보</span></h3>
+<ul>
+  <li><span class="lang-zh-i">账户信息：姓名、邮箱、密码（加密存储）。</span><span class="lang-en-i">Account Information: Name, email, password (stored encrypted).</span><span class="lang-ja-i">アカウント情報：氏名、メールアドレス、パスワード（暗号化して保管）。</span><span class="lang-ko-i">계정 정보: 성명, 이메일, 비밀번호(암호화하여 저장).</span></li>
+  <li><span class="lang-zh-i">支付信息：交易金额、支付状态。我们不存储完整卡号——卡数据由支付处理方处理（见第 5 条）。</span><span class="lang-en-i">Payment Information: Transaction amount, payment status. We do not store full card numbers — card data is processed by the payment processor (see Section 5).</span><span class="lang-ja-i">決済情報：取引金額、支払ステータス。当社は完全なカード番号を保管しません。カードデータは決済処理業者により処理されます（第5条参照）。</span><span class="lang-ko-i">결제 정보: 거래 금액, 결제 상태. 당사는 전체 카드 번호를 저장하지 않습니다. 카드 데이터는 결제 처리사에서 처리합니다(제5조 참조).</span></li>
+  <li><span class="lang-zh-i">沟通记录：您发给客服的邮件、工单、反馈。</span><span class="lang-en-i">Communication Records: Emails, tickets, and feedback you send to customer support.</span><span class="lang-ja-i">コミュニケーション記録：カスタマーサポート宛のメール、チケット、フィードバック。</span><span class="lang-ko-i">의사소통 기록: 고객 지원팀에 보내신 이메일, 티켓, 피드백.</span></li>
+</ul>
+<h3><span class="lang-zh-i">2.2 我们自动收集的信息</span><span class="lang-en-i">2.2 Information We Collect Automatically</span><span class="lang-ja-i">2.2 自動的に収集する情報</span><span class="lang-ko-i">2.2 자동으로 수집하는 정보</span></h3>
+<ul>
+  <li><span class="lang-zh-i">设备与网络：IP 地址、设备型号、操作系统、浏览器类型、时区。</span><span class="lang-en-i">Device &amp; Network: IP address, device model, operating system, browser type, time zone.</span><span class="lang-ja-i">デバイスとネットワーク：IPアドレス、デバイスモデル、オペレーティングシステム、ブラウザの種類、タイムゾーン。</span><span class="lang-ko-i">기기 및 네트워크: IP 주소, 기기 모델, 운영체제, 브라우저 유형, 시간대.</span></li>
+  <li><span class="lang-zh-i">使用行为：页面访问、功能使用、操作日志、会话时长。</span><span class="lang-en-i">Usage Behavior: Page visits, feature usage, operation logs, session duration.</span><span class="lang-ja-i">利用行動：ページアクセス、機能利用、操作ログ、セッション時間。</span><span class="lang-ko-i">이용 행동: 페이지 방문, 기능 사용, 조작 로그, 세션 시간.</span></li>
+  <li><span class="lang-zh-i">日志数据：请求时间、错误日志、性能数据。</span><span class="lang-en-i">Log Data: Request timestamps, error logs, performance data.</span><span class="lang-ja-i">ログデータ：リクエスト時刻、エラーログ、パフォーマンスデータ。</span><span class="lang-ko-i">로그 데이터: 요청 시간, 오류 로그, 성능 데이터.</span></li>
+</ul>
+
+<h2><span class="lang-zh-i">3. 我们如何使用您的个人信息</span><span class="lang-en-i">3. How We Use Your Information</span><span class="lang-ja-i">3. 個人情報の利用について</span><span class="lang-ko-i">3. 귀하의 개인정보 이용 방법</span></h2>
+<table>
+  <thead>
+    <tr><th><span class="lang-zh-i">使用目的</span><span class="lang-en-i">Purpose of Use</span><span class="lang-ja-i">利用目的</span><span class="lang-ko-i">이용 목적</span></th><th><span class="lang-zh-i">法律依据</span><span class="lang-en-i">Legal Basis</span><span class="lang-ja-i">法的根拠</span><span class="lang-ko-i">법적 근거</span></th></tr>
+  </thead>
+  <tbody>
+    <tr><td><span class="lang-zh-i">提供和维护服务</span><span class="lang-en-i">Providing and maintaining the Service</span><span class="lang-ja-i">本サービスの提供および維持</span><span class="lang-ko-i">서비스 제공 및 유지</span></td><td><span class="lang-zh-i">合同履行</span><span class="lang-en-i">Contract performance</span><span class="lang-ja-i">契約の履行</span><span class="lang-ko-i">계약 이행</span></td></tr>
+    <tr><td><span class="lang-zh-i">计费与支付处理</span><span class="lang-en-i">Billing and payment processing</span><span class="lang-ja-i">請求および決済処理</span><span class="lang-ko-i">청구 및 결제 처리</span></td><td><span class="lang-zh-i">合同履行</span><span class="lang-en-i">Contract performance</span><span class="lang-ja-i">契約の履行</span><span class="lang-ko-i">계약 이행</span></td></tr>
+    <tr><td><span class="lang-zh-i">客户支持</span><span class="lang-en-i">Customer support</span><span class="lang-ja-i">カスタマーサポート</span><span class="lang-ko-i">고객 지원</span></td><td><span class="lang-zh-i">合同履行 / 合法利益</span><span class="lang-en-i">Contract performance / Legitimate interests</span><span class="lang-ja-i">契約の履行 / 正当な利益</span><span class="lang-ko-i">계약 이행 / 정당한 이익</span></td></tr>
+    <tr><td><span class="lang-zh-i">服务通知（账单、安全、政策更新）</span><span class="lang-en-i">Service notifications (billing, security, policy updates)</span><span class="lang-ja-i">サービス通知（請求、セキュリティ、ポリシー更新）</span><span class="lang-ko-i">서비스 알림(청구, 보안, 정책 업데이트)</span></td><td><span class="lang-zh-i">合法利益</span><span class="lang-en-i">Legitimate interests</span><span class="lang-ja-i">正当な利益</span><span class="lang-ko-i">정당한 이익</span></td></tr>
+    <tr><td><span class="lang-zh-i">安全与欺诈防控</span><span class="lang-en-i">Security and fraud prevention</span><span class="lang-ja-i">セキュリティおよび不正防止</span><span class="lang-ko-i">보안 및 사기 방지</span></td><td><span class="lang-zh-i">合法利益</span><span class="lang-en-i">Legitimate interests</span><span class="lang-ja-i">正当な利益</span><span class="lang-ko-i">정당한 이익</span></td></tr>
+    <tr><td><span class="lang-zh-i">产品优化与分析</span><span class="lang-en-i">Product optimization and analytics</span><span class="lang-ja-i">製品最適化および分析</span><span class="lang-ko-i">제품 최적화 및 분석</span></td><td><span class="lang-zh-i">合法利益</span><span class="lang-en-i">Legitimate interests</span><span class="lang-ja-i">正当な利益</span><span class="lang-ko-i">정당한 이익</span></td></tr>
+    <tr><td><span class="lang-zh-i">法律合规</span><span class="lang-en-i">Legal compliance</span><span class="lang-ja-i">法令遵守</span><span class="lang-ko-i">법적 준수</span></td><td><span class="lang-zh-i">法律义务</span><span class="lang-en-i">Legal obligation</span><span class="lang-ja-i">法的義務</span><span class="lang-ko-i">법적 의무</span></td></tr>
+  </tbody>
+</table>
+<p><span class="lang-zh-i">我们可能对数据进行汇总或去标识化处理，用于统计分析。此类数据无法识别至具体个人。</span><span class="lang-en-i">We may aggregate or de-identify data for statistical analysis. Such data cannot identify specific individuals.</span><span class="lang-ja-i">当社は統計分析のためにデータを集計または非識別化する場合があります。このようなデータから特定の個人を特定することはできません。</span><span class="lang-ko-i">당사는 통계 분석을 위해 데이터를 집계하거나 비식별화할 수 있습니다. 이러한 데이터로 특정 개인을 식별할 수 없습니다.</span></p>
+
+<h2><span class="lang-zh-i">4. Cookie 和追踪技术</span><span class="lang-en-i">4. Cookies and Tracking Technologies</span><span class="lang-ja-i">4. Cookieおよびトラッキング技術</span><span class="lang-ko-i">4. 쿠키 및 추적 기술</span></h2>
+<table>
+  <thead>
+    <tr><th><span class="lang-zh-i">类型</span><span class="lang-en-i">Type</span><span class="lang-ja-i">種類</span><span class="lang-ko-i">유형</span></th><th><span class="lang-zh-i">用途</span><span class="lang-en-i">Purpose</span><span class="lang-ja-i">用途</span><span class="lang-ko-i">용도</span></th><th><span class="lang-zh-i">可关闭</span><span class="lang-en-i">Can be Disabled</span><span class="lang-ja-i">無効化可否</span><span class="lang-ko-i">비활성화 가능</span></th></tr>
+  </thead>
+  <tbody>
+    <tr><td><span class="lang-zh-i">严格必要型</span><span class="lang-en-i">Strictly necessary</span><span class="lang-ja-i">不可欠</span><span class="lang-ko-i">필수</span></td><td><span class="lang-zh-i">维持登录、核心功能</span><span class="lang-en-i">Maintain login, core functionality</span><span class="lang-ja-i">ログイン維持、コア機能</span><span class="lang-ko-i">로그인 유지, 핵심 기능</span></td><td><span class="lang-zh-i">否</span><span class="lang-en-i">No</span><span class="lang-ja-i">不可</span><span class="lang-ko-i">불가</span></td></tr>
+    <tr><td><span class="lang-zh-i">功能型</span><span class="lang-en-i">Functional</span><span class="lang-ja-i">機能性</span><span class="lang-ko-i">기능성</span></td><td><span class="lang-zh-i">语言偏好、个性化设置</span><span class="lang-en-i">Language preferences, personalized settings</span><span class="lang-ja-i">言語設定、パーソナライズ設定</span><span class="lang-ko-i">언어 환경설정, 맞춤 설정</span></td><td><span class="lang-zh-i">是</span><span class="lang-en-i">Yes</span><span class="lang-ja-i">可</span><span class="lang-ko-i">가능</span></td></tr>
+    <tr><td><span class="lang-zh-i">分析型</span><span class="lang-en-i">Analytical</span><span class="lang-ja-i">分析用</span><span class="lang-ko-i">분석</span></td><td><span class="lang-zh-i">匿名使用统计、优化产品</span><span class="lang-en-i">Anonymous usage statistics, product optimization</span><span class="lang-ja-i">匿名の利用統計、製品最適化</span><span class="lang-ko-i">익명 이용 통계, 제품 최적화</span></td><td><span class="lang-zh-i">是</span><span class="lang-en-i">Yes</span><span class="lang-ja-i">可</span><span class="lang-ko-i">가능</span></td></tr>
+  </tbody>
+</table>
+<p><span class="lang-zh-i">您可通过浏览器设置或我们的 Cookie 管理中心调整偏好。</span><span class="lang-en-i">You can adjust your preferences via browser settings or our Cookie Management Center.</span><span class="lang-ja-i">ブラウザの設定または当社のCookie管理センターから設定を調整できます。</span><span class="lang-ko-i">브라우저 설정 또는 당사의 쿠키 관리 센터를 통해 환경설정을 조정할 수 있습니다.</span></p>
+
+<h2><span class="lang-zh-i">5. 个人信息的共享与披露</span><span class="lang-en-i">5. Sharing and Disclosure</span><span class="lang-ja-i">5. 個人情報の共有および開示</span><span class="lang-ko-i">5. 개인정보의 공유 및 공개</span></h2>
+<p><span class="lang-zh-i">我们不出售您的个人信息，包括适用法律（如 CCPA）所定义的"出售"行为。我们仅在以下情形共享您的信息：</span><span class="lang-en-i">We do not sell your personal information, including "sale" as defined under applicable law (e.g., CCPA). We share your information only in the following circumstances:</span><span class="lang-ja-i">当社は適用法（CCPAなど）で定義される「販売」を含め、お客様の個人情報を販売しません。当社は以下の場合にのみお客様の情報を共有します。</span><span class="lang-ko-i">당사는 적용 법률(예: CCPA)에서 정의하는 "판매"를 포함하여 귀하의 개인정보를 판매하지 않습니다. 당사는 다음의 경우에만 귀하의 정보를 공유합니다.</span></p>
+<ul>
+  <li><span class="lang-zh-i">服务提供商：云计算、支付、客服、分析等供应商，受保密协议约束。支付卡数据由我们符合 PCI-DSS 标准的支付处理方 Waffo Pancake 独家处理，不存储于我们的服务器上。</span><span class="lang-en-i">Service Providers: Cloud computing, payment, customer support, analytics, and other vendors, bound by confidentiality agreements. Payment card data is exclusively processed by our PCI-DSS-compliant payment processor Waffo Pancake and is not stored on our servers.</span><span class="lang-ja-i">サービスプロバイダー：クラウドコンピューティング、決済、カスタマーサポート、分析等のベンダーで、秘密保持契約に拘束されます。決済カードデータは、PCI-DSS準拠の決済処理業者Waffo Pancakeにより独占的に処理され、当社のサーバーには保管されません。</span><span class="lang-ko-i">서비스 제공자: 클라우드 컴퓨팅, 결제, 고객 지원, 분석 등의 공급업체로, 비밀유지계약에 구속됩니다. 결제 카드 데이터는 PCI-DSS를 준수하는 당사의 결제 처리사 Waffo Pancake가 단독으로 처리하며, 당사의 서버에는 저장되지 않습니다.</span></li>
+  <li><span class="lang-zh-i">法律与监管要求：依法律、法院命令或主管机关合法请求。</span><span class="lang-en-i">Legal and Regulatory Requirements: In response to laws, court orders, or legitimate requests from competent authorities.</span><span class="lang-ja-i">法律および規制要件：法律、裁判所命令、または管轄官庁の適法な要請に基づきます。</span><span class="lang-ko-i">법적 및 규제 요구 사항: 법률, 법원 명령 또는 관할 기관의 적법한 요청에 따릅니다.</span></li>
+  <li><span class="lang-zh-i">商业交易：在合并、收购等情形下，提前通知并确保保护义务延续。</span><span class="lang-en-i">Business Transactions: In cases of merger, acquisition, etc., advance notice is given and protection obligations are continued.</span><span class="lang-ja-i">商取引：合併、買収等の場合、事前通知を行い、保護義務の継続を確保します。</span><span class="lang-ko-i">사업 거래: 합병, 인수 등의 경우 사전에 통지하고 보호 의무가 계속되도록 합니다.</span></li>
+  <li><span class="lang-zh-i">经您同意：在获得您明确事先同意的前提下，用于其他目的。</span><span class="lang-en-i">With Your Consent: For other purposes based on your explicit prior consent.</span><span class="lang-ja-i">お客様の同意：お客様の明示的な事前同意を得た上で、他の目的に利用します。</span><span class="lang-ko-i">귀하의 동의: 귀하의 명시적인 사전 동의를 얻은 전제하에 다른 목적으로 이용합니다.</span></li>
+</ul>
+<div class="callout"><strong><span class="lang-zh-i">Token 市场数据共享：</span><span class="lang-en-i">Token Market Data Sharing: </span><span class="lang-ja-i">トークン市場データ共有：</span><span class="lang-ko-i">토큰 시장 데이터 공유: </span></strong><span class="lang-zh-i">在 Token 市场交易中，买家的用户名和交易金额会向交易对手方展示。API Key 通过 KMS 信封加密托管，交易确认后通过 Grant 机制交付使用权益，原始 Key 不直接暴露给买方。</span><span class="lang-en-i">In Token Market transactions, the buyer's username and transaction amount are shown to the counterparty. API Keys are escrowed via KMS envelope encryption, and upon transaction confirmation, usage rights are delivered via the Grant mechanism; the raw key is never directly exposed to the buyer.</span><span class="lang-ja-i">トークン市場取引において、買い手のユーザー名および取引金額が取引相手方に表示されます。API KeyはKMSエンベロープ暗号化により保管され、取引確認後にGrantメカニズムを通じて利用権限が付与され、元のKeyは買い手に直接公開されません。</span><span class="lang-ko-i">토큰 시장 거래에서 구매자의 사용자명 및 거래 금액이 거래 상대방에게 표시됩니다. API Key는 KMS 엔벨로프 암호화로 예치되며, 거래 확인 후 Grant 메커니즘을 통해 사용 권한이 전달되고, 원본 Key는 구매자에게 직접 노출되지 않습니다.</span></div>
+
+<h2><span class="lang-zh-i">6. 数据安全措施</span><span class="lang-en-i">6. Data Security Measures</span><span class="lang-ja-i">6. データセキュリティ対策</span><span class="lang-ko-i">6. 데이터 보안 조치</span></h2>
+<ul>
+  <li><span class="lang-zh-i">传输加密：TLS / HTTPS。</span><span class="lang-en-i">Transmission Encryption: TLS / HTTPS.</span><span class="lang-ja-i">伝送暗号化：TLS / HTTPS。</span><span class="lang-ko-i">전송 암호화: TLS / HTTPS.</span></li>
+  <li><span class="lang-zh-i">存储安全：密码等敏感数据加密或哈希处理。API Key 通过 KMS 信封加密（AES-256-GCM）存储，内存中二次加密防止内存转储。</span><span class="lang-en-i">Storage Security: Sensitive data such as passwords is encrypted or hashed. API Keys are stored via KMS envelope encryption (AES-256-GCM), with secondary encryption in memory to prevent memory dumps.</span><span class="lang-ja-i">保管セキュリティ：パスワード等の機密データは暗号化またはハッシュ化されます。API KeyはKMSエンベロープ暗号化（AES-256-GCM）で保管され、メモリ内では二次暗号化によりメモリダンプを防ぎます。</span><span class="lang-ko-i">저장 보안: 비밀번호 등 민감 데이터는 암호화 또는 해시 처리됩니다. API Key는 KMS 엔벨로프 암호화(AES-256-GCM)로 저장되며, 메모리 내에서 이중 암호화하여 메모리 덤프를 방지합니다.</span></li>
+  <li><span class="lang-zh-i">访问控制：最小权限原则；员工签署保密协议。</span><span class="lang-en-i">Access Control: Principle of least privilege; employees sign confidentiality agreements.</span><span class="lang-ja-i">アクセス制御：最小権限の原則。従業員は秘密保持契約を締結します。</span><span class="lang-ko-i">액세스 제어: 최소 권한 원칙. 직원은 비밀유지계약을 체결합니다.</span></li>
+  <li><span class="lang-zh-i">定期安全审计与漏洞扫描。</span><span class="lang-en-i">Periodic security audits and vulnerability scans.</span><span class="lang-ja-i">定期的なセキュリティ監査および脆弱性スキャン。</span><span class="lang-ko-i">정기적인 보안 감사 및 취약점 스캔.</span></li>
+</ul>
+<p><span class="lang-zh-i">如发生影响您权益的安全事件，我们将在发现后 72 小时内依法通知您及相关监管机构。请妥善保管账户凭据，不得与他人共享。</span><span class="lang-en-i">In the event of a security incident affecting your rights, we will notify you and the relevant regulatory authorities within 72 hours of discovery, as required by law. Please safeguard your account credentials and do not share them with others.</span><span class="lang-ja-i">お客様の権利に影響を及ぼすセキュリティインシデントが発生した場合、当社は発見後72時間以内に法令に基づきお客様および関連規制当局に通知します。アカウントの認証情報は適切に保管し、他人と共有しないでください。</span><span class="lang-ko-i">귀하의 권리에 영향을 미치는 보안 사건이 발생할 경우, 당사는 발견 후 72시간 이내에 법률에 따라 귀하 및 관련 규제 기관에 통지합니다. 계정 자격 증명은 안전하게 보관하시고 타인과 공유하지 마십시오.</span></p>
+
+<h2><span class="lang-zh-i">7. 个人信息保留期限</span><span class="lang-en-i">7. Data Retention</span><span class="lang-ja-i">7. 個人情報の保有期間</span><span class="lang-ko-i">7. 개인정보 보유 기간</span></h2>
+<table>
+  <thead>
+    <tr><th><span class="lang-zh-i">数据类型</span><span class="lang-en-i">Data Type</span><span class="lang-ja-i">データの種類</span><span class="lang-ko-i">데이터 유형</span></th><th><span class="lang-zh-i">保留期限</span><span class="lang-en-i">Retention Period</span><span class="lang-ja-i">保有期間</span><span class="lang-ko-i">보유 기간</span></th><th><span class="lang-zh-i">到期处理</span><span class="lang-en-i">Handling Upon Expiry</span><span class="lang-ja-i">満了時の処理</span><span class="lang-ko-i">만료 시 처리</span></th></tr>
+  </thead>
+  <tbody>
+    <tr><td><span class="lang-zh-i">账户信息</span><span class="lang-en-i">Account Information</span><span class="lang-ja-i">アカウント情報</span><span class="lang-ko-i">계정 정보</span></td><td><span class="lang-zh-i">有效期内；注销后 90 天</span><span class="lang-en-i">During validity; 90 days after deletion</span><span class="lang-ja-i">有効期間内、削除後90日</span><span class="lang-ko-i">유효 기간 내, 삭제 후 90일</span></td><td><span class="lang-zh-i">删除或匿名化</span><span class="lang-en-i">Deletion or anonymization</span><span class="lang-ja-i">削除または匿名化</span><span class="lang-ko-i">삭제 또는 익명화</span></td></tr>
+    <tr><td><span class="lang-zh-i">交易记录</span><span class="lang-en-i">Transaction Records</span><span class="lang-ja-i">取引記録</span><span class="lang-ko-i">거래 기록</span></td><td><span class="lang-zh-i">依法规，通常 5 年</span><span class="lang-en-i">Per regulations, typically 5 years</span><span class="lang-ja-i">法令に基づき通常5年</span><span class="lang-ko-i">규정에 따라 통상 5년</span></td><td><span class="lang-zh-i">删除或存档</span><span class="lang-en-i">Deletion or archiving</span><span class="lang-ja-i">削除またはアーカイブ</span><span class="lang-ko-i">삭제 또는 보관</span></td></tr>
+    <tr><td><span class="lang-zh-i">客服记录</span><span class="lang-en-i">Customer Support Records</span><span class="lang-ja-i">カスタマーサポート記録</span><span class="lang-ko-i">고객 지원 기록</span></td><td><span class="lang-zh-i">2 年</span><span class="lang-en-i">2 years</span><span class="lang-ja-i">2年</span><span class="lang-ko-i">2년</span></td><td><span class="lang-zh-i">安全删除</span><span class="lang-en-i">Secure deletion</span><span class="lang-ja-i">安全な削除</span><span class="lang-ko-i">안전한 삭제</span></td></tr>
+    <tr><td><span class="lang-zh-i">安全审计日志</span><span class="lang-en-i">Security Audit Logs</span><span class="lang-ja-i">セキュリティ監査ログ</span><span class="lang-ko-i">보안 감사 로그</span></td><td><span class="lang-zh-i">12 个月</span><span class="lang-en-i">12 months</span><span class="lang-ja-i">12か月</span><span class="lang-ko-i">12개월</span></td><td><span class="lang-zh-i">安全删除</span><span class="lang-en-i">Secure deletion</span><span class="lang-ja-i">安全な削除</span><span class="lang-ko-i">안전한 삭제</span></td></tr>
+    <tr><td><span class="lang-zh-i">Token 市场交易记录</span><span class="lang-en-i">Token Market Transaction Records</span><span class="lang-ja-i">トークン市場取引記録</span><span class="lang-ko-i">토큰 시장 거래 기록</span></td><td><span class="lang-zh-i">5 年</span><span class="lang-en-i">5 years</span><span class="lang-ja-i">5年</span><span class="lang-ko-i">5년</span></td><td><span class="lang-zh-i">存档</span><span class="lang-en-i">Archiving</span><span class="lang-ja-i">アーカイブ</span><span class="lang-ko-i">보관</span></td></tr>
+  </tbody>
+</table>
+
+<h2><span class="lang-zh-i">8. 您的数据权利</span><span class="lang-en-i">8. Your Data Rights</span><span class="lang-ja-i">8. お客様のデータ権利</span><span class="lang-ko-i">8. 귀하의 데이터 권리</span></h2>
+<p><span class="lang-zh-i">如需行使以下权利，请联系我们，我们将在 30 个日历日内处理。</span><span class="lang-en-i">To exercise the following rights, please contact us, and we will process your request within 30 calendar days.</span><span class="lang-ja-i">以下の権利を行使するには当社までご連絡ください。当社は30暦日以内に処理いたします。</span><span class="lang-ko-i">다음 권리를 행사하시려면 당사에 연락해 주십시오. 당사는 30력일 이내에 처리합니다.</span></p>
+<table>
+  <thead>
+    <tr><th><span class="lang-zh-i">权利</span><span class="lang-en-i">Right</span><span class="lang-ja-i">権利</span><span class="lang-ko-i">권리</span></th><th><span class="lang-zh-i">说明</span><span class="lang-en-i">Description</span><span class="lang-ja-i">説明</span><span class="lang-ko-i">설명</span></th></tr>
+  </thead>
+  <tbody>
+    <tr><td><span class="lang-zh-i">知情权</span><span class="lang-en-i">Right to be Informed</span><span class="lang-ja-i">知る権利</span><span class="lang-ko-i">알 권리</span></td><td><span class="lang-zh-i">了解我们收集及使用哪些数据</span><span class="lang-en-i">Know what data we collect and use</span><span class="lang-ja-i">当社が収集および利用するデータを把握</span><span class="lang-ko-i">당사가 수집 및 이용하는 데이터 파악</span></td></tr>
+    <tr><td><span class="lang-zh-i">访问权</span><span class="lang-en-i">Right of Access</span><span class="lang-ja-i">アクセス権</span><span class="lang-ko-i">액세스권</span></td><td><span class="lang-zh-i">获取您的个人信息副本</span><span class="lang-en-i">Obtain a copy of your personal information</span><span class="lang-ja-i">個人情報のコピーを取得</span><span class="lang-ko-i">개인정보 사본 획득</span></td></tr>
+    <tr><td><span class="lang-zh-i">更正权</span><span class="lang-en-i">Right to Rectification</span><span class="lang-ja-i">訂正権</span><span class="lang-ko-i">정정권</span></td><td><span class="lang-zh-i">纠正不准确或不完整的信息</span><span class="lang-en-i">Correct inaccurate or incomplete information</span><span class="lang-ja-i">不正確または不完全な情報を訂正</span><span class="lang-ko-i">부정확하거나 불완전한 정보 정정</span></td></tr>
+    <tr><td><span class="lang-zh-i">删除权</span><span class="lang-en-i">Right to Erasure</span><span class="lang-ja-i">削除権</span><span class="lang-ko-i">삭제권</span></td><td><span class="lang-zh-i">在特定条件下请求删除数据</span><span class="lang-en-i">Request deletion of data under specific conditions</span><span class="lang-ja-i">特定の条件下でデータの削除を請求</span><span class="lang-ko-i">특정 조건에서 데이터 삭제 요청</span></td></tr>
+    <tr><td><span class="lang-zh-i">限制处理权</span><span class="lang-en-i">Right to Restrict Processing</span><span class="lang-ja-i">処理制限権</span><span class="lang-ko-i">처리 제한권</span></td><td><span class="lang-zh-i">在特定情形下暂停数据处理</span><span class="lang-en-i">Suspend data processing under specific circumstances</span><span class="lang-ja-i">特定の状況下でデータ処理を一時停止</span><span class="lang-ko-i">특정 상황에서 데이터 처리 중단</span></td></tr>
+    <tr><td><span class="lang-zh-i">数据可携带权</span><span class="lang-en-i">Right to Data Portability</span><span class="lang-ja-i">データポータビリティ権</span><span class="lang-ko-i">데이터 이동권</span></td><td><span class="lang-zh-i">以机器可读格式获取您的数据</span><span class="lang-en-i">Obtain your data in a machine-readable format</span><span class="lang-ja-i">機械可読形式でデータを取得</span><span class="lang-ko-i">기계 판독 가능 형식으로 데이터 획득</span></td></tr>
+    <tr><td><span class="lang-zh-i">反对权</span><span class="lang-en-i">Right to Object</span><span class="lang-ja-i">反対権</span><span class="lang-ko-i">반대권</span></td><td><span class="lang-zh-i">反对基于合法利益或营销的处理</span><span class="lang-en-i">Object to processing based on legitimate interests or marketing</span><span class="lang-ja-i">正当な利益またはマーケティングに基づく処理に反対</span><span class="lang-ko-i">정당한 이익 또는 마케팅에 기반한 처리 반대</span></td></tr>
+    <tr><td><span class="lang-zh-i">撤回同意权</span><span class="lang-en-i">Right to Withdraw Consent</span><span class="lang-ja-i">同意撤回権</span><span class="lang-ko-i">동의 철회권</span></td><td><span class="lang-zh-i">撤回基于同意的处理授权</span><span class="lang-en-i">Withdraw consent-based processing authorization</span><span class="lang-ja-i">同意に基づく処理の認可を撤回</span><span class="lang-ko-i">동의에 기반한 처리 인가 철회</span></td></tr>
+  </tbody>
+</table>
+<p><span class="lang-zh-i">如认为我们未妥善处理，您有权向所在地数据保护机构投诉。</span><span class="lang-en-i">If you believe we have not handled your request properly, you have the right to file a complaint with your local data protection authority.</span><span class="lang-ja-i">当社の対応が不適切であるとお考えの場合、お住まいの地域のデータ保護機関に苦情を申し立てる権利があります。</span><span class="lang-ko-i">당사의 처리가 적절하지 않다고 판단되시면, 거주지 데이터 보호 기관에 불만을 제기할 권리가 있습니다.</span></p>
+
+<h2><span class="lang-zh-i">9. 营销通信与退订</span><span class="lang-en-i">9. Marketing Communications and Opt-out</span><span class="lang-ja-i">9. マーケティング通信と配信停止</span><span class="lang-ko-i">9. 마케팅 통신 및 수신 거부</span></h2>
+<p><span class="lang-zh-i">经您同意，我们可能通过邮件、短信或应用内通知发送产品更新和促销相关的营销信息。您可随时退订：点击邮件中的"取消订阅"链接、在账户设置中关闭营销通知，或联系我们。退订不影响服务必要通知（如账单、安全提醒）。</span><span class="lang-en-i">With your consent, we may send you marketing communications regarding product updates and promotions via email, SMS, or in-app notifications. You may opt out at any time: click the "unsubscribe" link in the email, turn off marketing notifications in your account settings, or contact us. Opting out does not affect essential service notifications (e.g., billing, security alerts).</span><span class="lang-ja-i">お客様の同意に基づき、当社はメール、SMS、またはアプリ内通知にて製品更新およびプロモーションに関するマーケティング通信を送信する場合があります。いつでも配信停止が可能です。メール内の「配信停止」リンクをクリックするか、アカウント設定でマーケティング通知をオフにするか、当社までご連絡ください。配信停止は（請求、セキュリティ通知などの）サービス必須通知には影響しません。</span><span class="lang-ko-i">귀하의 동의에 따라, 당사는 이메일, SMS 또는 앱 내 알림을 통해 제품 업데이트 및 프로모션과 관련된 마케팅 정보를 발송할 수 있습니다. 언제든 수신 거부할 수 있습니다. 이메일 내 "수신 거부" 링크 클릭, 계정 설정에서 마케팅 알림 끄기, 또는 당사에 연락하시면 됩니다. 수신 거부는 청구, 보안 알림 등 서비스 필수 알림에는 영향을 미치지 않습니다.</span></p>
+
+<h2><span class="lang-zh-i">10. 跨境数据传输</span><span class="lang-en-i">10. International Data Transfers</span><span class="lang-ja-i">10. 越境データ転送</span><span class="lang-ko-i">10. 국경 간 데이터 전송</span></h2>
+<p><span class="lang-zh-i">我们的服务器及合作方可能位于新加坡、美国。跨境传输时，我们通过以下方式保障数据安全：</span><span class="lang-en-i">Our servers and partners may be located in Singapore and the United States. For cross-border data transfers, we safeguard data security through the following measures:</span><span class="lang-ja-i">当社のサーバーおよびパートナーはシンガポール、米国に所在する場合があります。越境転送時に、当社は以下の方法でデータの安全を確保します。</span><span class="lang-ko-i">당사의 서버 및 파트너는 싱가포르, 미국에 위치할 수 있습니다. 국경 간 전송 시, 당사는 다음 방법으로 데이터 보안을 보장합니다.</span></p>
+<ul>
+  <li><span class="lang-zh-i">签订纳入欧盟标准合同条款（SCC）的数据处理协议。</span><span class="lang-en-i">Signing data processing agreements incorporating EU Standard Contractual Clauses (SCC).</span><span class="lang-ja-i">欧州標準契約条項（SCC）を組み込んだデータ処理契約を締結。</span><span class="lang-ko-i">유럽 표준 계약 조항(SCC)을 포함한 데이터 처리 계약 체결.</span></li>
+  <li><span class="lang-zh-i">仅向具备同等保护水平的接收方传输。</span><span class="lang-en-i">Transferring only to recipients with an equivalent level of protection.</span><span class="lang-ja-i">同等の保護水準を備える受領者にのみ転送。</span><span class="lang-ko-i">동등한 보호 수준을 갖춘 수령자에게만 전송.</span></li>
+</ul>
+
+<h2><span class="lang-zh-i">11. 未成年人保护</span><span class="lang-en-i">11. Children's Privacy</span><span class="lang-ja-i">11. 未成年者の保護</span><span class="lang-ko-i">11. 미성년자 보호</span></h2>
+<p><span class="lang-zh-i">本服务面向年满 13 周岁及以上的用户。我们不会故意收集低于该年龄未成年人的信息。如您认为您的子女向我们提供了信息，请立即联系我们，我们将尽快删除。</span><span class="lang-en-i">This Service is intended for users aged 13 and above. We do not knowingly collect information from minors below this age. If you believe your child has provided us with information, please contact us immediately, and we will delete it as soon as possible.</span><span class="lang-ja-i">本サービスは満13歳以上のユーザーを対象としています。当社は当該年齢に満たない未成年者から意図的に情報を収集することはありません。お客様のお子様が当社に情報を提供したと思われる場合は、直ちにご連絡ください。当社は速やかに削除いたします。</span><span class="lang-ko-i">본 서비스는 만 13세 이상의 사용자를 대상으로 합니다. 당사는 해당 연령 미만의 미성년자로부터 고의로 정보를 수집하지 않습니다. 귀하의 자녀가 당사에 정보를 제공한 것으로 판단되시면 즉시 연락해 주십시오. 당사는 신속히 삭제하겠습니다.</span></p>
+
+<h2><span class="lang-zh-i">12. 第三方链接与服务</span><span class="lang-en-i">12. Third-party Links and Services</span><span class="lang-ja-i">12. サードパーティのリンクとサービス</span><span class="lang-ko-i">12. 제3자 링크 및 서비스</span></h2>
+<p><span class="lang-zh-i">本服务可能包含第三方链接或与第三方服务集成。本政策仅适用于我们直接收集的信息。我们不对第三方的数据实践负责，建议您在使用前查阅其政策。</span><span class="lang-en-i">This Service may contain third-party links or integrate with third-party services. This Policy applies only to information we collect directly. We are not responsible for the data practices of third parties; we recommend that you review their policies before use.</span><span class="lang-ja-i">本サービスにはサードパーティのリンクが含まれる、またはサードパーティのサービスと統合される場合があります。本ポリシーは当社が直接収集する情報にのみ適用されます。当社はサードパーティのデータ慣行について責任を負いません。ご利用前に各社のポリシーを確認することをお勧めします。</span><span class="lang-ko-i">본 서비스에는 제3자 링크가 포함되거나 제3자 서비스와 통합될 수 있습니다. 본 방침은 당사가 직접 수집하는 정보에만 적용됩니다. 당사는 제3자의 데이터 관행에 대해 책임지지 않으며, 사용 전 해당 정책을 확인하시기를 권장합니다.</span></p>
+
+<h2><span class="lang-zh-i">13. 本政策的变更</span><span class="lang-en-i">13. Changes to This Policy</span><span class="lang-ja-i">13. 本ポリシーの変更</span><span class="lang-ko-i">13. 본 방침의 변경</span></h2>
+<p><span class="lang-zh-i">如发生重大变更，我们将至少提前 15 天通过平台公告或您的注册邮箱通知您，并更新本页顶部的"最后更新"日期。生效日后继续使用即视为接受。</span><span class="lang-en-i">In the event of material changes, we will notify you at least 15 days in advance via platform announcement or your registered email, and update the "last updated" date at the top of this page. Continued use after the effective date constitutes acceptance.</span><span class="lang-ja-i">重要な変更が生じた場合、当社は少なくとも15日前までにプラットフォーム公告または登録メールアドレスにて通知し、本ページ上部の「最終更新」日を更新します。発効日以降の継続利用をもって承諾とみなします。</span><span class="lang-ko-i">중대한 변경이 발생할 경우, 당사는 최소 15일 전까지 플랫폼 공지 또는 귀하의 등록 이메일로 알려드리고, 본 페이지 상단의 "최종 업데이트" 일자를 갱신합니다. 발효일 이후 계속 이용하면 동의한 것으로 간주됩니다.</span></p>
+
+<h2><span class="lang-zh-i">14. 联系我们</span><span class="lang-en-i">14. Contact Us</span><span class="lang-ja-i">14. お問い合わせ</span><span class="lang-ko-i">14. 문의하기</span></h2>
+<ul>
+  <li><span class="lang-zh-i">隐私联系邮箱：</span><span class="lang-en-i">Privacy Contact Email: </span><span class="lang-ja-i">プライバシー連絡先メール：</span><span class="lang-ko-i">개인정보 연락처 이메일: </span>privacy@SeasX.ai</li>
+  <li><span class="lang-zh-i">客户支持邮箱：</span><span class="lang-en-i">Customer Support Email: </span><span class="lang-ja-i">カスタマーサポートメール：</span><span class="lang-ko-i">고객 지원 이메일: </span>support@SeasX.ai</li>
+  <li><span class="lang-zh-i">公司名称：</span><span class="lang-en-i">Company Name: </span><span class="lang-ja-i">会社名：</span><span class="lang-ko-i">회사명: </span>SEASXAI TECHNOLOGY LIMITED</li>
+  <li><span class="lang-zh-i">服务时间：周一至周五 09:00–18:00 UTC+8</span><span class="lang-en-i">Service Hours: Monday to Friday 09:00–18:00 UTC+8</span><span class="lang-ja-i">営業時間：月曜～金曜 09:00–18:00 UTC+8</span><span class="lang-ko-i">서비스 시간: 월요일~금요일 09:00–18:00 UTC+8</span></li>
+</ul>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <p class="footer-copy">© 2026 SeasAGI. <span class="lang-zh-i">客户端 GPL 3.0</span><span class="lang-en-i">Client GPL 3.0</span><span class="lang-ja-i">クライアント GPL 3.0</span><span class="lang-ko-i">클라이언트 GPL 3.0</span> · <span class="lang-zh-i">云端社区版 AGPL 3.0</span><span class="lang-en-i">Cloud Community Edition AGPL 3.0</span><span class="lang-ja-i">クラウドコミュニティ版 AGPL 3.0</span><span class="lang-ko-i">클라우드 커뮤니티판 AGPL 3.0</span> · <span class="lang-zh-i">企业版闭源</span><span class="lang-en-i">Enterprise Edition Closed-source</span><span class="lang-ja-i">エンタープライズ版クローズドソース</span><span class="lang-ko-i">엔터프라이즈판 클로즈드 소스</span> · <a href="./terms.html"><span class="lang-zh-i">服务条款</span><span class="lang-en-i">Terms of Service</span><span class="lang-ja-i">利用規約</span><span class="lang-ko-i">서비스 약관</span></a> · <a href="./privacy.html"><span class="lang-zh-i">隐私政策</span><span class="lang-en-i">Privacy Policy</span><span class="lang-ja-i">プライバシーポリシー</span><span class="lang-ko-i">개인정보 처리방침</span></a></p>
+  </div>
+</footer>
+
+<script>
+var _langCycle=["zh","en","ja","ko"];
+var _langBtn={zh:"EN",en:"日本語",ja:"한국어",ko:"中文"};
+var _langHtml={zh:"zh-CN",en:"en",ja:"ja",ko:"ko"};
+function toggleLang(){var b=document.body;var cur="zh";for(var i=0;i<_langCycle.length;i++){if(b.classList.contains("lang-"+_langCycle[i])){cur=_langCycle[i];break;}}var nxt=_langCycle[(_langCycle.indexOf(cur)+1)%_langCycle.length];for(var j=0;j<_langCycle.length;j++){b.classList.remove("lang-"+_langCycle[j]);}if(nxt!=="zh"){b.classList.add("lang-"+nxt);}document.getElementById("langToggle").textContent=_langBtn[nxt];document.documentElement.lang=_langHtml[nxt];}
+</script>
+</body>
+</html>

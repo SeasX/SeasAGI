@@ -1,0 +1,23 @@
+[Unit]
+Description=SeasAGI Relay Gateway
+After=network.target seasagi-platform-api.service
+Wants=network-online.target
+Requires=seasagi-platform-api.service
+
+[Service]
+Type=simple
+User=seasagi
+Group=seasagi
+WorkingDirectory=/opt/seasagi/relay-gateway
+ExecStart=/opt/seasagi/relay-gateway/relay-gateway
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+Environment=RELAY_PORT=8318
+Environment=GIN_MODE=release
+Environment=PLATFORM_API_URL=http://127.0.0.1:9318
+EnvironmentFile=-/etc/seasagi/relay-gateway.env
+
+[Install]
+WantedBy=multi-user.target

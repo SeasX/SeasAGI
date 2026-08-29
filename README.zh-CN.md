@@ -12,11 +12,11 @@
 
 SeasAGI 是一个分层的 AI 网关平台，由三个子项目组成：
 
-| 子项目 | 许可证 | 说明 |
-|--------|--------|------|
-| `SeasAGI-Client/` | **GPL 3.0** 完全开源 | 原生桌面客户端（Wails + Go + React），本地统一网关，API Keys 永不上传 |
-| `SeasAGI-Server/` | **AGPL 3.0** 开源自部署 | 社区版云端控制面，基础认证 / Combo CRUD / 基础用量 / 基础中继转发 |
-| `SeasAGI-Server-Enterprise/` | 闭源 | 企业版云端，包含 Stripe 计费 / 多租户治理 / Combo 治理审批 / 管理后台。详见 [企业版 README](SeasAGI-Server-Enterprise/README.md) |
+| 子项目 | 许可证 | 构建 | 说明 |
+|--------|--------|------|------|
+| `SeasAGI-Client/` | **GPL 3.0** 完全开源 | [![Build status](https://ci.appveyor.com/api/projects/status/github/Neeke/SeasAGI?svg=true)](https://ci.appveyor.com/project/Neeke/SeasAGI) | 原生桌面客户端（Wails + Go + React），本地统一网关，API Keys 永不上传 |
+| `SeasAGI-Server/` | **AGPL 3.0** 开源自部署 | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | 社区版云端控制面：认证 / 渠道 / Provider 资源池 / 模型目录 / Combo CRUD / 用量 / 内嵌管理后台 / 基础中继转发 |
+| `SeasAGI-Server-Enterprise/` | 闭源 | — | 企业版云端，包含 Stripe 计费 / 多租户治理 / Combo 治理审批 / 管理后台。详见 [企业版 README](SeasAGI-Server-Enterprise/README.md) |
 
 客户端可以**独立运行** — 所有本地网关功能无需服务端即可使用。云端是可选增值服务，提供远程加速渠道、用量同步、团队协作和企业治理。
 
@@ -45,13 +45,18 @@ SeasAGI 是一个分层的 AI 网关平台，由三个子项目组成：
 
 | 能力 | 说明 |
 |------|------|
-| 基础认证 | 登录 / 注册 / Token 刷新 |
-| 基础渠道管理 | 平台渠道 CRUD |
+| 基础认证 | 登录 / 注册 / Token 刷新（bcrypt + JWT HS256） |
+| 基础渠道管理 | 平台渠道 CRUD，API Keys 使用 AES-256-GCM 加密 |
+| Provider 资源池 | 每渠道 API Key / 区域 / 环境资源，支持健康 + 权重 + 优先级选择 |
+| 模型目录 | 模型元数据（上下文窗口 / 价格 / 模态）从 `model-catalog.yaml` 加载 |
 | 基础 Combo | 用户级 Combo CRUD + 官方模板获取 |
 | 基础用量统计 | 用户用量，按模型/渠道分组，时间线，错误分布 |
 | 基础租户管理 | 成员、邀请链接、自定义渠道同步、配置快照 |
+| 内嵌管理后台 | `/admin` SPA — 仪表盘 / 用户 / 用量 / 中继网关 / 渠道 / Combo / Token 市场 |
+| SQLite 备份 | 在线备份（`VACUUM INTO`）/ SHA-256 校验 / 恢复 |
 | 基础管理 API | 用户 / 方案 / 渠道 / Combo / 中继网关管理 |
-| 中继基础转发 | 请求透传、健康检查、限流、链路追踪 |
+| i18n | zh-CN / en / ja / ko |
+| 中继基础转发 | 请求透传、健康检查、限流、链路追踪、模型目录 |
 
 ---
 
@@ -115,12 +120,17 @@ SeasAGI/
 ├── SeasAGI-Server/                开源服务端社区版 (AGPL 3.0)
 │   ├── platform-api/               社区控制面
 │   ├── relay-gateway/              社区中继数据面
+│   ├── src-admin/                  管理后台前端（7 个页面）
+│   ├── data/                       模型目录 (model-catalog.yaml)
+│   ├── locales/                    i18n 语言文件 (zh-CN/en/ja/ko)
 │   ├── deploy/                     部署脚本 + systemd + nginx
 │   └── scripts/                    构建脚本
-├── web-docs/                      官网与文档
-│   ├── src-web/                    静态网站
-│   └── ...
-├── build-all.sh                   一键构建脚本
+├── src-web/                       官网（静态 HTML）
+│   ├── index.html                  落地页
+│   └── assets/                     图标与图片
+├── test-all.sh                    全量测试入口
+├── test-client.sh                 客户端测试
+├── test-server.sh                 服务端测试
 ├── SeasAGI.v5.md                  一页纸摘要
 ```
 

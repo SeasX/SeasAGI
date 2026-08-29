@@ -1,0 +1,25 @@
+build/bin
+node_modules
+frontend/dist
+vendor/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+*.env
+
+# Build artifacts
+*.exe
+*.dmg
+*.log
+tmp/

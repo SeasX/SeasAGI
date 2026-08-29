@@ -12,11 +12,11 @@
 
 SeasAGI は 3 つのサブプロジェクトから構成される階層型 AI ゲートウェイプラットフォームです：
 
-| サブプロジェクト | ライセンス | 説明 |
-|-------------|---------|-------------|
-| `SeasAGI-Client/` | **GPL 3.0** 完全オープンソース | ネイティブデスクトップクライアント（Wails + Go + React）、ローカル統合ゲートウェイ、API Keys はアップロードされない |
-| `SeasAGI-Server/` | **AGPL 3.0** オープンソース セルフホスト可能 | コミュニティエディションクラウドコントロールプレーン、基本認証 / Combo CRUD / 基本使用量 / 基本リレーフォワーディング |
-| `SeasAGI-Server-Enterprise/` | クローズドソース | エンタープライズエディションクラウド、Stripe 課金 / マルチテナントガバナンス / Combo ガバナンス承認 / 管理ダッシュボードを含む。[エンタープライズ README](SeasAGI-Server-Enterprise/README.md) を参照 |
+| サブプロジェクト | ライセンス | ビルド | 説明 |
+|-------------|---------|-------|-------------|
+| `SeasAGI-Client/` | **GPL 3.0** 完全オープンソース | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | ネイティブデスクトップクライアント（Wails + Go + React）、ローカル統合ゲートウェイ、API Keys はアップロードされない |
+| `SeasAGI-Server/` | **AGPL 3.0** オープンソース セルフホスト可能 | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | コミュニティエディションクラウドコントロールプレーン：認証 / チャネル / Provider リソースプール / モデルカタログ / Combo CRUD / 使用量 / 組み込み管理ダッシュボード / 基本リレーフォワーディング |
+| `SeasAGI-Server-Enterprise/` | クローズドソース | — | エンタープライズエディションクラウド、Stripe 課金 / マルチテナントガバナンス / Combo ガバナンス承認 / 管理ダッシュボードを含む。[エンタープライズ README](SeasAGI-Server-Enterprise/README.md) を参照 |
 
 クライアントは**単体で動作**可能 — すべてのローカルゲートウェイ機能は Server なしで動作します。クラウドはリモート高速チャネル、使用量同期、チーム協調、エンタープライズガバナンスを提供するオプションの付加価値サービスです。
 
@@ -45,13 +45,18 @@ SeasAGI は 3 つのサブプロジェクトから構成される階層型 AI �
 
 | 機能 | 説明 |
 |------------|-------------|
-| 基本認証 | ログイン / 登録 / トークンリフレッシュ |
-| 基本チャネル管理 | プラットフォームチャネル CRUD |
+| 基本認証 | ログイン / 登録 / トークンリフレッシュ（bcrypt + JWT HS256） |
+| 基本チャネル管理 | プラットフォームチャネル CRUD、API Keys は AES-256-GCM で暗号化 |
+| Provider リソースプール | チャネルごとの API Key / リージョン / 環境リソース、ヘルス + ウェイト + 優先度選択 |
+| モデルカタログ | モデルメタデータ（コンテキストウィンドウ / 価格 / モダリティ）を `model-catalog.yaml` からロード |
 | 基本 Combo | ユーザーレベル Combo CRUD + 公式テンプレート取得 |
 | 基本使用量統計 | ユーザー使用量、モデル/チャネル別グループ、タイムライン、エラー分布 |
 | 基本テナント管理 | メンバー、招待リンク、カスタムチャネル同期、設定スナップショット |
+| 組み込み管理ダッシュボード | `/admin` SPA — ダッシュボード / ユーザー / 使用量 / Relay ゲートウェイ / チャネル / Combo / Token マーケット |
+| SQLite バックアップ | オンラインバックアップ（`VACUUM INTO`）/ SHA-256 検証 / 復元 |
 | 基本管理 API | ユーザー / プラン / チャネル / Combo / Relay ゲートウェイ管理 |
-| Relay 基本フォワーディング | リクエストパススルー、ヘルスチェック、レート制限、トレース |
+| i18n | zh-CN / en / ja / ko |
+| Relay 基本フォワーディング | リクエストパススルー、ヘルスチェック、レート制限、トレース、モデルカタログ |
 
 ---
 
@@ -115,12 +120,17 @@ SeasAGI/
 ├── SeasAGI-Server/                オープンソースサーバーコミュニティエディション (AGPL 3.0)
 │   ├── platform-api/               コミュニティコントロールプレーン
 │   ├── relay-gateway/              コミュニティリレーデータプレーン
+│   ├── src-admin/                  管理ダッシュボードフロントエンド（7 ページ）
+│   ├── data/                       モデルカタログ (model-catalog.yaml)
+│   ├── locales/                    i18n 言語ファイル (zh-CN/en/ja/ko)
 │   ├── deploy/                     デプロイスクリプト + systemd + nginx
 │   └── scripts/                    ビルドスクリプト
-├── web-docs/                      公式サイト & ドキュメント
-│   ├── src-web/                    静的サイト
-│   └── ...
-├── build-all.sh                   ワンクリックビルドスクリプト
+├── src-web/                       公式サイト（静的 HTML）
+│   ├── index.html                  ランディングページ
+│   └── assets/                     アイコン & 画像
+├── test-all.sh                    全テストスイートエントリ
+├── test-client.sh                 クライアントテスト
+├── test-server.sh                 サーバーテスト
 ├── SeasAGI.v5.md                  一ページサマリー
 ```
 

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+
+  <url>
+    <loc>https://SeasAGI.SeasX.ai/</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://SeasAGI.SeasX.ai/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://SeasAGI.SeasX.ai/en/"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://SeasAGI.SeasX.ai/ja/"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="https://SeasAGI.SeasX.ai/ko/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://SeasAGI.SeasX.ai/"/>
+  </url>
+
+  <url>
+    <loc>https://SeasAGI.SeasX.ai/#features</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <url>
+    <loc>https://SeasAGI.SeasX.ai/#compare</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <url>
+    <loc>https://SeasAGI.SeasX.ai/#pricing</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <url>
+    <loc>https://SeasAGI.SeasX.ai/#channels</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <url>
+    <loc>https://SeasAGI.SeasX.ai/#faq</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+  <url>
+    <loc>https://github.com/SeasX/SeasAGI</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <url>
+    <loc>https://github.com/SeasX/SeasAGI/releases</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+</urlset>

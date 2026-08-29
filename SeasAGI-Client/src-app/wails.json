@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "SeasAGI",
+  "outputfilename": "SeasAGI",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "neeke",
+    "email": "neeke@php.net"
+  },
+  "info": {
+    "companyName": "SeasAGI",
+    "productName": "SeasAGI",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright © 2025 SeasAGI. All rights reserved.",
+    "comments": "SeasAGI - 本地大模型通道切换客户端"
+  }
+}

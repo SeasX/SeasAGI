@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+
+# Block API endpoints from indexing
+Disallow: /api/
+
+# Important pages
+Allow: /$
+Allow: /index.html
+
+# Sitemap
+Sitemap: https://SeasAGI.SeasX.ai/sitemap.xml
+
+# Crawl delay for polite crawling
+Crawl-delay: 1

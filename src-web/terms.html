@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="./assets/favicon.png">
+<title>服务条款 — SeasAGI</title>
+<meta name="description" content="SeasAGI 服务条款 — AI 服务的使用条款、计费政策、退款政策与联系方式。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://SeasAGI.SeasX.ai/terms.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary:#0A0F1A; --bg-surface:#121726; --bg-card:#1A2136;
+  --accent:#22C55E; --accent-light:#4ADE80; --accent-cyan:#06B6D4;
+  --text-primary:#F7FAFC; --text-secondary:#94A3B8; --text-muted:#64748B;
+  --border-subtle:#1F293B;
+  --radius-sm:10px; --radius-md:16px;
+  --font-sans:"Noto Sans SC","Geist",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:"Geist Mono",ui-monospace,monospace;
+  --maxw:860px;
+}
+*,*::before,*::after{box-sizing:border-box;}
+html{scroll-behavior:smooth;scroll-padding-top:80px;}
+body{margin:0;font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-primary);line-height:1.8;-webkit-font-smoothing:antialiased;}
+a{color:var(--accent-light);text-decoration:none;}
+a:hover{text-decoration:underline;}
+img{display:block;max-width:100%;}
+h1,h2,h3,h4,p{margin:0;}
+.container{max-width:var(--maxw);margin:0 auto;padding:0 24px;}
+
+/* Header */
+.site-header{position:sticky;top:0;z-index:100;background:rgba(10,15,26,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border-subtle);}
+.header-inner{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;max-width:var(--maxw);margin:0 auto;}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;}
+.brand img{width:32px;height:32px;}
+.back-link{font-size:14px;color:var(--text-secondary);transition:color .2s;}
+.back-link:hover{color:var(--accent-light);text-decoration:none;}
+.lang-btn{background:var(--bg-card);border:1px solid var(--border-subtle);color:var(--text-primary);border-radius:8px;padding:8px 12px;font-size:14px;font-weight:500;transition:border-color .15s ease,color .15s ease;}
+.lang-btn:hover{border-color:var(--accent);color:var(--accent-light);}
+
+/* Content */
+.legal-content{padding:48px 0 80px;}
+.legal-content h1{font-size:32px;font-weight:700;margin-bottom:8px;}
+.legal-meta{color:var(--text-muted);font-size:14px;margin-bottom:40px;padding-bottom:24px;border-bottom:1px solid var(--border-subtle);}
+.legal-content h2{font-size:22px;font-weight:600;margin-top:40px;margin-bottom:16px;color:var(--accent-light);}
+.legal-content h3{font-size:17px;font-weight:600;margin-top:28px;margin-bottom:12px;color:var(--text-primary);}
+.legal-content p{margin-bottom:14px;color:var(--text-secondary);}
+.legal-content ul{margin:0 0 16px;padding-left:20px;}
+.legal-content li{margin-bottom:8px;color:var(--text-secondary);}
+.legal-content strong{color:var(--text-primary);}
+.legal-content .callout{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:16px 20px;margin:20px 0;font-size:14px;color:var(--text-secondary);}
+.legal-content .callout strong{color:var(--accent-light);}
+
+/* Footer */
+.site-footer{border-top:1px solid var(--border-subtle);padding:32px 0;text-align:center;}
+.footer-copy{color:var(--text-muted);font-size:13px;}
+.footer-copy a{margin:0 6px;}
+
+/* zh/en/ja/ko toggle */
+.lang-en-i,.lang-ja-i,.lang-ko-i{display:none;}
+body.lang-en .lang-zh-i{display:none;}
+body.lang-en .lang-en-i{display:inline;}
+body.lang-ja .lang-zh-i{display:none;}
+body.lang-ja .lang-ja-i{display:inline;}
+body.lang-ko .lang-zh-i{display:none;}
+body.lang-ko .lang-ko-i{display:inline;}
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="./index.html" class="brand">
+      <img src="./assets/seasagi-icon.png" alt="SeasAGI Logo">
+      <span>SeasAGI</span>
+    </a>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <button class="lang-btn" id="langToggle" onclick="toggleLang()">EN</button>
+      <a href="./index.html" class="back-link">← <span class="lang-zh-i">返回首页</span><span class="lang-en-i">Back to Home</span><span class="lang-ja-i">ホームに戻る</span><span class="lang-ko-i">홈으로</span></a>
+    </div>
+  </div>
+</header>
+
+<main class="container legal-content">
+
+<h1><span class="lang-zh-i">服务条款</span><span class="lang-en-i">Terms of Service</span><span class="lang-ja-i">利用規約</span><span class="lang-ko-i">이용약관</span></h1>
+<p class="legal-meta"><span class="lang-zh-i">最后更新：2026-08-22 · SeasAGI · </span><span class="lang-en-i">Last updated: 2026-08-22 · SeasAGI · </span><span class="lang-ja-i">最終更新：2026-08-22 · SeasAGI · </span><span class="lang-ko-i">최종 업데이트: 2026-08-22 · SeasAGI · </span><a href="https://SeasAGI.SeasX.ai">https://SeasAGI.SeasX.ai</a></p>
+
+<h2><span class="lang-zh-i">1. 条款接受</span><span class="lang-en-i">1. Terms Acceptance</span><span class="lang-ja-i">1. 条項の承諾</span><span class="lang-ko-i">1. 약관 승낙</span></h2>
+<p><span class="lang-zh-i">欢迎使用 SeasAGI（以下简称"SeasAGI"、"我们"或"本公司"）。本公司依据新加坡法律注册成立。本服务条款（"条款"）规范您对我们 AI 服务的访问和使用，该服务包括本地 LLM API 智能网关、渠道管理、智能路由及 Token 市场等功能，可通过 </span><span class="lang-en-i">Welcome to SeasAGI (hereinafter referred to as "SeasAGI", "we", or "the Company"). The Company is incorporated under the laws of Singapore. These Terms of Service (the "Terms") govern your access to and use of our AI services, which include features such as local LLM API intelligent gateway, channel management, intelligent routing, and Token marketplace, accessible via </span><span class="lang-ja-i">SeasAGI（以下「SeasAGI」「当社」または「当社」といいます）へようこそ。当社はシンガポール法に基づき設立されました。本利用規約（「本規約」）は、ローカル LLM API インテリジェントゲートウェイ、チャネル管理、インテリジェントルーティング、Token マーケットプレースなどの機能を含む、当社の AI サービスへのアクセスおよび使用について規定するものであり、</span><span class="lang-ko-i">SeasAGI(이하 "SeasAGI", "당사" 또는 "회사"라 함)에 오신 것을 환영합니다. 당사는 싱가포르 법률에 따라 설립되었습니다. 본 이용약관("약관")은 로컬 LLM API 지능형 게이트웨이, 채널 관리, 지능형 라우팅 및 Token 마켓플레이스 등의 기능을 포함하는 당사의 AI 서비스에 대한 귀하의 접근 및 사용을 규율하며, </span><a href="https://SeasAGI.SeasX.ai">https://SeasAGI.SeasX.ai</a><span class="lang-zh-i"> 访问（"服务"）。</span><span class="lang-en-i"> (the "Service").</span><span class="lang-ja-i"> からアクセスできます（「本サービス」）。</span><span class="lang-ko-i"> 를 통해 접속할 수 있습니다("서비스").</span></p>
+<p><span class="lang-zh-i">建立账户、订阅方案、购买积分或以其他方式使用本服务，即表示您：（a）已年满 18 周岁；（b）已阅读、理解并同意受本条款约束；（c）同意我们的</span><span class="lang-en-i">By creating an account, subscribing to a plan, purchasing credits, or otherwise using the Service, you represent that you: (a) are at least 18 years of age; (b) have read, understood, and agree to be bound by these Terms; (c) agree to our </span><span class="lang-ja-i">アカウントの作成、プランの購読、クレジットの購入、またはその他の方法での本サービスの使用をもって、あなたは以下のことを表明します：（a）18歳以上であること；（b）本規約を読み、理解し、これに拘束されることに同意すること；（c）当社の</span><span class="lang-ko-i">계정 생성, 플랜 구독, 크레딧 구매 또는 기타 방법으로 서비스를 사용함으로써, 귀하는 다음을 진술합니다: (a) 만 18세 이상임; (b) 약관을 읽고 이해하며 이에 구속되는 것에 동의함; (c) 당사의 </span><a href="./privacy.html"><span class="lang-zh-i">隐私政策</span><span class="lang-en-i">Privacy Policy</span><span class="lang-ja-i">プライバシーポリシー</span><span class="lang-ko-i">개인정보처리방침</span></a><span class="lang-zh-i">；以及（d）有权代表自身或所属机构签署本协议。</span><span class="lang-en-i">; and (d) have the authority to enter into this agreement on your own behalf or on behalf of your organization.</span><span class="lang-ja-i">；および（d）自身または所属する組織を代表して本契約を締結する権限を有すること。</span><span class="lang-ko-i">; 그리고 (d) 본인 또는 소속 조직을 대표하여 본 계약을 체결할 권한을 가짐.</span></p>
+<div class="callout"><strong><span class="lang-zh-i">⚠️ 重要提示：</span><span class="lang-en-i">⚠️ Important:</span><span class="lang-ja-i">⚠️ 重要：</span><span class="lang-ko-i">⚠️ 중요:</span></strong><span class="lang-zh-i">如不同意本条款，请停止使用本服务。条款更新后继续使用即表示接受修订后的条款。</span><span class="lang-en-i">If you do not agree to these Terms, please stop using the Service. Continued use after updates constitutes acceptance of the revised Terms.</span><span class="lang-ja-i">本規約に同意しない場合は、本サービスの使用を中止してください。更新後も継続して使用することは、改訂された規約への承諾を意味します。</span><span class="lang-ko-i">본 약관에 동의하지 않는 경우, 서비스 사용을 중단해 주십시오. 업데이트 후 계속 사용하면 개정된 약관에 동의한 것으로 간주됩니다.</span></div>
+
+<h2><span class="lang-zh-i">2. 服务说明</span><span class="lang-en-i">2. Service Description</span><span class="lang-ja-i">2. サービスの説明</span><span class="lang-ko-i">2. 서비스 설명</span></h2>
+<h3><span class="lang-zh-i">2.1 我们提供的服务</span><span class="lang-en-i">2.1 Services We Provide</span><span class="lang-ja-i">2.1 当社が提供するサービス</span><span class="lang-ko-i">2.1 당사가 제공하는 서비스</span></h3>
+<p><span class="lang-zh-i">SeasAGI 提供以 AI 技术为核心的平台，让用户能够统一管理 OpenAI、Anthropic、Gemini、DeepSeek、Ollama 等多个 AI 提供商的渠道，实现智能路由、自动降级、成本看板及 Token 交易市场等功能。本服务为通过互联网提供的数字软件即服务（SaaS）产品。</span><span class="lang-en-i">SeasAGI provides an AI-centric platform that enables users to centrally manage channels across multiple AI providers, including OpenAI, Anthropic, Gemini, DeepSeek, and Ollama, with features such as intelligent routing, automatic fallback, cost dashboards, and a Token marketplace. The Service is a digital Software-as-a-Service (SaaS) product delivered over the internet.</span><span class="lang-ja-i">SeasAGI は、AI 技術を中核とするプラットフォームを提供し、ユーザーは OpenAI、Anthropic、Gemini、DeepSeek、Ollama など複数の AI プロバイダーのチャネルを一元管理し、インテリジェントルーティング、自動フェイルオーバー、コストダッシュボード、Token 取引市場などの機能を実現できます。本サービスはインターネット経由で提供されるデジタル SaaS（Software-as-a-Service）製品です。</span><span class="lang-ko-i">SeasAGI 는 AI 기술을 핵심으로 하는 플랫폼을 제공하여, 사용자가 OpenAI, Anthropic, Gemini, DeepSeek, Ollama 등 여러 AI 제공자의 채널을 통합 관리하고, 지능형 라우팅, 자동 장애 조치, 비용 대시보드 및 Token 거래 마켓 등의 기능을 구현할 수 있도록 합니다. 본 서비스는 인터넷을 통해 제공되는 디지털 SaaS(Software-as-a-Service) 제품입니다.</span></p>
+<h3><span class="lang-zh-i">2.2 服务性质</span><span class="lang-en-i">2.2 Nature of Service</span><span class="lang-ja-i">2.2 サービスの性質</span><span class="lang-ko-i">2.2 서비스의 성격</span></h3>
+<p><span class="lang-zh-i">本服务为数字无形产品。付款确认后即时开通服务访问权限。由于数字服务的即时交付性质，退款适用特定限制，详见第 7 条。</span><span class="lang-en-i">The Service is a digital, intangible product. Access to the Service is granted immediately upon payment confirmation. Due to the instant delivery nature of digital services, refunds are subject to specific limitations as detailed in Section 7.</span><span class="lang-ja-i">本サービスはデジタルの無形製品です。支払いの確認後、直ちに本サービスへのアクセス権が付与されます。デジタルサービスの即時提供の性質上、返金には特定の制限が適用されます。詳細は第 7 条を参照してください。</span><span class="lang-ko-i">본 서비스는 디지털 무형 제품입니다. 결제 확인 즉시 서비스 접근 권한이 부여됩니다. 디지털 서비스의 즉시 전달 특성상 환불에는 특정 제한이 적용됩니다. 자세한 내용은 제7조를 참조하십시오.</span></p>
+<h3><span class="lang-zh-i">2.3 AI 模型依赖</span><span class="lang-en-i">2.3 AI Model Dependencies</span><span class="lang-ja-i">2.3 AI モデルへの依存</span><span class="lang-ko-i">2.3 AI 모델 의존성</span></h3>
+<p><span class="lang-zh-i">本服务使用第三方 AI 模型提供商，包括 OpenAI、Anthropic、Google 等。本服务的性能和可用性可能受这些提供商运营状态的影响。重大中断将及时通知用户。</span><span class="lang-en-i">The Service utilizes third-party AI model providers, including OpenAI, Anthropic, and Google. The performance and availability of the Service may be affected by the operational status of these providers. Significant disruptions will be communicated to users in a timely manner.</span><span class="lang-ja-i">本サービスは OpenAI、Anthropic、Google などの第三者 AI モデルプロバイダーを使用しています。本サービスのパフォーマンスと可用性は、これらのプロバイダーの運用状況の影響を受ける可能性があります。重大な障害が発生した場合、ユーザーに速やかに通知します。</span><span class="lang-ko-i">본 서비스는 OpenAI, Anthropic, Google 등 제3자 AI 모델 제공자를 사용합니다. 본 서비스의 성능과 가용성은 이러한 제공자의 운영 상태의 영향을 받을 수 있습니다. 중대한 장애 발생 시 사용자에게 시의적절하게 통지합니다.</span></p>
+
+<h2><span class="lang-zh-i">3. 账号注册</span><span class="lang-en-i">3. Account Registration</span><span class="lang-ja-i">3. アカウント登録</span><span class="lang-ko-i">3. 계정 등록</span></h2>
+<h3><span class="lang-zh-i">3.1 账号创建</span><span class="lang-en-i">3.1 Account Creation</span><span class="lang-ja-i">3.1 アカウントの作成</span><span class="lang-ko-i">3.1 계정 생성</span></h3>
+<p><span class="lang-zh-i">使用本服务需要使用准确、完整的信息创建账户。您有责任保守登录凭据的保密性，并对账户下的所有操作负责。</span><span class="lang-en-i">Using the Service requires creating an account with accurate and complete information. You are responsible for maintaining the confidentiality of your login credentials and for all activities performed under your account.</span><span class="lang-ja-i">本サービスを使用するには、正確かつ完全な情報でアカウントを作成する必要があります。ログイン認証情報の機密性を維持し、アカウント下で行われるすべての操作に対して責任を負います。</span><span class="lang-ko-i">서비스를 사용하려면 정확하고 완전한 정보로 계정을 생성해야 합니다. 귀하는 로그인 자격 증명의 기밀성을 유지하고, 계정에서 수행되는 모든 활동에 대해 책임을 집니다.</span></p>
+<h3><span class="lang-zh-i">3.2 账号安全</span><span class="lang-en-i">3.2 Account Security</span><span class="lang-ja-i">3.2 アカウントのセキュリティ</span><span class="lang-ko-i">3.2 계정 보안</span></h3>
+<ul>
+  <li><span class="lang-zh-i">发现未经授权使用，立即联系 security@SeasAGI.ai。</span><span class="lang-en-i">If you discover unauthorized use, contact security@SeasAGI.ai immediately.</span><span class="lang-ja-i">不正使用を発見した場合は、直ちに security@SeasAGI.ai にご連絡ください。</span><span class="lang-ko-i">무단 사용을 발견한 경우, 즉시 security@SeasAGI.ai 에 연락하십시오.</span></li>
+  <li><span class="lang-zh-i">不得将登录凭据共享给任何第三方。</span><span class="lang-en-i">Do not share your login credentials with any third party.</span><span class="lang-ja-i">ログイン認証情報を第三者に共有しないでください。</span><span class="lang-ko-i">로그인 자격 증명을 제3자와 공유하지 마십시오.</span></li>
+  <li><span class="lang-zh-i">请确保账单邮箱地址持续有效。</span><span class="lang-en-i">Please ensure your billing email address remains valid.</span><span class="lang-ja-i">請求先メールアドレスが引き続き有効であることを確認してください。</span><span class="lang-ko-i">청구용 이메일 주소가 계속 유효하도록 유지하십시오.</span></li>
+</ul>
+<h3><span class="lang-zh-i">3.3 企业账号</span><span class="lang-en-i">3.3 Enterprise Accounts</span><span class="lang-ja-i">3.3 エンタープライズアカウント</span><span class="lang-ko-i">3.3 기업 계정</span></h3>
+<p><span class="lang-zh-i">如代表公司或组织注册，您声明已获授权代表该实体签署本协议。</span><span class="lang-en-i">If registering on behalf of a company or organization, you represent that you are authorized to enter into this agreement on behalf of that entity.</span><span class="lang-ja-i">会社や組織を代表して登録する場合、あなたは当該団体を代表して本契約を締結する権限を有することを表明します。</span><span class="lang-ko-i">회사 또는 조직을 대표하여 등록하는 경우, 귀하는 해당 단체를 대표하여 본 계약을 체결할 권한이 있음을 진술합니다.</span></p>
+
+<h2><span class="lang-zh-i">4. 方案与积分</span><span class="lang-en-i">4. Plans &amp; Credits</span><span class="lang-ja-i">4. プランとクレジット</span><span class="lang-ko-i">4. 플랜 및 크레딧</span></h2>
+<p><span class="lang-zh-i">我们同时提供订阅方案和积分包。提供 Free、Pro 和 Teams 三档订阅方案。用户也可在 Token 市场购买其他用户上架的 API 积分。当前方案详情和定价请访问 </span><span class="lang-en-i">We offer both subscription plans and credit packs. Three subscription tiers are available: Free, Pro, and Teams. Users may also purchase API credits listed by other users on the Token marketplace. For current plan details and pricing, please visit the </span><span class="lang-ja-i">当社はサブスクリプションプランとクレジットパックの両方を提供しています。Free、Pro、Teams の3つのサブスクリプションプランをご用意しています。ユーザーは Token マーケットプレースで他のユーザーが出品した API クレジットを購入することもできます。現在のプランの詳細と価格については、</span><span class="lang-ko-i">당사는 구독 플랜과 크레딧 팩을 모두 제공합니다. Free, Pro, Teams의 세 가지 구독 플랜이 제공됩니다. 사용자는 Token 마켓에서 다른 사용자가 등록한 API 크레딧을 구매할 수도 있습니다. 현재 플랜 세부 정보 및 가격은 </span><a href="./index.html#pricing"><span class="lang-zh-i">定价页面</span><span class="lang-en-i">Pricing page</span><span class="lang-ja-i">料金ページ</span><span class="lang-ko-i">가격 페이지</span></a><span class="lang-zh-i">。</span><span class="lang-en-i">.</span><span class="lang-ja-i">をご覧ください。</span><span class="lang-ko-i">를 참조하십시오.</span></p>
+
+<h2><span class="lang-zh-i">5. 计费与付款</span><span class="lang-en-i">5. Billing &amp; Payment</span><span class="lang-ja-i">5. 請求と支払い</span><span class="lang-ko-i">5. 청구 및 결제</span></h2>
+<h3><span class="lang-zh-i">5.1 订阅自动续费授权</span><span class="lang-en-i">5.1 Subscription Auto-Renewal Authorization</span><span class="lang-ja-i">5.1 サブスクリプションの自動更新承認</span><span class="lang-ko-i">5.1 구독 자동 갱신 승인</span></h3>
+<p><span class="lang-zh-i">订阅付费方案即表示您明确授权 SeasAGI 按周期向您的支付方式扣收对应订阅费用，直至您依第 6 条取消。您的订阅在每个计费周期结束时自动续费，除非您取消。年度订阅续费前，我们将提前发送通知。</span><span class="lang-en-i">By subscribing to a paid plan, you expressly authorize SeasAGI to charge your payment method the applicable subscription fees on a recurring basis until you cancel pursuant to Section 6. Your subscription automatically renews at the end of each billing cycle unless you cancel. For annual subscriptions, we will send a notification prior to renewal.</span><span class="lang-ja-i">有料プランを購読することにより、あなたは SeasAGI が第 6 条に基づく取消しまで、あなたの支払い方法に対して該当するサブスクリプション料金を周期的に請求することを明示的に承認します。あなたのサブスクリプションは、取消しない限り、各請求サイクルの終了時に自動的に更新されます。年間サブスクリプションの更新前に、当社から事前通知を送信します。</span><span class="lang-ko-i">유료 플랜을 구독함으로써, 귀하는 제6조에 따라 취소할 때까지 SeasAGI 가 귀하의 결제 수단에 해당 구독 요금을 주기적으로 청구하는 것을 명시적으로 승인합니다. 귀하의 구독은 취소하지 않는 한 각 청구 주기 종료 시 자동으로 갱신됩니다. 연간 구독 갱신 전에 당사는 사전 통지를 보냅니다.</span></p>
+<h3><span class="lang-zh-i">5.2 积分充值授权</span><span class="lang-en-i">5.2 Credit Purchase Authorization</span><span class="lang-ja-i">5.2 クレジットチャージ承認</span><span class="lang-ko-i">5.2 크레딧 충전 승인</span></h3>
+<p><span class="lang-zh-i">每次积分购买均为结账时经授权的一次性交易。</span><span class="lang-en-i">Each credit purchase is a one-time transaction authorized at checkout.</span><span class="lang-ja-i">クレジットの購入はすべて、チェックアウト時に承認された一回限りの取引です。</span><span class="lang-ko-i">각 크레딧 구매는 결제 시 승인된 일회성 거래입니다.</span></p>
+<h3><span class="lang-zh-i">5.3 自动充值授权</span><span class="lang-en-i">5.3 Auto-Recharge Authorization</span><span class="lang-ja-i">5.3 自動チャージ承認</span><span class="lang-ko-i">5.3 자동 충전 승인</span></h3>
+<p><span class="lang-zh-i">开启自动充值即授权 SeasAGI 在积分余额低于您配置的阈值时自动向您的支付方式扣款。您可随时关闭。</span><span class="lang-en-i">Enabling auto-recharge authorizes SeasAGI to automatically charge your payment method when your credit balance falls below the threshold you configure. You may turn this off at any time.</span><span class="lang-ja-i">自動チャージを有効にすると、クレジット残高が設定したしきい値を下回った際に、SeasAGI が自動的にあなたの支払い方法に請求することを承認したことになります。いつでもオフにできます。</span><span class="lang-ko-i">자동 충전을 활성화하면, 크레딧 잔액이 귀하가 설정한 임계값 미달 시 SeasAGI 가 자동으로 귀하의 결제 수단에 청구하는 것을 승인한 것입니다. 언제든지 비활성화할 수 있습니다.</span></p>
+<h3><span class="lang-zh-i">5.4 税费</span><span class="lang-en-i">5.4 Taxes</span><span class="lang-ja-i">5.4 税金</span><span class="lang-ko-i">5.4 세금</span></h3>
+<p><span class="lang-zh-i">除非另有说明，所列价格均不含适用税费。</span><span class="lang-en-i">Unless otherwise stated, listed prices do not include applicable taxes.</span><span class="lang-ja-i">特に記載のない限り、記載されている価格には適用される税金は含まれていません。</span><span class="lang-ko-i">별도로 명시되지 않는 한, 표시된 가격에는 적용 세금이 포함되어 있지 않습니다.</span></p>
+
+<h2><span class="lang-zh-i">6. 取消政策</span><span class="lang-en-i">6. Cancellation Policy</span><span class="lang-ja-i">6. キャンセルポリシー</span><span class="lang-ko-i">6. 취소 정책</span></h2>
+<p><span class="lang-zh-i">您可随时通过账户设置 → 订阅 → 取消，或发邮至 cancel@SeasAGI.ai 取消订阅。取消在当前计费周期结束时生效。另行购买的积分不被取消，其有效期保持不变。</span><span class="lang-en-i">You may cancel your subscription at any time via Account Settings → Subscription → Cancel, or by emailing cancel@SeasAGI.ai. The cancellation takes effect at the end of the current billing cycle. Separately purchased credits are not cancelled and retain their original validity period.</span><span class="lang-ja-i">アカウント設定 → サブスクリプション → キャンセル、または cancel@SeasAGI.ai 宛てのメール送信により、いつでもサブスクリプションをキャンセルできます。キャンセルは現在の請求サイクルの終了時に有効となります。個別に購入したクレジットはキャンセルされず、元の有効期間が維持されます。</span><span class="lang-ko-i">계정 설정 → 구독 → 취소, 또는 cancel@SeasAGI.ai 로 이메일을 보내 언제든지 구독을 취소할 수 있습니다. 취소는 현재 청구 주기 종료 시 효력이 발생합니다. 별도로 구매한 크레딧은 취소되지 않으며 원래 유효 기간이 유지됩니다.</span></p>
+
+<h2><span class="lang-zh-i">7. 退款政策</span><span class="lang-en-i">7. Refund Policy</span><span class="lang-ja-i">7. 返金ポリシー</span><span class="lang-ko-i">7. 환불 정책</span></h2>
+<h3><span class="lang-zh-i">7.1 订阅退款</span><span class="lang-en-i">7.1 Subscription Refunds</span><span class="lang-ja-i">7.1 サブスクリプションの返金</span><span class="lang-ko-i">7.1 구독 환불</span></h3>
+<ul>
+  <li><span class="lang-zh-i">首次订户 7 日保障：如用量未超过方案配额的 10% 则可全额退款。</span><span class="lang-en-i">7-day guarantee for first-time subscribers: a full refund is available if usage does not exceed 10% of the plan quota.</span><span class="lang-ja-i">初回サブスクライバーの7日保証：プラン枠の10%を超えて使用していない場合、全額返金可能。</span><span class="lang-ko-i">최초 구독자 7일 보장: 플랜 할당량의 10%를 초과하여 사용하지 않은 경우 전액 환불 가능.</span></li>
+  <li><span class="lang-zh-i">重复扣款或服务中断（超过 72 小时）：可退款或补偿。</span><span class="lang-en-i">Duplicate charges or service disruptions (exceeding 72 hours): refund or compensation available.</span><span class="lang-ja-i">重複請求またはサービス障害（72時間超）：返金または補償可能。</span><span class="lang-ko-i">중복 청구 또는 서비스 장애(72시간 초과): 환불 또는 보상 가능.</span></li>
+</ul>
+<h3><span class="lang-zh-i">7.2 积分退款</span><span class="lang-en-i">7.2 Credit Refunds</span><span class="lang-ja-i">7.2 クレジットの返金</span><span class="lang-ko-i">7.2 크레딧 환불</span></h3>
+<ul>
+  <li><span class="lang-zh-i">购买 7 天内未使用积分：可申请全额退款。</span><span class="lang-en-i">Unused credits within 7 days of purchase: eligible for a full refund.</span><span class="lang-ja-i">購入後7日以内の未使用クレジット：全額返金を申請可能。</span><span class="lang-ko-i">구매 후 7일 이내 미사용 크레딧: 전액 환불 신청 가능.</span></li>
+  <li><span class="lang-zh-i">已消耗积分不予退款。</span><span class="lang-en-i">Consumed credits are non-refundable.</span><span class="lang-ja-i">消費済みクレジットは返金対象外。</span><span class="lang-ko-i">소비된 크레딧은 환불되지 않습니다.</span></li>
+</ul>
+<h3><span class="lang-zh-i">7.3 套餐积分滚存政策</span><span class="lang-en-i">7.3 Plan Credit Rollover Policy</span><span class="lang-ja-i">7.3 プランクレジットのロールオーバーポリシー</span><span class="lang-ko-i">7.3 플랜 크레딧 이월 정책</span></h3>
+<p><span class="lang-zh-i">订阅方案包含的积分在每个计费周期结束时过期，不结转至下个周期。</span><span class="lang-en-i">Credits included in subscription plans expire at the end of each billing cycle and do not roll over to the next cycle.</span><span class="lang-ja-i">サブスクリプションプランに含まれるクレジットは、各請求サイクルの終了時に失効し、次のサイクルに繰り越されません。</span><span class="lang-ko-i">구독 플랜에 포함된 크레딧은 각 청구 주기 종료 시 만료되며, 다음 주기로 이월되지 않습니다.</span></p>
+<h3><span class="lang-zh-i">7.4 取消订阅后的积分处理</span><span class="lang-en-i">7.4 Credit Handling After Cancellation</span><span class="lang-ja-i">7.4 キャンセル後のクレジット処理</span><span class="lang-ko-i">7.4 취소 후 크레딧 처리</span></h3>
+<p><span class="lang-zh-i">另行购买的积分不受订阅状态影响，按其原有效期保留。</span><span class="lang-en-i">Separately purchased credits are unaffected by subscription status and are retained according to their original validity period.</span><span class="lang-ja-i">個別に購入したクレジットはサブスクリプションの状態に影響されず、元の有効期間に従って保持されます。</span><span class="lang-ko-i">별도로 구매한 크레딧은 구독 상태의 영향을 받지 않으며, 원래 유효 기간에 따라 보존됩니다.</span></p>
+<h3><span class="lang-zh-i">7.5 积分消耗顺序</span><span class="lang-en-i">7.5 Credit Consumption Order</span><span class="lang-ja-i">7.5 クレジット消費順序</span><span class="lang-ko-i">7.5 크레딧 소비 순서</span></h3>
+<p><span class="lang-zh-i">当订阅方案积分和另行购买积分同时存在时，优先消耗订阅方案积分。</span><span class="lang-en-i">When both subscription plan credits and separately purchased credits coexist, subscription plan credits are consumed first.</span><span class="lang-ja-i">サブスクリプションプランのクレジットと個別購入クレジットが同時に存在する場合、サブスクリプションプランのクレジットが優先的に消費されます。</span><span class="lang-ko-i">구독 플랜 크레딧과 별도 구매 크레딧이 동시에 존재하는 경우, 구독 플랜 크레딧이 우선 소비됩니다.</span></p>
+
+<h2><span class="lang-zh-i">8. 账单争议</span><span class="lang-en-i">8. Billing Disputes</span><span class="lang-ja-i">8. 請求に関する紛争</span><span class="lang-ko-i">8. 청구 분쟁</span></h2>
+<p><span class="lang-zh-i">如您认为扣款存在错误，请先发邮至 billing@SeasAGI.ai，在向银行提起交易争议前与我们联系。我们承诺在 2 个工作日内回复，并在 5 个工作日内解决确认的计费错误。</span><span class="lang-en-i">If you believe a charge is erroneous, please first email billing@SeasAGI.ai and contact us before initiating a transaction dispute with your bank. We commit to responding within 2 business days and resolving confirmed billing errors within 5 business days.</span><span class="lang-ja-i">請求に誤りがあると思われる場合は、銀行に取引の異議申し立てを行う前に、まず billing@SeasAGI.ai 宛てにメールし、当社にご連絡ください。当社は2営業日以内に返信し、確認された請求の誤りを5営業日以内に解決することをお約束します。</span><span class="lang-ko-i">청구에 오류가 있다고 판단되는 경우, 은행에 거래 분쟁을 제기하기 전에 먼저 billing@SeasAGI.ai 로 이메일을 보내 당사에 연락해 주십시오. 당사는 2영업일 이내에 응답하고, 확인된 청구 오류를 5영업일 이내에 해결할 것을 약속합니다.</span></p>
+
+<h2><span class="lang-zh-i">9. AI 内容与知识产权</span><span class="lang-en-i">9. AI Content &amp; Intellectual Property</span><span class="lang-ja-i">9. AI コンテンツと知的財産権</span><span class="lang-ko-i">9. AI 콘텐츠 및 지식재산권</span></h2>
+<h3><span class="lang-zh-i">9.1 输出内容归属</span><span class="lang-en-i">9.1 Output Content Ownership</span><span class="lang-ja-i">9.1 出力コンテンツの帰属</span><span class="lang-ko-i">9.1 출력 콘텐츠 귀속</span></h3>
+<p><span class="lang-zh-i">在遵守本条款的前提下，由您输入生成的 AI 内容（"输出内容"）归您所有。您可将输出内容用于第 10 条允许范围内的任何合法用途。</span><span class="lang-en-i">Subject to these Terms, AI content generated from your inputs ("Output Content") belongs to you. You may use the Output Content for any lawful purpose within the scope permitted by Section 10.</span><span class="lang-ja-i">本規約を遵守することを条件として、あなたの入力から生成された AI コンテンツ（「出力コンテンツ」）はあなたに帰属します。あなたは第 10 条で許容される範囲内で、出力コンテンツを合法的な目的に使用できます。</span><span class="lang-ko-i">본 약관을 준수하는 조건으로, 귀하의 입력에서 생성된 AI 콘텐츠("출력 콘텐츠")는 귀하에게 귀속됩니다. 귀하는 제10조에서 허용하는 범위 내에서 출력 콘텐츠를 합법적인 목적으로 사용할 수 있습니다.</span></p>
+<h3><span class="lang-zh-i">9.2 输入内容授权</span><span class="lang-en-i">9.2 Input Content License</span><span class="lang-ja-i">9.2 入力コンテンツのライセンス</span><span class="lang-ko-i">9.2 입력 콘텐츠 라이선스</span></h3>
+<p><span class="lang-zh-i">您向本服务提交内容（"输入内容"），即向 SeasAGI 授予有限、非独家许可，仅用于向您提供服务。未经您明确同意，我们不会将您的输入内容用于训练 AI 模型。</span><span class="lang-en-i">By submitting content to the Service ("Input Content"), you grant SeasAGI a limited, non-exclusive license solely for the purpose of providing the Service to you. We will not use your Input Content to train AI models without your explicit consent.</span><span class="lang-ja-i">本サービスにコンテンツを送信する（「入力コンテンツ」）ことで、あなたは SeasAGI に対し、あなたへのサービス提供を目的とする限定かつ非独占的なライセンスを付与します。あなたの明示的な同意なしに、当社はあなたの入力コンテンツを AI モデルの学習に使用しません。</span><span class="lang-ko-i">본 서비스에 콘텐츠를 제출함으로써("입력 콘텐츠"), 귀하는 SeasAGI 에게 서비스 제공 목적으로만 한정된 비독점 라이선스를 부여합니다. 귀하의 명시적 동의 없이, 당사는 귀하의 입력 콘텐츠를 AI 모델 학습에 사용하지 않습니다.</span></p>
+<h3><span class="lang-zh-i">9.3 第三方 AI 模型依赖</span><span class="lang-en-i">9.3 Third-Party AI Model Dependencies</span><span class="lang-ja-i">9.3 第三者 AI モデルへの依存</span><span class="lang-ko-i">9.3 제3자 AI 모델 의존성</span></h3>
+<p><span class="lang-zh-i">本服务使用第三方 AI 模型提供商，包括 OpenAI、Anthropic、Google。输出内容可能受这些提供商模型的影响。我们不保证特定输出质量，不为第三方模型生成的内容承担责任。</span><span class="lang-en-i">The Service uses third-party AI model providers, including OpenAI, Anthropic, and Google. Output Content may be influenced by these providers' models. We do not guarantee the quality of any specific output and assume no liability for content generated by third-party models.</span><span class="lang-ja-i">本サービスは OpenAI、Anthropic、Google などの第三者 AI モデルプロバイダーを使用しています。出力コンテンツはこれらのプロバイダーのモデルの影響を受ける可能性があります。当社は特定の出力の品質を保証せず、第三者モデルが生成したコンテンツについて責任を負いません。</span><span class="lang-ko-i">본 서비스는 OpenAI, Anthropic, Google 등 제3자 AI 모델 제공자를 사용합니다. 출력 콘텐츠는 이러한 제공자 모델의 영향을 받을 수 있습니다. 당사는 특정 출력의 품질을 보장하지 않으며, 제3자 모델이 생성한 콘텐츠에 대해 책임지지 않습니다.</span></p>
+<h3><span class="lang-zh-i">9.4 AI 输出准确性</span><span class="lang-en-i">9.4 AI Output Accuracy</span><span class="lang-ja-i">9.4 AI 出力の正確性</span><span class="lang-ko-i">9.4 AI 출력 정확성</span></h3>
+<p><span class="lang-zh-i">AI 生成的内容可能包含错误或不准确之处。您在依赖输出内容之前，有责任自行审阅和验证。</span><span class="lang-en-i">AI-generated content may contain errors or inaccuracies. You are responsible for independently reviewing and verifying Output Content before relying on it.</span><span class="lang-ja-i">AI が生成したコンテンツには誤りや不正確な内容が含まれる可能性があります。出力コンテンツに依存する前に、あなたは自ら審査および検証する責任を負います。</span><span class="lang-ko-i">AI 생성 콘텐츠에는 오류나 부정확한 내용이 포함될 수 있습니다. 출력 콘텐츠에 의존하기 전에, 귀하는 독자적으로 검토하고 검증할 책임이 있습니다.</span></p>
+
+<h2><span class="lang-zh-i">10. 可接受使用政策</span><span class="lang-en-i">10. Acceptable Use Policy</span><span class="lang-ja-i">10. 許容される使用ポリシー</span><span class="lang-ko-i">10. 허용 가능한 사용 정책</span></h2>
+<h3><span class="lang-zh-i">10.1 允许用途</span><span class="lang-en-i">10.1 Permitted Uses</span><span class="lang-ja-i">10.1 許可される用途</span><span class="lang-ko-i">10.1 허용된 용도</span></h3>
+<p><span class="lang-zh-i">您只能将本服务用于符合本条款的合法用途，包括个人生产力提升、业务自动化、研究和开发活动。</span><span class="lang-en-i">You may only use the Service for lawful purposes consistent with these Terms, including personal productivity, business automation, and research and development activities.</span><span class="lang-ja-i">本サービスは本規約に適合する合法的な目的にのみ使用できます。これには、個人の生産性向上、ビジネスの自動化、研究開発活動が含まれます。</span><span class="lang-ko-i">본 서비스는 본 약관에 부합하는 합법적인 목적으로만 사용할 수 있습니다. 여기에는 개인 생산성 향상, 비즈니스 자동화, 연구 개발 활동이 포함됩니다.</span></p>
+<h3><span class="lang-zh-i">10.2 禁止用途</span><span class="lang-en-i">10.2 Prohibited Uses</span><span class="lang-ja-i">10.2 禁止される用途</span><span class="lang-ko-i">10.2 금지된 용도</span></h3>
+<p><span class="lang-zh-i">您同意不使用本服务：</span><span class="lang-en-i">You agree not to use the Service:</span><span class="lang-ja-i">あなたは本サービスを以下の目的で使用しないことに同意します：</span><span class="lang-ko-i">귀하는 본 서비스를 다음의 목적으로 사용하지 않는 데 동의합니다:</span></p>
+<ul>
+  <li><span class="lang-zh-i">生成非法、诽谤、骚扰或欺诈性内容。</span><span class="lang-en-i">To generate illegal, defamatory, harassing, or fraudulent content.</span><span class="lang-ja-i">違法、中傷的、嫌がらせ、または詐欺的なコンテンツを生成する。</span><span class="lang-ko-i">불법적, 비방적, 괴롭힘 또는 사기성 콘텐츠를 생성.</span></li>
+  <li><span class="lang-zh-i">生成、传播或协助制作深度伪造内容，包括 AI 合成的音频、视频或图像，仿冒真实个人或意图误导观看者对其来源或真实性的判断。</span><span class="lang-en-i">To generate, disseminate, or assist in creating deepfake content, including AI-synthesized audio, video, or images, that impersonates real individuals or is intended to mislead viewers about its origin or authenticity.</span><span class="lang-ja-i">実在の人物を模倣し、またはその出所や真正性について視聴者を誤認させることを意図した、AI 合成音声、動画、画像を含むディープフェイクコンテンツを生成、伝播、または作成に協力する。</span><span class="lang-ko-i">실재 인물을 모방하거나, 그 출처나 진정성에 대해 시청자를 오도할 의도로, AI 합성 음성, 영상 또는 이미지를 포함한 딥페이크 콘텐츠를 생성, 전파 또는 제작에 협조.</span></li>
+  <li><span class="lang-zh-i">生成涉及未成年人性化或违反儿童保护法律的内容。</span><span class="lang-en-i">To generate content involving the sexualization of minors or that violates child protection laws.</span><span class="lang-ja-i">未成年者の性的対象化に関わる、または児童保護法規に違反するコンテンツを生成する。</span><span class="lang-ko-i">미성년자 성적 대상화와 관련되거나 아동 보호 법률을 위반하는 콘텐츠를 생성.</span></li>
+  <li><span class="lang-zh-i">制作恶意软件、钓鱼内容或网络攻击工具。</span><span class="lang-en-i">To create malware, phishing content, or cyberattack tools.</span><span class="lang-ja-i">マルウェア、フィッシングコンテンツ、またはサイバー攻撃ツールを作成する。</span><span class="lang-ko-i">악성코드, 피싱 콘텐츠 또는 사이버 공격 도구를 제작.</span></li>
+  <li><span class="lang-zh-i">侵犯任何第三方的知识产权或隐私权。</span><span class="lang-en-i">To infringe upon any third party's intellectual property or privacy rights.</span><span class="lang-ja-i">第三者の知的財産権またはプライバシー権を侵害する。</span><span class="lang-ko-i">제3자의 지식재산권 또는 프라이버시 권리를 침해.</span></li>
+  <li><span class="lang-zh-i">绕过或干扰本服务的安全功能。</span><span class="lang-en-i">To bypass or interfere with the security features of the Service.</span><span class="lang-ja-i">本サービスのセキュリティ機能を回避または妨害する。</span><span class="lang-ko-i">본 서비스의 보안 기능을 우회 또는 방해.</span></li>
+  <li><span class="lang-zh-i">未经事先书面批准擅自转售或分包访问权。</span><span class="lang-en-i">To resell or sublicense access without prior written approval.</span><span class="lang-ja-i">事前の書面による承認なしにアクセス権を再販またはサブライセンスする。</span><span class="lang-ko-i">사전 서면 승인 없이 접근 권한을 재판매 또는 서브라이선스.</span></li>
+  <li><span class="lang-zh-i">违反任何适用法律、法规或卡组规则。</span><span class="lang-en-i">To violate any applicable laws, regulations, or card network rules.</span><span class="lang-ja-i">適用される法令、規則、またはカードネットワーク規則に違反する。</span><span class="lang-ko-i">적용 법률, 규정 또는 카드 네트워크 규칙을 위반.</span></li>
+</ul>
+<h3><span class="lang-zh-i">10.3 AI 商户专项禁止</span><span class="lang-en-i">10.3 AI Merchant-Specific Prohibitions</span><span class="lang-ja-i">10.3 AI ビジネス特有の禁止事項</span><span class="lang-ko-i">10.3 AI 비즈니스 특정 금지 사항</span></h3>
+<p><span class="lang-zh-i">除上述通用禁止事项外，鉴于本服务的 AI 技术属性，您明确同意不得：</span><span class="lang-en-i">In addition to the general prohibitions above, given the AI technology nature of the Service, you expressly agree not to:</span><span class="lang-ja-i">上記の一般的な禁止事項に加え、本サービスの AI 技術としての性質に鑑み、あなたは以下を行わないことを明示的に同意します：</span><span class="lang-ko-i">위의 일반적 금지 사항에 더하여, 본 서비스의 AI 기술적 특성을 고려하여, 귀하는 다음 행위를 하지 않을 것을 명시적으로 동의합니다:</span></p>
+<ul>
+  <li><span class="lang-zh-i">利用本服务的输入、输出、模型响应或任何衍生数据，对任何直接或间接与本服务或 SeasAGI 产品存在竞争关系的人工智能或机器学习模型进行训练、微调、基准测试、知识蒸馏或以其他方式开发。</span><span class="lang-en-i">To use the Service's inputs, outputs, model responses, or any derivative data to train, fine-tune, benchmark, distill, or otherwise develop any artificial intelligence or machine learning model that directly or indirectly competes with the Service or any SeasAGI product.</span><span class="lang-ja-i">本サービスの入力、出力、モデル応答、または派生データを使用して、本サービスまたは SeasAGI 製品と直接または間接的に競合する AI または機械学習モデルを学習、ファインチューニング、ベンチマーク、知識蒸留、またはその他の方法で開発する。</span><span class="lang-ko-i">본 서비스의 입력, 출력, 모델 응답 또는 파생 데이터를 사용하여, 본 서비스 또는 SeasAGI 제품과 직·간접적으로 경쟁하는 인공지능 또는 머신러닝 모델을 학습, 파인튜닝, 벤치마크, 지식 증류 또는 기타 방법으로 개발.</span></li>
+  <li><span class="lang-zh-i">大规模系统性地爬取、提取或收集模型输出，用于您个人授权使用以外的任何目的。</span><span class="lang-en-i">To systematically scrape, extract, or collect model outputs at scale for any purpose beyond your personally authorized use.</span><span class="lang-ja-i">個人的に許可された使用以外の目的で、大規模かつ系統的にモデル出力をスクレイピング、抽出、または収集する。</span><span class="lang-ko-i">개인적으로 승인된 사용 목적을 넘어, 대규모로 체계적으로 모델 출력을 스크랩, 추출 또는 수집.</span></li>
+  <li><span class="lang-zh-i">在可能造成危害的场景下，将 AI 生成的内容标榜为人类专业人员（如执业医生、律师或金融顾问）的成果。</span><span class="lang-en-i">To present AI-generated content as the work of human professionals (such as licensed physicians, attorneys, or financial advisors) in scenarios where it could cause harm.</span><span class="lang-ja-i">危害を及ぼす可能性がある場面で、AI 生成コンテンツを人間の専門家（開業医、弁護士、金融アドバイザーなど）の成果物として提示する。</span><span class="lang-ko-i">해를 끼칠 수 있는 상황에서, AI 생성 콘텐츠를 인간 전문가(면허 의사, 변호사 또는 재무 자문인 등)의 산물로 표현.</span></li>
+</ul>
+
+<h2><span class="lang-zh-i">11. 数据、隐私与安全</span><span class="lang-en-i">11. Data, Privacy &amp; Security</span><span class="lang-ja-i">11. データ、プライバシーとセキュリティ</span><span class="lang-ko-i">11. 데이터, 프라이버시 및 보안</span></h2>
+<p><span class="lang-zh-i">您对本服务的使用受我们</span><span class="lang-en-i">Your use of the Service is governed by our </span><span class="lang-ja-i">本サービスの使用は、当社の</span><span class="lang-ko-i">본 서비스의 사용은 당사의 </span><a href="./privacy.html"><span class="lang-zh-i">隐私政策</span><span class="lang-en-i">Privacy Policy</span><span class="lang-ja-i">プライバシーポリシー</span><span class="lang-ko-i">개인정보처리방침</span></a><span class="lang-zh-i">的约束。支付卡数据由我们符合 PCI-DSS 标准的支付处理商（Waffo Pancake）独家处理，不存储于我们的服务器上。账户数据在取消后保留 90 天，随后删除。</span><span class="lang-en-i">. Payment card data is exclusively handled by our PCI-DSS-compliant payment processor (Waffo Pancake) and is not stored on our servers. Account data is retained for 90 days after cancellation and then deleted.</span><span class="lang-ja-i">に準拠します。決済カードデータは、PCI-DSS 準拠の決済処理業者（Waffo Pancake）が独占的に処理し、当社のサーバーには保存されません。アカウントデータはキャンセル後90日間保持され、その後削除されます。</span><span class="lang-ko-i">의 적용을 받습니다. 결제 카드 데이터는 PCI-DSS 준수 결제 처리사(Waffo Pancake)가 독점적으로 처리하며, 당사 서버에 저장되지 않습니다. 계정 데이터는 취소 후 90일간 보존된 후 삭제됩니다.</span></p>
+
+<h2><span class="lang-zh-i">12. 免责声明与责任限制</span><span class="lang-en-i">12. Disclaimers &amp; Liability Limitation</span><span class="lang-ja-i">12. 免責事項と責任の制限</span><span class="lang-ko-i">12. 면책 및 책임 제한</span></h2>
+<h3><span class="lang-zh-i">12.1 免责声明</span><span class="lang-en-i">12.1 Disclaimers</span><span class="lang-ja-i">12.1 免責事項</span><span class="lang-ko-i">12.1 면책</span></h3>
+<p><span class="lang-zh-i">本服务以"现状"和"如可用"的方式提供，不作任何明示或隐含的保证，包括适销性、特定用途适用性或 AI 输出准确性。</span><span class="lang-en-i">The Service is provided on an "as is" and "as available" basis, without any express or implied warranties, including merchantability, fitness for a particular purpose, or accuracy of AI output.</span><span class="lang-ja-i">本サービスは「現状有姿」および「利用可能な状態」で提供され、市場性、特定目的への適合性、または AI 出力の正確性を含む、明示的または黙示的ないかなる保証も行いません。</span><span class="lang-ko-i">본 서비스는 "있는 그대로" 및 "사용 가능한 상태"로 제공되며, 상품성, 특정 목적 적합성 또는 AI 출력의 정확성을 포함한 명시적 또는 묵시적 보증을 하지 않습니다.</span></p>
+<h3><span class="lang-zh-i">12.2 AI 生成内容免责声明</span><span class="lang-en-i">12.2 AI-Generated Content Disclaimer</span><span class="lang-ja-i">12.2 AI 生成コンテンツの免責事項</span><span class="lang-ko-i">12.2 AI 생성 콘텐츠 면책</span></h3>
+<div class="callout"><strong><span class="lang-zh-i">⚠️ AI 生成内容免责声明</span><span class="lang-en-i">⚠️ AI-Generated Content Disclaimer</span><span class="lang-ja-i">⚠️ AI 生成コンテンツの免責事項</span><span class="lang-ko-i">⚠️ AI 생성 콘텐츠 면책</span></strong><br><span class="lang-zh-i">本服务的 AI 输出可能存在不准确、不完整或已过时的情况。请勿将其用于法律、医疗、金融或其他专业建议。在基于 AI 内容采取行动前，请始终与具备相应资质的专业人员进行核实。</span><span class="lang-en-i">AI output from the Service may be inaccurate, incomplete, or outdated. Do not use it for legal, medical, financial, or other professional advice. Always verify with appropriately qualified professionals before taking action based on AI content.</span><span class="lang-ja-i">本サービスの AI 出力は不正確、不完全、または時代遅れの場合があります。これを法律、医療、金融、その他の専門的助言として使用しないでください。AI コンテンツに基づく行動をとる前に、常に適切な資格を有する専門家に検証してください。</span><span class="lang-ko-i">본 서비스의 AI 출력은 부정확하거나, 불완전하거나, 시대에 뒤떨어질 수 있습니다. 이를 법률, 의료, 금융 또는 기타 전문적 조언으로 사용하지 마십시오. AI 콘텐츠를 기반으로 행동하기 전에 항상 적절한 자격을 갖춘 전문가에게 검증하십시오.</span></div>
+<h3><span class="lang-zh-i">12.3 责任限制</span><span class="lang-en-i">12.3 Limitation of Liability</span><span class="lang-ja-i">12.3 責任の制限</span><span class="lang-ko-i">12.3 책임 제한</span></h3>
+<p><span class="lang-zh-i">在适用法律允许的最大范围内，SeasAGI 不对任何间接、附带、后果性或惩罚性损害承担责任。我们的总责任以您在索赔事件发生前 12 个月内向我们支付的金额为限。</span><span class="lang-en-i">To the maximum extent permitted by applicable law, SeasAGI shall not be liable for any indirect, incidental, consequential, or punitive damages. Our total liability shall be limited to the amount you paid us in the 12 months preceding the claim event.</span><span class="lang-ja-i">適用法令で認められる最大限の範囲において、SeasAGI は間接的、付随的、結果的、または懲罰的損害について責任を負いません。当社の総責任は、請求事由の発生前12か月間にあなたが当社に支払った金額を上限とします。</span><span class="lang-ko-i">적용 법률이 허용하는 최대 범위 내에서, SeasAGI 는 간접적, 부수적, 결과적 또는 징벌적 손해에 대해 책임지지 않습니다. 당사의 총 책임은 청구 사유 발생 전 12개월 동안 귀하가 당사에 지불한 금액을 한도로 합니다.</span></p>
+
+<h2><span class="lang-zh-i">13. 期限与终止</span><span class="lang-en-i">13. Term &amp; Termination</span><span class="lang-ja-i">13. 期間と終了</span><span class="lang-ko-i">13. 기간 및 종료</span></h2>
+<p><span class="lang-zh-i">本条款在您使用本服务期间持续有效。如您严重违反本条款、涉嫌欺诈行为或法律要求，我们可暂停或终止您的账户。如我方因非您违约原因终止服务，将按比例退还预付未使用部分。您可随时通过联系 support@SeasAGI.ai 删除账户。</span><span class="lang-en-i">These Terms remain in effect for the duration of your use of the Service. We may suspend or terminate your account if you materially breach these Terms, engage in fraudulent activity, or if required by law. If we terminate the Service for reasons other than your breach, we will provide a pro-rata refund of the prepaid unused portion. You may delete your account at any time by contacting support@SeasAGI.ai.</span><span class="lang-ja-i">本規約は、あなたが本サービスを使用する期間中有効です。あなたが本規約に重大な違反をした場合、詐欺行為に関与した場合、または法律上要求される場合、当社はあなたのアカウントを停止または終了できます。あなたの違反以外の理由で当社がサービスを終了する場合、前払いの未使用部分を日割りで返金します。support@SeasAGI.ai に連絡することで、いつでもアカウントを削除できます。</span><span class="lang-ko-i">본 약관은 귀하가 서비스를 사용하는 기간 동안 유효합니다. 귀하가 본 약관을 중대하게 위반하거나, 사기 행위에 관여하거나, 법률이 요구하는 경우, 당사는 귀하의 계정을 정지 또는 해지할 수 있습니다. 귀하의 위반이 아닌 사유로 당사가 서비스를 해지하는 경우, 선결제된 미사용 부분을 일할 환불합니다. support@SeasAGI.ai 에 연락하여 언제든지 계정을 삭제할 수 있습니다.</span></p>
+
+<h2><span class="lang-zh-i">14. 适用法律与争议解决</span><span class="lang-en-i">14. Governing Law &amp; Dispute Resolution</span><span class="lang-ja-i">14. 準拠法と紛争解決</span><span class="lang-ko-i">14. 준거법 및 분쟁 해결</span></h2>
+<p><span class="lang-zh-i">本条款受新加坡法律管辖。提起正式程序前，请先发邮至 legal@SeasAGI.ai 尝试非正式解决。无法解决的争议，应根据新加坡国际仲裁中心（SIAC）规则在新加坡提交仲裁。</span><span class="lang-en-i">These Terms are governed by the laws of Singapore. Before initiating formal proceedings, please first email legal@SeasAGI.ai to attempt informal resolution. Unresolved disputes shall be submitted to arbitration in Singapore in accordance with the rules of the Singapore International Arbitration Centre (SIAC).</span><span class="lang-ja-i">本規約はシンガポール法に準拠します。正式な手続を提起する前に、まず legal@SeasAGI.ai 宛てにメールし、非正式な解決を試みてください。解決できない紛争は、シンガポール国際仲裁機関（SIAC）の規則に従い、シンガポールで仲裁に付されます。</span><span class="lang-ko-i">본 약관은 싱가포르 법률에 따라 규율됩니다. 정식 절차를 개시하기 전에, 먼저 legal@SeasAGI.ai 로 이메일을 보내 비공식적 해결을 시도하십시오. 해결되지 않은 분쟁은 싱가포르국제중재원(SIAC) 규칙에 따라 싱가포르에서 중재에 회부됩니다.</span></p>
+
+<h2><span class="lang-zh-i">15. 通用条款</span><span class="lang-en-i">15. General Provisions</span><span class="lang-ja-i">15. 一般条項</span><span class="lang-ko-i">15. 일반 조항</span></h2>
+<p><span class="lang-zh-i">我们可随时更新本条款。重大变更将在生效日前至少 14 天通过邮件通知。继续使用即表示接受。如任何条款被认定无效，其余条款继续完全有效。本条款与隐私政策共同构成您与 SeasAGI 之间的完整协议。</span><span class="lang-en-i">We may update these Terms at any time. Material changes will be notified by email at least 14 days before the effective date. Continued use constitutes acceptance. If any provision is found to be invalid, the remaining provisions shall remain in full force. These Terms, together with the Privacy Policy, constitute the entire agreement between you and SeasAGI.</span><span class="lang-ja-i">当社はいつでも本規約を更新できます。重大な変更は、発効日の少なくとも14日前にメールで通知します。継続使用は承諾とみなされます。いずれかの条項が無効と認められた場合、残りの条項は完全に有効であり続けます。本規約およびプライバシーポリシーは、あなたと SeasAGI との間の完全な合意を構成します。</span><span class="lang-ko-i">당사는 언제든지 본 약관을 업데이트할 수 있습니다. 중대한 변경은 발효일 최소 14일 전에 이메일로 통지됩니다. 계속 사용하면 동의한 것으로 간주됩니다. 어떤 조항이 무효로 인정된 경우, 나머지 조항은 완전히 유효하게 유지됩니다. 본 약관과 개인정보처리방침은 귀하와 SeasAGI 간의 완전한 합의를 구성합니다.</span></p>
+
+<h2><span class="lang-zh-i">16. 联系方式</span><span class="lang-en-i">16. Contact Information</span><span class="lang-ja-i">16. 連絡先</span><span class="lang-ko-i">16. 연락처</span></h2>
+<p><span class="lang-zh-i">如对本条款或计费有任何问题，请联系：</span><span class="lang-en-i">If you have any questions about these Terms or billing, please contact:</span><span class="lang-ja-i">本規約または請求に関するご質問がある場合は、以下までお問い合わせください：</span><span class="lang-ko-i">본 약관 또는 청구에 관한 질문이 있는 경우, 다음으로 연락해 주십시오:</span></p>
+<ul>
+  <li><span class="lang-zh-i">通用客服：support@SeasX.ai</span><span class="lang-en-i">General Support: support@SeasX.ai</span><span class="lang-ja-i">一般サポート：support@SeasX.ai</span><span class="lang-ko-i">일반 지원: support@SeasX.ai</span></li>
+  <li><span class="lang-zh-i">账单查询：billing@SeasX.ai</span><span class="lang-en-i">Billing Inquiries: billing@SeasX.ai</span><span class="lang-ja-i">請求に関する問い合わせ：billing@SeasX.ai</span><span class="lang-ko-i">청구 문의: billing@SeasX.ai</span></li>
+  <li><span class="lang-zh-i">退款申请：refunds@SeasX.ai</span><span class="lang-en-i">Refund Requests: refunds@SeasX.ai</span><span class="lang-ja-i">返金申請：refunds@SeasX.ai</span><span class="lang-ko-i">환불 신청: refunds@SeasX.ai</span></li>
+  <li><span class="lang-zh-i">取消订阅：cancel@SeasX.ai 或 账户设置</span><span class="lang-en-i">Subscription Cancellation: cancel@SeasX.ai or Account Settings</span><span class="lang-ja-i">サブスクリプションのキャンセル：cancel@SeasX.ai またはアカウント設定</span><span class="lang-ko-i">구독 취소: cancel@SeasX.ai 또는 계정 설정</span></li>
+  <li><span class="lang-zh-i">法务与隐私：legal@SeasX.ai</span><span class="lang-en-i">Legal &amp; Privacy: legal@SeasX.ai</span><span class="lang-ja-i">法務およびプライバシー：legal@SeasX.ai</span><span class="lang-ko-i">법무 및 프라이버시: legal@SeasX.ai</span></li>
+  <li><span class="lang-zh-i">安全问题：security@SeasX.ai</span><span class="lang-en-i">Security Issues: security@SeasX.ai</span><span class="lang-ja-i">セキュリティの問題：security@SeasX.ai</span><span class="lang-ko-i">보안 문제: security@SeasX.ai</span></li>
+</ul>
+<p><span class="lang-zh-i">使用本服务或在结账时勾选"我同意"，即表示您已阅读并同意本条款。</span><span class="lang-en-i">By using the Service or checking "I agree" at checkout, you acknowledge that you have read and agree to these Terms.</span><span class="lang-ja-i">本サービスを使用するか、チェックアウトで「同意する」にチェックを入れることで、あなたは本規約を読み、同意したことになります。</span><span class="lang-ko-i">본 서비스를 사용하거나 결제 시 "동의합니다"를 선택함으로써, 귀하는 본 약관을 읽고 동의했음을 인정합니다.</span></p>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <p class="footer-copy">© 2026 SeasAGI. <span class="lang-zh-i">客户端 GPL 3.0 · 云端社区版 AGPL 3.0 · 企业版闭源 · </span><span class="lang-en-i">Client GPL 3.0 · Cloud Community Edition AGPL 3.0 · Enterprise Edition Closed Source · </span><span class="lang-ja-i">クライアント GPL 3.0 · クラウドコミュニティ版 AGPL 3.0 · エンタープライズ版クローズドソース · </span><span class="lang-ko-i">클라이언트 GPL 3.0 · 클라우드 커뮤니티 에디션 AGPL 3.0 · 엔터프라이즈 에디션 클로즈드 소스 · </span><a href="./terms.html"><span class="lang-zh-i">服务条款</span><span class="lang-en-i">Terms of Service</span><span class="lang-ja-i">利用規約</span><span class="lang-ko-i">이용약관</span></a> · <a href="./privacy.html"><span class="lang-zh-i">隐私政策</span><span class="lang-en-i">Privacy Policy</span><span class="lang-ja-i">プライバシーポリシー</span><span class="lang-ko-i">개인정보처리방침</span></a></p>
+  </div>
+</footer>
+
+<script>
+var _langCycle=["zh","en","ja","ko"];
+var _langBtn={zh:"EN",en:"日本語",ja:"한국어",ko:"中文"};
+var _langHtml={zh:"zh-CN",en:"en",ja:"ja",ko:"ko"};
+function toggleLang(){var b=document.body;var cur="zh";for(var i=0;i<_langCycle.length;i++){if(b.classList.contains("lang-"+_langCycle[i])){cur=_langCycle[i];break;}}var nxt=_langCycle[(_langCycle.indexOf(cur)+1)%_langCycle.length];for(var j=0;j<_langCycle.length;j++){b.classList.remove("lang-"+_langCycle[j]);}if(nxt!=="zh"){b.classList.add("lang-"+nxt);}document.getElementById("langToggle").textContent=_langBtn[nxt];document.documentElement.lang=_langHtml[nxt];}
+</script>
+
+</body>
+</html>

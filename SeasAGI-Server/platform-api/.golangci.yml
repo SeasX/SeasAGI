@@ -1,0 +1,37 @@
+# golangci-lint configuration for SeasAGI
+# Based on TokenHub's .golangci.yml, adapted for SeasAGI's Gin + database/sql stack.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - misspell
+    - gofmt
+    - goimports
+
+linters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/SeasAGI
+
+issues:
+  exclude-rules:
+    # Skip test files for some linters
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosimple
+        - ineffassign
+  max-issues-per-linter: 50
+  max-same-issues: 10

@@ -1,0 +1,342 @@
+# SeasAGI standard model catalog.
+# Contains model metadata for routing, cost optimization, and Combo intelligence.
+# Synced into the model_catalog table on platform-api startup.
+
+version: 1
+models:
+  # ---- OpenAI ----
+  - name: "gpt-4o"
+    display_name: "GPT-4o"
+    description: "High-intelligence multimodal model for complex tasks"
+    category: "openai"
+    family: "gpt-4o"
+    provider: "openai"
+    modality: "chat"
+    context_window: 128000
+    max_output_tokens: 16384
+    input_price_usd_per_1m: 2.5
+    output_price_usd_per_1m: 10
+    input_modalities: ["text", "image", "audio"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "vision", "tools", "structured_outputs", "reasoning"]
+    supported_parameters: ["temperature", "tools", "response_format", "reasoning"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions,responses"
+  - name: "gpt-4o-mini"
+    display_name: "GPT-4o mini"
+    description: "Affordable and intelligent small model for fast tasks"
+    category: "openai"
+    family: "gpt-4o"
+    provider: "openai"
+    modality: "chat"
+    context_window: 128000
+    max_output_tokens: 16384
+    input_price_usd_per_1m: 0.15
+    output_price_usd_per_1m: 0.6
+    input_modalities: ["text", "image"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "vision", "tools", "structured_outputs"]
+    supported_parameters: ["temperature", "tools", "response_format"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions,responses"
+  - name: "gpt-4.1"
+    display_name: "GPT-4.1"
+    description: "Frontier model for complex coding and reasoning tasks"
+    category: "openai"
+    family: "gpt-4.1"
+    provider: "openai"
+    modality: "chat"
+    context_window: 1047576
+    max_output_tokens: 32768
+    input_price_usd_per_1m: 2
+    output_price_usd_per_1m: 8
+    input_modalities: ["text", "image"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "vision", "tools", "structured_outputs", "reasoning"]
+    supported_parameters: ["temperature", "tools", "response_format", "reasoning"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions,responses"
+  - name: "gpt-4.1-mini"
+    display_name: "GPT-4.1 mini"
+    description: "Balanced model for everyday coding and text tasks"
+    category: "openai"
+    family: "gpt-4.1"
+    provider: "openai"
+    modality: "chat"
+    context_window: 1047576
+    max_output_tokens: 32768
+    input_price_usd_per_1m: 0.4
+    output_price_usd_per_1m: 1.6
+    input_modalities: ["text", "image"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "vision", "tools", "structured_outputs"]
+    supported_parameters: ["temperature", "tools", "response_format"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions,responses"
+  - name: "o3"
+    display_name: "OpenAI o3"
+    description: "Advanced reasoning model for complex problem-solving"
+    category: "openai"
+    family: "o3"
+    provider: "openai"
+    modality: "chat"
+    context_window: 200000
+    max_output_tokens: 100000
+    input_price_usd_per_1m: 10
+    output_price_usd_per_1m: 40
+    input_modalities: ["text", "image"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "vision", "reasoning", "tools"]
+    supported_parameters: ["temperature", "tools", "reasoning"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions,responses"
+      reasoning_default: "true"
+  - name: "text-embedding-3-small"
+    display_name: "Text Embedding 3 Small"
+    description: "Compact embedding model for efficient similarity search"
+    category: "openai"
+    family: "embedding"
+    provider: "openai"
+    modality: "embedding"
+    context_window: 8191
+    max_output_tokens: 0
+    input_price_usd_per_1m: 0.02
+    output_price_usd_per_1m: 0
+    input_modalities: ["text"]
+    output_modalities: ["embedding"]
+    capabilities: ["embeddings"]
+    supported_parameters: []
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "embeddings"
+  - name: "text-embedding-3-large"
+    display_name: "Text Embedding 3 Large"
+    description: "High-quality embedding model for advanced similarity search"
+    category: "openai"
+    family: "embedding"
+    provider: "openai"
+    modality: "embedding"
+    context_window: 8191
+    max_output_tokens: 0
+    input_price_usd_per_1m: 0.13
+    output_price_usd_per_1m: 0
+    input_modalities: ["text"]
+    output_modalities: ["embedding"]
+    capabilities: ["embeddings"]
+    supported_parameters: []
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "embeddings"
+  - name: "dall-e-3"
+    display_name: "DALL-E 3"
+    description: "Image generation model for creative content"
+    category: "openai"
+    family: "dall-e"
+    provider: "openai"
+    modality: "image"
+    context_window: 4000
+    max_output_tokens: 0
+    input_price_usd_per_1m: 0
+    output_price_usd_per_1m: 0
+    input_modalities: ["text"]
+    output_modalities: ["image"]
+    capabilities: ["image"]
+    supported_parameters: ["size", "quality", "style"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "images/generations"
+      price_per_image: "0.04"
+  - name: "tts-1"
+    display_name: "TTS-1"
+    description: "Text-to-speech model for audio generation"
+    category: "openai"
+    family: "tts"
+    provider: "openai"
+    modality: "tts"
+    context_window: 4096
+    max_output_tokens: 0
+    input_price_usd_per_1m: 15
+    output_price_usd_per_1m: 0
+    input_modalities: ["text"]
+    output_modalities: ["audio"]
+    capabilities: ["tts"]
+    supported_parameters: ["voice", "speed", "response_format"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "audio/speech"
+  - name: "whisper-1"
+    display_name: "Whisper-1"
+    description: "Speech-to-text model for audio transcription"
+    category: "openai"
+    family: "whisper"
+    provider: "openai"
+    modality: "stt"
+    context_window: 0
+    max_output_tokens: 0
+    input_price_usd_per_1m: 6
+    output_price_usd_per_1m: 0
+    input_modalities: ["audio"]
+    output_modalities: ["text"]
+    capabilities: ["stt"]
+    supported_parameters: ["language", "response_format"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "audio/transcriptions"
+
+  # ---- Anthropic ----
+  - name: "claude-sonnet-4-5"
+    display_name: "Claude Sonnet 4.5"
+    description: "Most intelligent model for building agents and coding"
+    category: "claude"
+    family: "claude"
+    provider: "anthropic"
+    modality: "chat"
+    context_window: 200000
+    max_output_tokens: 64000
+    input_price_usd_per_1m: 3
+    output_price_usd_per_1m: 15
+    input_modalities: ["text", "image"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "vision", "reasoning", "tools", "structured_outputs"]
+    supported_parameters: ["temperature", "tools", "response_format", "reasoning"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions,anthropic"
+  - name: "claude-3-5-haiku"
+    display_name: "Claude 3.5 Haiku"
+    description: "Fast and affordable model for everyday tasks"
+    category: "claude"
+    family: "claude"
+    provider: "anthropic"
+    modality: "chat"
+    context_window: 200000
+    max_output_tokens: 8192
+    input_price_usd_per_1m: 0.8
+    output_price_usd_per_1m: 4
+    input_modalities: ["text", "image"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "vision", "tools", "structured_outputs"]
+    supported_parameters: ["temperature", "tools", "response_format"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions,anthropic"
+
+  # ---- Google Gemini ----
+  - name: "gemini-2.5-pro"
+    display_name: "Gemini 2.5 Pro"
+    description: "Advanced reasoning model with long context and multimodal"
+    category: "gemini"
+    family: "gemini"
+    provider: "google"
+    modality: "chat"
+    context_window: 1048576
+    max_output_tokens: 65536
+    input_price_usd_per_1m: 1.25
+    output_price_usd_per_1m: 10
+    input_modalities: ["text", "image", "audio", "video"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "vision", "reasoning", "tools", "structured_outputs"]
+    supported_parameters: ["temperature", "tools", "response_format", "reasoning"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions,gemini"
+  - name: "gemini-2.0-flash"
+    display_name: "Gemini 2.0 Flash"
+    description: "Fast and versatile multimodal model for everyday tasks"
+    category: "gemini"
+    family: "gemini"
+    provider: "google"
+    modality: "chat"
+    context_window: 1048576
+    max_output_tokens: 8192
+    input_price_usd_per_1m: 0.1
+    output_price_usd_per_1m: 0.4
+    input_modalities: ["text", "image", "audio", "video"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "vision", "tools", "structured_outputs"]
+    supported_parameters: ["temperature", "tools", "response_format"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions,gemini"
+
+  # ---- DeepSeek ----
+  - name: "deepseek-chat"
+    display_name: "DeepSeek Chat"
+    description: "General-purpose chat model with strong coding capability"
+    category: "deepseek"
+    family: "deepseek"
+    provider: "deepseek"
+    modality: "chat"
+    context_window: 64000
+    max_output_tokens: 8192
+    input_price_usd_per_1m: 0.27
+    output_price_usd_per_1m: 1.1
+    input_modalities: ["text"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "tools", "structured_outputs"]
+    supported_parameters: ["temperature", "tools", "response_format"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions"
+  - name: "deepseek-reasoner"
+    display_name: "DeepSeek Reasoner"
+    description: "Reasoning model with chain-of-thought for complex problems"
+    category: "deepseek"
+    family: "deepseek"
+    provider: "deepseek"
+    modality: "chat"
+    context_window: 64000
+    max_output_tokens: 8192
+    input_price_usd_per_1m: 0.55
+    output_price_usd_per_1m: 2.19
+    input_modalities: ["text"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "reasoning"]
+    supported_parameters: ["temperature", "reasoning"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions"
+      reasoning_default: "true"
+
+  # ---- Qwen ----
+  - name: "qwen-plus"
+    display_name: "Qwen Plus"
+    description: "Balanced model for general-purpose tasks"
+    category: "qwen"
+    family: "qwen"
+    provider: "qwen"
+    modality: "chat"
+    context_window: 131072
+    max_output_tokens: 8192
+    input_price_usd_per_1m: 0.4
+    output_price_usd_per_1m: 1.2
+    input_modalities: ["text", "image"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "vision", "tools", "structured_outputs"]
+    supported_parameters: ["temperature", "tools", "response_format"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions"
+  - name: "qwen-turbo"
+    display_name: "Qwen Turbo"
+    description: "Fast and affordable model for high-throughput tasks"
+    category: "qwen"
+    family: "qwen"
+    provider: "qwen"
+    modality: "chat"
+    context_window: 1000000
+    max_output_tokens: 8192
+    input_price_usd_per_1m: 0.05
+    output_price_usd_per_1m: 0.2
+    input_modalities: ["text"]
+    output_modalities: ["text"]
+    capabilities: ["chat", "tools", "structured_outputs"]
+    supported_parameters: ["temperature", "tools", "response_format"]
+    metadata:
+      source: "seasagi-standard-catalog"
+      endpoints: "chat/completions"

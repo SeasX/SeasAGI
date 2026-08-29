@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="./assets/favicon.png">
+<link rel="apple-touch-icon" href="./assets/seasagi-icon.png">
+
+<!-- Primary Meta -->
+<title>SeasAGI — 本地 LLM API 智能网关 | Open Source LLM Gateway</title>
+<meta name="title" content="SeasAGI — 本地 LLM API 智能网关 | Open Source LLM Gateway">
+<meta name="description" content="SeasAGI 是本地 LLM API 智能网关。统一管理 OpenAI、Anthropic、Gemini、DeepSeek、Ollama 等渠道，智能路由自动降级，成本看板实时可见。API Key 永不上传。">
+<meta name="keywords" content="SeasAGI,LLM Gateway,API Gateway,AI Router,OpenAI proxy,Claude proxy,Gemini proxy,智能路由,API Key 管理,成本优化,开源 AI 网关,local LLM gateway,session sticky routing,circuit breaker,failover fallback">
+<meta name="author" content="SeasAGI">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<meta name="googlebot" content="index, follow">
+<meta name="language" content="en, zh-CN">
+<meta name="rating" content="general">
+<meta name="distribution" content="global">
+<meta name="theme-color" content="#0A0F1A">
+<link rel="canonical" href="https://SeasAGI.SeasX.ai/">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://SeasAGI.SeasX.ai/">
+<meta property="og:title" content="SeasAGI — 本地 LLM API 智能网关">
+<meta property="og:description" content="SeasAGI 是本地 LLM API 智能网关。统一管理 OpenAI、Anthropic、Gemini、DeepSeek、Ollama 等渠道，智能路由自动降级，成本看板实时可见。API Key 永不上传。">
+<meta property="og:image" content="https://SeasAGI.SeasX.ai/assets/seasagi-icon.png">
+<meta property="og:image:alt" content="SeasAGI Logo">
+<meta property="og:site_name" content="SeasAGI">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="zh_CN">
+<meta property="og:locale:alternate" content="ja_JP">
+<meta property="og:locale:alternate" content="ko_KR">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SeasAGI — 本地 LLM API 智能网关">
+<meta name="twitter:description" content="SeasAGI 是本地 LLM API 智能网关。统一管理 OpenAI、Anthropic、Gemini、DeepSeek、Ollama 等渠道，智能路由自动降级，成本看板实时可见。">
+<meta name="twitter:image" content="https://SeasAGI.SeasX.ai/assets/seasagi-icon.png">
+<meta name="twitter:image:alt" content="SeasAGI Logo">
+
+<!-- hreflang -->
+<link rel="alternate" hreflang="en" href="https://SeasAGI.SeasX.ai/">
+<link rel="alternate" hreflang="zh-CN" href="https://SeasAGI.SeasX.ai/zh/">
+<link rel="alternate" hreflang="ja" href="https://SeasAGI.SeasX.ai/ja/">
+<link rel="alternate" hreflang="ko" href="https://SeasAGI.SeasX.ai/ko/">
+<link rel="alternate" hreflang="x-default" href="https://SeasAGI.SeasX.ai/">
+
+<!-- Performance -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://github.com">
+<link rel="dns-prefetch" href="https://github.com">
+<link rel="preconnect" href="https://discord.com">
+<link rel="dns-prefetch" href="https://discord.com">
+
+<!-- Structured Data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "name": "SeasAGI",
+      "url": "https://SeasAGI.SeasX.ai/",
+      "logo": "https://SeasAGI.SeasX.ai/assets/seasagi-icon.png",
+      "sameAs": ["https://github.com/SeasX/SeasAGI", "https://discord.gg/NdMkGtqAA"]
+    },
+    {
+      "@type": "WebSite",
+      "name": "SeasAGI",
+      "url": "https://SeasAGI.SeasX.ai/",
+      "inLanguage": "en"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "SeasAGI",
+      "operatingSystem": "macOS, Windows, Linux",
+      "applicationCategory": "DeveloperApplication",
+      "description": "SeasAGI 是本地 LLM API 智能网关。统一管理 OpenAI、Anthropic、Gemini、DeepSeek、Ollama 等渠道，智能路由自动降级，成本看板实时可见。API Key 永不上传。",
+      "url": "https://SeasAGI.SeasX.ai/",
+      "downloadUrl": "https://github.com/SeasX/SeasAGI/releases",
+      "codeRepository": "https://github.com/SeasX/SeasAGI",
+      "offers": {"@type":"Offer","price":"0","priceCurrency":"USD"},
+      "availableLanguage": ["zh-CN","en","ja","ko"]
+    },
+    {
+      "@type": "FAQPage",
+      "inLanguage": "zh-CN",
+      "mainEntity": [
+        {"@type":"Question","name":"SeasAGI 与 LiteLLM 有什么区别？","acceptedAnswer":{"@type":"Answer","text":"SeasAGI 采用本地优先的桌面客户端架构，API Key 永不上传；同时原生支持 Combo 步骤链、429 惩罚降级、会话粘性等企业级路由策略，并以 Go 构建获得更高性能。"}},
+        {"@type":"Question","name":"API Key 是否真的不会上传？","acceptedAnswer":{"@type":"Answer","text":"是的。SeasAGI-Client 将 API Key 存储在操作系统 Keychain 中，请求直接从本地网关发往 Provider，云端服务端不接触任何 Key。"}},
+        {"@type":"Question","name":"可以自部署服务端吗？","acceptedAnswer":{"@type":"Answer","text":"可以。SeasAGI-Server 社区版基于 Go + Gin + SQLite，提供一键构建脚本与 systemd/nginx 部署方案，采用 AGPL 3.0 许可证。"}},
+        {"@type":"Question","name":"支持哪些 Provider？","acceptedAnswer":{"@type":"Answer","text":"OpenAI、Azure、Anthropic、Gemini、Ollama、DeepSeek、Grok，以及通用 Relay。通过转换器自动适配 OpenAI Chat、Responses、Anthropic、Gemini、Vertex 等协议。"}},
+        {"@type":"Question","name":"会话粘滞是什么？为什么需要？","acceptedAnswer":{"@type":"Answer","text":"会话粘滞基于首条用户消息的 SHA1 哈希，将同一对话的后续请求自动路由到同一模型，防止多轮对话中途切换模型导致上下文断裂或幻觉。30 分钟 TTL 自动过期。"}},
+        {"@type":"Question","name":"和竞品相比有什么优势？","acceptedAnswer":{"@type":"Answer","text":"SeasAGI 是唯一提供桌面原生客户端 + 本地网关代理的方案，直连 Provider 无服务端瓶颈；唯一具备完整多租户 + Stripe 支付体系；唯一支持 6 种协议翻译 + OAuth PKCE。同时增加了 MITM 接管、Token 压缩、Fusion 路由、TLS 指纹、Eval、Plugin/MCP 等高级特性。"}},
+        {"@type":"Question","name":"怎样开始使用？","acceptedAnswer":{"@type":"Answer","text":"1. 从 GitHub Releases 下载对应平台客户端；2. 安装后添加 Provider 通道；3. 将任何 API Client 的 Base URL 改为 http://127.0.0.1:4318/v1；4. 享受智能路由。"}},
+        {"@type":"Question","name":"开源版有什么限制？","acceptedAnswer":{"@type":"Answer","text":"开源客户端（GPL 3.0）无功能限制，所有特性完全免费。云端社区版（AGPL 3.0）提供基础控制面与基础中继，支持自托管。企业版（闭源）提供远程加速通道、用量同步、治理审批、管理后台等增值服务。客户端本身永久免费。"}},
+        {"@type":"Question","name":"配额用完后怎么办？","acceptedAnswer":{"@type":"Answer","text":"各套餐均包含月度请求配额。超出部分按量计费，费用透明。建议使用 BYOK（自备 Key）避免超额费用，或升级到 Teams/Enterprise 获得更高配额。也可以在 Token 市场购买其他用户闲置的 API Key。"}},
+        {"@type":"Question","name":"Token 市场是什么？","acceptedAnswer":{"@type":"Answer","text":"Token 市场是 SeasAGI 客户端内置的 API Key 交易平台。用户可以将闲置的 API Key 上架出售，其他用户可扫码完成交易。平台收取 10% 佣金，卖家获得 90% 收益。交易二维码带 HMAC 签名和 5 分钟有效期。"}},
+        {"@type":"Question","name":"如何参与贡献？","acceptedAnswer":{"@type":"Answer","text":"客户端全量开源（GPL 3.0），欢迎一切形式的贡献！可以 Star、Fork 仓库，提交 Issue 报告 Bug 或建议，创建 Pull Request 改进代码。详细的贡献指南请查看 GitHub 仓库的 CONTRIBUTING.md。"}}
+      ]
+    }
+  ]
+}
+</script>
+
+<style>
+/* ============================================================ SeasAGI — styles, dark tech aesthetic ============================================================ */
+:root {
+  --bg-primary:#0A0F1A; --bg-surface:#121726; --bg-card:#1A2136;
+  --accent:#22C55E; --accent-light:#4ADE80; --accent-cyan:#06B6D4;
+  --text-primary:#F7FAFC; --text-secondary:#94A3B8; --text-muted:#64748B;
+  --border-subtle:#1F293B;
+  --radius-sm:10px; --radius-md:16px; --radius-lg:20px;
+  --font-sans:"Noto Sans SC","Noto Sans JP","Noto Sans KR","Geist",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:"Geist Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --maxw:1280px;
+}
+*,*::before,*::after{box-sizing:border-box;}
+html{scroll-behavior:smooth;scroll-padding-top:88px;}
+body{margin:0;font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-primary);line-height:1.6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+a{color:inherit;text-decoration:none;}
+img,svg{display:block;max-width:100%;}
+h1,h2,h3,h4,p{margin:0;}
+button{font-family:inherit;cursor:pointer;}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+
+/* zh/en/ja/ko toggle — default: English */
+.lang-zh-i,.lang-ja-i,.lang-ko-i{display:none;}
+body.lang-zh .lang-en-i{display:none;}
+body.lang-zh .lang-zh-i{display:inline;}
+body.lang-ja .lang-en-i{display:none;}
+body.lang-ja .lang-ja-i{display:inline;}
+body.lang-ko .lang-en-i{display:none;}
+body.lang-ko .lang-ko-i{display:inline;}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 26px;border-radius:var(--radius-sm);font-size:15px;font-weight:500;border:1px solid transparent;transition:transform .15s ease,background .2s ease,border-color .2s ease,box-shadow .2s ease;white-space:nowrap;}
+.btn:hover{transform:translateY(-1px);}
+.btn-primary{background:var(--accent);color:var(--bg-primary);font-weight:600;box-shadow:0 6px 24px rgba(34,197,94,.28);}
+.btn-primary:hover{background:var(--accent-light);box-shadow:0 8px 30px rgba(34,197,94,.4);}
+.btn-ghost{background:var(--bg-card);color:var(--text-primary);border-color:var(--border-subtle);}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent-light);}
+.btn-sm{padding:10px 18px;font-size:14px;}
+.btn-lg{padding:18px 34px;font-size:16px;}
+
+/* header */
+.site-header{position:sticky;top:0;z-index:50;background:rgba(10,15,26,.82);backdrop-filter:blur(12px);border-bottom:1px solid transparent;transition:border-color .2s ease,background .2s ease;}
+.site-header.scrolled{border-bottom-color:var(--border-subtle);}
+.header-inner{display:flex;align-items:center;gap:24px;height:72px;}
+.container{width:100%;max-width:var(--maxw);margin:0 auto;padding-left:80px;padding-right:80px;}
+.brand{display:inline-flex;align-items:center;gap:12px;margin-right:auto;}
+.brand-logo{display:inline-flex;align-items:center;}
+.brand-logo img{width:40px;height:40px;border-radius:9px;object-fit:cover;}
+.brand-name{font-family:"Geist",var(--font-sans);font-weight:700;font-size:22px;letter-spacing:.2px;}
+.nav{display:flex;align-items:center;gap:32px;}
+.nav a{font-size:15px;color:var(--text-secondary);transition:color .15s ease;}
+.nav a:hover{color:var(--text-primary);}
+.header-cta{margin-left:8px;}
+.lang-btn{background:var(--bg-card);border:1px solid var(--border-subtle);color:var(--text-primary);border-radius:8px;padding:8px 12px;font-size:14px;font-weight:500;transition:border-color .15s ease,color .15s ease;}
+.lang-btn:hover{border-color:var(--accent);color:var(--accent-light);}
+
+/* hero */
+.hero{position:relative;overflow:hidden;padding:96px 0 80px;background:var(--bg-primary);}
+.hero-glow{position:absolute;top:-160px;right:-120px;width:620px;height:620px;background:radial-gradient(circle,rgba(34,197,94,.18),rgba(6,182,212,.08) 45%,transparent 70%);filter:blur(20px);pointer-events:none;}
+.hero-inner{position:relative;display:flex;align-items:center;gap:60px;justify-content:space-between;}
+.hero-text{width:600px;max-width:100%;}
+.badge{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:20px;background:var(--bg-card);border:1px solid var(--border-subtle);font-size:13px;color:var(--text-secondary);margin-bottom:24px;}
+.badge-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);}
+.hero-title{font-size:56px;line-height:1.12;font-weight:700;letter-spacing:-.5px;}
+.hero-subtitle{margin-top:22px;font-size:18px;line-height:1.7;color:var(--text-secondary);}
+.hero-ctas{margin-top:36px;display:flex;gap:16px;flex-wrap:wrap;}
+.hero-visual{width:560px;max-width:100%;flex-shrink:0;}
+.gateway-svg{width:100%;height:auto;}
+.pnode{animation:floaty 6s ease-in-out infinite;}
+.pnode:nth-child(2){animation-delay:-1.2s;}
+.pnode:nth-child(3){animation-delay:-2.4s;}
+.pnode:nth-child(4){animation-delay:-3.6s;}
+.pnode:nth-child(5){animation-delay:-4.8s;}
+.gateway-core{animation:pulse 4s ease-in-out infinite;transform-origin:center;}
+@keyframes floaty{0%,100%{transform:translateY(0);}50%{transform:translateY(-6px);}}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.82;}}
+
+/* sections */
+.section{padding:100px 0;background:var(--bg-primary);}
+.section-surface{background:var(--bg-surface);}
+.section-head{max-width:720px;margin-bottom:56px;}
+.eyebrow{display:inline-block;font-family:var(--font-mono);font-size:12px;letter-spacing:2px;color:var(--accent);margin-bottom:14px;}
+.section-title{font-size:40px;line-height:1.25;font-weight:700;letter-spacing:-.3px;}
+.section-desc{margin-top:16px;font-size:16px;color:var(--text-secondary);}
+
+/* cards */
+.card{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:28px;}
+.icon-box{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:12px;background:var(--bg-surface);margin-bottom:16px;}
+.card-title{font-size:20px;font-weight:700;margin-bottom:10px;}
+.card-desc{font-size:14px;color:var(--text-secondary);line-height:1.65;}
+
+/* problem */
+.pain-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}
+.solution-banner{margin-top:48px;display:flex;align-items:center;justify-content:space-between;gap:32px;padding:36px 40px;background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-md);}
+.solution-title{font-size:26px;font-weight:700;line-height:1.3;}
+.solution-desc{margin-top:10px;font-size:15px;color:var(--text-secondary);}
+.steps-row{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}
+.step-num{font-family:var(--font-mono);font-size:24px;font-weight:700;color:var(--accent);}
+.step-title{font-size:17px;font-weight:700;margin:10px 0;}
+
+/* core features */
+.feature-block{display:flex;align-items:center;gap:48px;padding:40px;background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);margin-bottom:28px;}
+.feature-block:last-child{margin-bottom:0;}
+.feature-block-reverse{flex-direction:row-reverse;}
+.feature-text{width:520px;max-width:100%;}
+.feature-title{font-size:28px;font-weight:700;line-height:1.35;margin:12px 0 16px;}
+.feature-desc{font-size:15px;color:var(--text-secondary);line-height:1.7;}
+.feature-visual{flex:1;min-height:300px;border-radius:var(--radius-md);background:radial-gradient(circle at 1px 1px,rgba(148,163,184,.12) 1px,transparent 0) 0 0 / 22px 22px,var(--bg-surface);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;padding:28px;}
+.fv{width:100%;}
+.fv-gateway{display:flex;flex-direction:column;align-items:center;gap:18px;}
+.fv-chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;}
+.chip{padding:8px 14px;border-radius:999px;background:var(--bg-card);border:1px solid var(--border-subtle);font-size:13px;color:var(--text-primary);}
+.fv-endpoint{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 26px;border-radius:12px;background:var(--bg-card);border:1px solid var(--accent);box-shadow:0 0 24px rgba(34,197,94,.18);}
+.fv-endpoint code{font-family:var(--font-mono);font-size:16px;color:var(--accent);}
+.fv-chain{display:flex;flex-direction:column;align-items:stretch;gap:10px;width:100%;max-width:320px;}
+.chain-step{display:flex;flex-direction:column;gap:2px;padding:14px 18px;border-radius:12px;background:var(--bg-card);border:1px solid var(--border-subtle);}
+.chain-step strong{font-size:15px;}
+.chain-step span{font-size:13px;color:var(--text-secondary);}
+.chain-step.primary{border-color:var(--accent);}
+.chain-step.fallback{border-color:var(--accent-cyan);}
+.chain-link{text-align:center;font-size:12px;color:var(--text-muted);font-family:var(--font-mono);}
+.fv-local{display:flex;flex-direction:column;align-items:center;gap:16px;}
+.fv-local-text{text-align:center;display:flex;flex-direction:column;gap:2px;}
+.fv-local-text strong{font-size:16px;}
+.fv-local-text span{font-size:13px;color:var(--text-secondary);}
+
+/* bento */
+.bento-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}
+.bento-card{transition:transform .15s ease,border-color .2s ease;}
+.bento-card:hover{transform:translateY(-3px);border-color:rgba(34,197,94,.4);}
+/* feature grid */
+.feature-grid{display:grid;gap:24px;}
+.feature-grid.cols-3{grid-template-columns:repeat(3,1fr);}
+.feature-grid.cols-4{grid-template-columns:repeat(4,1fr);}
+/* model cards */
+.model-card{display:flex;flex-direction:column;gap:6px;padding:20px;position:relative;}
+.model-tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;margin-bottom:4px;width:fit-content;}
+.model-tag.flagship{background:rgba(34,197,94,.15);color:#16a34a;}
+.model-tag.free{background:rgba(59,130,246,.15);color:#2563eb;}
+.model-card h3{font-size:15px;font-weight:600;margin:0;}
+.model-meta{font-size:12px;color:#6b7280;margin:0;}
+.model-caps{font-size:12px;color:#6b7280;margin:0;}
+
+/* stats */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;}
+.stat-card{display:flex;flex-direction:column;gap:6px;padding:28px;}
+.stat-num{font-family:var(--font-mono);font-size:48px;font-weight:700;line-height:1;}
+.stat-label{font-size:14px;color:var(--text-secondary);}
+.testimonial{margin:40px 0 0;padding:40px;background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-md);}
+.testimonial blockquote{margin:0;font-size:22px;line-height:1.6;color:var(--text-primary);}
+.testimonial figcaption{margin-top:18px;font-size:14px;color:var(--text-secondary);}
+
+/* pricing */
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;align-items:start;}
+.price-card{display:flex;flex-direction:column;gap:12px;padding:32px;}
+.price-card-featured{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 12px 40px rgba(34,197,94,.15);}
+.plan-name{font-family:var(--font-mono);font-size:14px;color:var(--text-secondary);}
+.plan-name-accent{color:var(--accent);}
+.plan-price{font-size:36px;font-weight:700;}
+.plan-desc{font-size:14px;color:var(--text-secondary);line-height:1.55;min-height:42px;}
+.plan-features{list-style:none;margin:8px 0 16px;padding:0;display:flex;flex-direction:column;gap:10px;}
+.plan-features li{position:relative;padding-left:24px;font-size:14px;color:var(--text-secondary);line-height:1.5;}
+.plan-features li::before{content:"";position:absolute;left:0;top:7px;width:14px;height:8px;border-left:2px solid var(--accent);border-bottom:2px solid var(--accent);transform:rotate(-45deg);}
+.price-cta{margin-top:auto;width:100%;}
+
+/* faq */
+.container-narrow{max-width:860px;}
+.faq-list{display:flex;flex-direction:column;gap:14px;}
+.faq-item{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:0 24px;}
+.faq-item summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 0;font-size:16px;font-weight:700;}
+.faq-item summary::-webkit-details-marker{display:none;}
+.faq-icon{position:relative;width:16px;height:16px;flex-shrink:0;}
+.faq-icon::before,.faq-icon::after{content:"";position:absolute;background:var(--accent);border-radius:2px;transition:transform .2s ease;}
+.faq-icon::before{top:7px;left:0;width:16px;height:2px;}
+.faq-icon::after{top:0;left:7px;width:2px;height:16px;}
+.faq-item[open] .faq-icon::after{transform:scaleY(0);}
+.faq-item p{padding:0 0 22px;font-size:14px;color:var(--text-secondary);line-height:1.7;}
+
+/* cta */
+.section-cta{position:relative;overflow:hidden;text-align:center;background:var(--bg-surface);}
+.cta-glow{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:700px;height:400px;background:radial-gradient(ellipse,rgba(34,197,94,.16),rgba(6,182,212,.06) 50%,transparent 72%);filter:blur(10px);pointer-events:none;}
+.cta-inner{position:relative;display:flex;flex-direction:column;align-items:center;gap:18px;}
+.cta-title{font-size:40px;font-weight:700;line-height:1.25;}
+.cta-subtitle{font-size:16px;color:var(--text-secondary);margin-bottom:8px;}
+
+/* footer */
+.site-footer{background:var(--bg-primary);border-top:1px solid var(--border-subtle);padding:60px 0 36px;}
+.footer-inner{display:flex;justify-content:space-between;gap:60px;flex-wrap:wrap;padding-bottom:40px;}
+.footer-brand{width:320px;max-width:100%;}
+.footer-tagline{margin-top:12px;font-size:14px;color:var(--text-secondary);line-height:1.6;}
+.footer-col{display:flex;flex-direction:column;gap:12px;}
+.footer-col-title{font-size:14px;font-weight:700;margin-bottom:2px;}
+.footer-col a{font-size:14px;color:var(--text-secondary);transition:color .15s ease;}
+.footer-col a:hover{color:var(--accent-light);}
+.footer-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:28px;border-top:1px solid var(--border-subtle);font-size:13px;color:var(--text-muted);}
+.footer-copy{font-family:var(--font-mono);}
+
+/* competitor comparison */
+.cmp-grid{display:flex;gap:24px;margin-bottom:48px;}
+.cmp-grid>.cmp-card{flex:1;min-width:0;}
+.cmp-card{background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:28px;transition:transform .15s ease,border-color .2s ease;}
+.cmp-card:hover{transform:translateY(-2px);border-color:rgba(34,197,94,.3);}
+.cmp-card[data-featured]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 8px 30px rgba(34,197,94,.12);}
+.cmp-card-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
+.cmp-card-icon{font-size:28px;line-height:1;}
+.cmp-card-icon img{width:32px;height:32px;border-radius:7px;object-fit:cover;vertical-align:middle;}
+.cmp-card-name{font-size:17px;font-weight:700;}
+.cmp-card-desc{font-size:13px;color:var(--text-secondary);margin-bottom:16px;}
+.cmp-card-tag{display:inline-block;padding:2px 8px;border-radius:16px;font-size:11px;font-weight:600;margin-right:4px;background:var(--bg-surface);color:var(--text-secondary);}
+.adv-list{list-style:none;padding:0;margin:0;}
+.adv-list li{padding:7px 0;font-size:13px;color:var(--text-secondary);border-bottom:1px solid var(--border-subtle);display:flex;align-items:flex-start;gap:8px;}
+.adv-list li:last-child{border-bottom:none;}
+.adv-mark{color:var(--accent);font-weight:700;flex-shrink:0;}
+.cmp-table-wrap{overflow-x:auto;margin-top:8px;}
+.cmp-table{width:100%;border-collapse:collapse;font-size:14px;}
+.cmp-table th{text-align:left;padding:12px 14px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border-subtle);}
+.cmp-table td{padding:12px 14px;border-bottom:1px solid var(--border-subtle);}
+.cmp-yes{color:var(--accent);font-weight:600;}
+.cmp-no{color:var(--text-muted);}
+.cmp-partial{color:var(--accent-cyan);}
+
+/* audience banner + pricing 4-col */
+.plan-audience-banner{display:flex;align-items:center;gap:12px;margin-bottom:36px;padding:18px 24px;background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-md);flex-wrap:wrap;justify-content:center;}
+.plan-audience-item{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--text-secondary);}
+.plan-audience-item strong{color:var(--text-primary);font-weight:700;}
+.plan-audience-arrow{color:var(--text-muted);font-size:16px;}
+.pricing-grid{grid-template-columns:repeat(4,1fr)!important;gap:20px!important;}
+.plan-upgrade-path{margin-top:14px;padding-top:14px;border-top:1px solid var(--border-subtle);display:flex;flex-direction:column;gap:6px;}
+.plan-upgrade-path a{font-size:13px;color:var(--accent);display:flex;align-items:center;justify-content:center;gap:4px;transition:color .15s ease;}
+.plan-upgrade-path a:hover{color:var(--accent-light);}
+.plan-audience-label{display:inline-block;padding:3px 12px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:12px;}
+.plan-audience-label.individual{background:rgba(34,197,94,.1);color:var(--accent);}
+.plan-audience-label.professional{background:rgba(6,182,212,.12);color:var(--accent-cyan);}
+.plan-audience-label.team{background:rgba(245,158,11,.12);color:#f59e0b;}
+.plan-audience-label.enterprise-aud{background:rgba(139,92,246,.12);color:#8b5cf6;}
+.price-coming-soon{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;background:rgba(245,158,11,.12);color:#f59e0b;margin-bottom:8px;}
+.btn-coming-soon{margin-top:auto;width:100%;text-align:center;padding:10px 0;border-radius:var(--radius-sm);font-size:14px;font-weight:700;background:rgba(245,158,11,.08);color:#f59e0b;border:1px dashed rgba(245,158,11,.4);cursor:not-allowed;}
+
+/* channel status */
+.ch-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-bottom:32px;}
+.cht-tbl{width:100%;border-collapse:collapse;font-size:14px;}
+.cht-tbl th{text-align:left;padding:12px 14px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border-subtle);}
+.cht-tbl td{padding:12px 14px;border-bottom:1px solid var(--border-subtle);}
+.cht-tbl tr:hover td{background:rgba(34,197,94,.04);}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;}
+.dot.on{background:var(--accent);box-shadow:0 0 6px rgba(34,197,94,.4);}
+
+/* open source banner */
+.os-banner{margin-top:36px;padding:36px;background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-md);text-align:center;}
+.os-banner h3{font-size:20px;margin-bottom:8px;}
+.os-banner p{color:var(--text-secondary);margin-bottom:20px;font-size:14px;line-height:1.7;}
+.os-banner .btn{margin:0 6px;}
+
+/* modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:32px;width:90%;max-width:480px;max-height:90vh;overflow-y:auto;position:relative;}
+.modal-close{position:absolute;top:16px;right:20px;font-size:24px;cursor:pointer;color:var(--text-muted);line-height:1;transition:color .15s ease;}
+.modal-close:hover{color:var(--text-primary);}
+.modal-box h3{margin:0 0 8px;font-size:20px;}
+.form-row{margin-bottom:14px;}
+.form-row input,.form-row textarea{width:100%;padding:12px 16px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);font-size:14px;background:var(--bg-card);color:var(--text-primary);outline:none;box-sizing:border-box;font-family:inherit;transition:border-color .15s ease,box-shadow .15s ease;}
+.form-row input:focus,.form-row textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(34,197,94,.12);}
+.form-row textarea{resize:vertical;}
+
+/* responsive */
+@media(max-width:1024px){.container{padding-left:48px;padding-right:48px;}.hero-title{font-size:46px;}.feature-text{width:440px;}.pricing-grid{grid-template-columns:repeat(2,1fr)!important;}.cmp-grid{flex-wrap:wrap;}.cmp-grid>.cmp-card{flex:1 1 calc(50% - 12px);min-width:240px;}}
+@media(max-width:860px){.nav,.header-cta{display:none;}.hero-inner{flex-direction:column;gap:48px;}.hero-text{width:100%;}.hero-visual{width:100%;}.hero-title{font-size:40px;}.section{padding:72px 0;}.section-title{font-size:32px;}.pain-grid,.steps-row,.bento-grid,.stats-row,.pricing-grid,.ch-stats{grid-template-columns:1fr!important;}.cmp-grid>.cmp-card{flex:1 1 100%;}.feature-block,.feature-block-reverse{flex-direction:column;gap:28px;padding:28px;}.feature-text{width:100%;}.solution-banner{flex-direction:column;align-items:flex-start;gap:20px;}.container{padding-left:24px;padding-right:24px;}.footer-bottom{flex-direction:column;gap:12px;align-items:flex-start;}.footer-inner{gap:36px;}}
+@media(max-width:480px){.hero-title{font-size:32px;}.section-title{font-size:26px;}.cta-title{font-size:28px;}.solution-title{font-size:22px;}.pricing-grid{grid-template-columns:1fr!important;}}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="site-header" id="top">
+  <div class="container header-inner">
+    <a class="brand" href="#top" aria-label="SeasAGI">
+      <span class="brand-logo"><img src="./assets/seasagi-icon.png" alt="SeasAGI Logo" width="40" height="40"></span>
+      <span class="brand-name">SeasAGI</span>
+    </a>
+    <nav class="nav" aria-label="Main navigation">
+      <a href="#core-features"><span class="lang-zh-i">功能</span><span class="lang-en-i">Features</span><span class="lang-ja-i">機能</span><span class="lang-ko-i">기능</span></a>
+      <a href="#architecture"><span class="lang-zh-i">架构</span><span class="lang-en-i">Architecture</span><span class="lang-ja-i">アーキテクチャ</span><span class="lang-ko-i">아키텍처</span></a>
+      <a href="#compare"><span class="lang-zh-i">对比</span><span class="lang-en-i">Compare</span><span class="lang-ja-i">比較</span><span class="lang-ko-i">비교</span></a>
+      <a href="#channels"><span class="lang-zh-i">通道</span><span class="lang-en-i">Channels</span><span class="lang-ja-i">チャネル</span><span class="lang-ko-i">채널</span></a>
+      <a href="#opensource"><span class="lang-zh-i">开源</span><span class="lang-en-i">Open Source</span><span class="lang-ja-i">オープンソース</span><span class="lang-ko-i">오픈소스</span></a>
+      <a href="#pricing"><span class="lang-zh-i">定价</span><span class="lang-en-i">Pricing</span><span class="lang-ja-i">料金</span><span class="lang-ko-i">요금</span></a>
+      <a href="https://github.com/SeasX/SeasAGI" target="_blank" rel="noopener" aria-label="GitHub">⭐</a>
+      <a href="https://discord.gg/NdMkGtqAA" target="_blank" rel="noopener" aria-label="Discord">💬</a>
+    </nav>
+    <a class="btn btn-primary btn-sm header-cta" href="#download"><span class="lang-zh-i">下载客户端</span><span class="lang-en-i">Download</span><span class="lang-ja-i">ダウンロード</span><span class="lang-ko-i">다운로드</span></a>
+    <button class="lang-btn" id="langToggle" onclick="toggleLang()">中文</button>
+  </div>
+</header>
+
+<main>
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-glow" aria-hidden="true"></div>
+    <div class="container hero-inner">
+      <div class="hero-text">
+        <span class="badge"><span class="badge-dot"></span><span class="lang-zh-i">开源 · 本地优先 · 隐私安全</span><span class="lang-en-i">Open Source · Local-First · Privacy</span><span class="lang-ja-i">オープンソース · ローカル優先 · プライバシー保護</span><span class="lang-ko-i">오픈소스 · 로컬 우선 · 프라이버시 보호</span></span>
+        <h1 class="hero-title"><span class="lang-zh-i">一个端点，<br>调度所有 AI API</span><span class="lang-en-i">One endpoint,<br>all your AI APIs</span><span class="lang-ja-i">ひとつのエンドポイントで、<br>すべての AI API を統合</span><span class="lang-ko-i">하나의 엔드포인트로<br>모든 AI API를 통합</span></h1>
+        <p class="hero-subtitle"><span class="lang-zh-i">SeasAGI 是本地 LLM API 智能网关。统一管理 OpenAI、Anthropic、Gemini、DeepSeek、Ollama 等渠道，智能路由自动降级，成本看板实时可见。API Key 永不上传。</span><span class="lang-en-i">SeasAGI is a local LLM API smart gateway. Unify OpenAI, Anthropic, Gemini, DeepSeek, Ollama channels with intelligent routing, auto-failover, real-time cost dashboard. API Keys never leave your machine.</span><span class="lang-ja-i">SeasAGI はローカル LLM API スマートゲートウェイです。OpenAI、Anthropic、Gemini、DeepSeek、Ollama などのチャネルを統合管理し、インテリジェントルーティングと自動フェイルオーバー、リアルタイムのコストダッシュボードを提供します。API Key はアップロードされません。</span><span class="lang-ko-i">SeasAGI는 로컬 LLM API 스마트 게이트웨이입니다. OpenAI, Anthropic, Gemini, DeepSeek, Ollama 등 채널을 통합 관리하고, 지능형 라우팅과 자동 장애 조치, 실시간 비용 대시보드를 제공합니다. API Key는 업로드되지 않습니다.</span></p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="#download"><span class="lang-zh-i">免费下载客户端</span><span class="lang-en-i">Download Free</span><span class="lang-ja-i">無料ダウンロード</span><span class="lang-ko-i">무료 다운로드</span></a>
+          <a class="btn btn-ghost" href="https://github.com/SeasX/SeasAGI" target="_blank" rel="noopener"><span class="lang-zh-i">查看 GitHub</span><span class="lang-en-i">View on GitHub</span><span class="lang-ja-i">GitHub で見る</span><span class="lang-ko-i">GitHub에서 보기</span></a>
+          <a class="btn btn-ghost" href="https://discord.gg/NdMkGtqAA" target="_blank" rel="noopener"><span class="lang-zh-i">加入 Discord</span><span class="lang-en-i">Join Discord</span><span class="lang-ja-i">Discord に参加</span><span class="lang-ko-i">Discord 참여</span></a>
+        </div>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <svg class="gateway-svg" viewBox="0 0 560 380" role="img">
+          <defs>
+            <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#22C55E" stop-opacity="0.35"></stop><stop offset="100%" stop-color="#22C55E" stop-opacity="0"></stop></radialGradient>
+            <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22C55E"></stop><stop offset="1" stop-color="#06B6D4"></stop></linearGradient>
+          </defs>
+          <circle cx="280" cy="190" r="150" fill="url(#centerGlow)"></circle>
+          <g stroke="url(#lineGrad)" stroke-width="2" opacity="0.7">
+            <line x1="120" y1="95" x2="280" y2="190"></line><line x1="440" y1="95" x2="280" y2="190"></line>
+            <line x1="80" y1="235" x2="280" y2="190"></line><line x1="480" y1="235" x2="280" y2="190"></line>
+            <line x1="280" y1="320" x2="280" y2="190"></line>
+          </g>
+          <g font-family="Geist, sans-serif" font-size="12" fill="#F7FAFC">
+            <g class="pnode"><circle cx="120" cy="95" r="26" fill="#1A2136" stroke="#22C55E" stroke-width="1.5"></circle><text x="120" y="99" text-anchor="middle">OpenAI</text></g>
+            <g class="pnode"><circle cx="440" cy="95" r="26" fill="#1A2136" stroke="#22C55E" stroke-width="1.5"></circle><text x="440" y="99" text-anchor="middle">Claude</text></g>
+            <g class="pnode"><circle cx="80" cy="235" r="26" fill="#1A2136" stroke="#22C55E" stroke-width="1.5"></circle><text x="80" y="239" text-anchor="middle">Gemini</text></g>
+            <g class="pnode"><circle cx="480" cy="235" r="26" fill="#1A2136" stroke="#22C55E" stroke-width="1.5"></circle><text x="480" y="239" text-anchor="middle">DeepSeek</text></g>
+            <g class="pnode"><circle cx="280" cy="320" r="26" fill="#1A2136" stroke="#22C55E" stroke-width="1.5"></circle><text x="280" y="324" text-anchor="middle">Ollama</text></g>
+          </g>
+          <g class="gateway-core">
+            <rect x="218" y="158" width="124" height="64" rx="14" fill="#121726" stroke="#22C55E" stroke-width="2"></rect>
+            <text x="280" y="185" text-anchor="middle" font-family="Geist Mono, monospace" font-size="14" fill="#22C55E">localhost</text>
+            <text x="280" y="205" text-anchor="middle" font-family="Geist Mono, monospace" font-size="13" fill="#94A3B8">:4318/v1</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problem / Solution -->
+  <section class="section section-surface" id="problem">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">PROBLEM</span>
+        <h2 class="section-title"><span class="lang-zh-i">AI 开发者每天面对的三个痛点</span><span class="lang-en-i">Three pain points AI developers face daily</span><span class="lang-ja-i">AI 開発者が毎日直面する 3 つのペインポイント</span><span class="lang-ko-i">AI 개발자가 매일 직면하는 3가지 페인포인트</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">从多 Key 管理到 429 限流，再到成本黑洞，现有工具无法同时解决这三个问题。</span><span class="lang-en-i">From multi-key management to 429 rate limits to cost black holes, no existing tool solves all three.</span><span class="lang-ja-i">複数の Key 管理から 429 レート制限、さらにはコストのブラックホールに至るまで、既存のツールではこの 3 つの問題を同時に解決できません。</span><span class="lang-ko-i">다중 Key 관리부터 429 레이트 리미트, 비용 블랙홀에 이르기까지, 기존 도구로는 이 세 가지를 동시에 해결할 수 없습니다.</span></p>
+      </div>
+      <div class="pain-grid">
+        <article class="card">
+          <span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="4"></circle><path d="M12 12h8m0 0v-3m0 3v3"></path></svg></span>
+          <h3 class="card-title"><span class="lang-zh-i">多 Key 管理混乱</span><span class="lang-en-i">Multi-Key Chaos</span><span class="lang-ja-i">複数 Key 管理の混乱</span><span class="lang-ko-i">다중 Key 관리 혼란</span></h3>
+          <p class="card-desc"><span class="lang-zh-i">每个 Provider 一个 Key，配置文件散落各处，团队共享时权限与审计无从谈起。</span><span class="lang-en-i">Each provider needs its own key, config files scattered everywhere, no team sharing or audit.</span><span class="lang-ja-i">Provider ごとに Key が必要で、設定ファイルが散在し、チーム共有時の権限管理や監査が不可能です。</span><span class="lang-ko-i">Provider마다 Key가 필요하고, 설정 파일이 흩어져 있어, 팀 공유 시 권한 관리와 감사가 불가능합니다.</span></p>
+        </article>
+        <article class="card">
+          <span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></span>
+          <h3 class="card-title"><span class="lang-zh-i">429 限流打断工作流</span><span class="lang-en-i">429 Rate Limits</span><span class="lang-ja-i">429 レート制限によるワークフロー中断</span><span class="lang-ko-i">429 레이트 리미트로 인한 워크플로우 중단</span></h3>
+          <p class="card-desc"><span class="lang-zh-i">模型服务商频繁返回 429，没有自动降级机制，对话中途被迫中断，体验支离破碎。</span><span class="lang-en-i">Providers return 429 frequently with no auto-failover, breaking conversations mid-stream.</span><span class="lang-ja-i">モデルサービスプロバイダーが頻繁に 429 を返し、自動フェイルオーバー機構がないため、対話の途中で中断され、体験が分断されます。</span><span class="lang-ko-i">모델 서비스 제공자가 빈번하게 429를 반환하고, 자동 장애 조치 메커니즘이 없어 대화 도중 강제 중단되어 경험이 단편화됩니다.</span></p>
+        </article>
+        <article class="card">
+          <span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V8H6a2 2 0 00-2 2v8a2 2 0 002 2h14v-4"></path><path d="M18 12h2"></path></svg></span>
+          <h3 class="card-title"><span class="lang-zh-i">成本黑洞不可控</span><span class="lang-en-i">Cost Black Hole</span><span class="lang-ja-i">コストのブラックホール、制御不能</span><span class="lang-ko-i">비용 블랙홀, 통제 불가</span></h3>
+          <p class="card-desc"><span class="lang-zh-i">不同模型单价差异巨大，用量分散在各平台，月末账单出来才知道超支了多少。</span><span class="lang-en-i">Vast price differences across models, usage scattered across platforms, only discover overspend at month-end.</span><span class="lang-ja-i">モデルごとに単価が大きく異なり、使用量が各プラットフォームに分散し、月末の請求書で初めて超過額が分かります。</span><span class="lang-ko-i">모델마다 단가 차이가 크고, 사용량이 각 플랫폼에 분산되어, 월말 청구서가 나와야 초과 분을 알 수 있습니다.</span></p>
+        </article>
+      </div>
+      <div class="solution-banner">
+        <div>
+          <h3 class="solution-title"><span class="lang-zh-i">SeasAGI 用一个桌面客户端解决所有问题</span><span class="lang-en-i">SeasAGI solves all three with one desktop client</span><span class="lang-ja-i">SeasAGI はひとつのデスクトップクライアントで全問題を解決します</span><span class="lang-ko-i">SeasAGI는 하나의 데스크톱 클라이언트로 모든 문제를 해결합니다</span></h3>
+          <p class="solution-desc"><span class="lang-zh-i">本地网关 + 智能路由 + 成本看板，三合一。开源、免费、隐私安全。</span><span class="lang-en-i">Local gateway + smart routing + cost dashboard, all-in-one. Open source, free, privacy-first.</span><span class="lang-ja-i">ローカルゲートウェイ + インテリジェントルーティング + コストダッシュボードのオールインワン。オープンソース、無料、プライバシー保護。</span><span class="lang-ko-i">로컬 게이트웨이 + 지능형 라우팅 + 비용 대시보드의 올인원. 오픈소스, 무료, 프라이버시 보호.</span></p>
+        </div>
+        <a class="btn btn-primary" href="#download"><span class="lang-zh-i">立即下载</span><span class="lang-en-i">Download Now</span><span class="lang-ja-i">今すぐダウンロード</span><span class="lang-ko-i">지금 다운로드</span></a>
+      </div>
+      <div class="section-head" id="architecture" style="margin-top:56px;">
+        <span class="eyebrow">HOW IT WORKS</span>
+        <h2 class="section-title"><span class="lang-zh-i">三步接入所有 Provider</span><span class="lang-en-i">Three steps to connect all providers</span><span class="lang-ja-i">3 ステップで全 Provider に接続</span><span class="lang-ko-i">3단계로 모든 Provider 연결</span></h2>
+      </div>
+      <div class="steps-row">
+        <article class="card"><span class="step-num">01</span><h3 class="step-title"><span class="lang-zh-i">安装并启动客户端</span><span class="lang-en-i">Install & Launch</span><span class="lang-ja-i">インストールして起動</span><span class="lang-ko-i">설치 및 실행</span></h3><p class="card-desc"><span class="lang-zh-i">从 GitHub Releases 下载 macOS / Windows / Linux 桌面应用，一键启动本地网关。</span><span class="lang-en-i">Download from GitHub Releases for macOS / Windows / Linux, launch the local gateway in one click.</span><span class="lang-ja-i">GitHub Releases から macOS / Windows / Linux デスクトップアプリをダウンロードし、ワンクリックでローカルゲートウェイを起動します。</span><span class="lang-ko-i">GitHub Releases에서 macOS / Windows / Linux 데스크톱 앱을 다운로드하고, 원클릭으로 로컬 게이트웨이를 실행합니다.</span></p></article>
+        <article class="card"><span class="step-num">02</span><h3 class="step-title"><span class="lang-zh-i">配置 Provider API Key</span><span class="lang-en-i">Add Provider Keys</span><span class="lang-ja-i">Provider API Key を設定</span><span class="lang-ko-i">Provider API Key 설정</span></h3><p class="card-desc"><span class="lang-zh-i">在渠道管理中添加 OpenAI、Anthropic、Gemini 等 Key。所有 Key 仅存储在本地 Keychain。</span><span class="lang-en-i">Add OpenAI, Anthropic, Gemini keys in channel management. All keys stored only in local Keychain.</span><span class="lang-ja-i">チャネル管理で OpenAI、Anthropic、Gemini などの Key を追加します。すべての Key はローカル Keychain のみに保存されます。</span><span class="lang-ko-i">채널 관리에서 OpenAI, Anthropic, Gemini 등의 Key를 추가합니다. 모든 Key는 로컬 Keychain에만 저장됩니다.</span></p></article>
+        <article class="card"><span class="step-num">03</span><h3 class="step-title"><span class="lang-zh-i">切换 Base URL</span><span class="lang-en-i">Switch Base URL</span><span class="lang-ja-i">Base URL を切り替え</span><span class="lang-ko-i">Base URL 전환</span></h3><p class="card-desc"><span class="lang-zh-i">将任意 API 客户端的 Base URL 改为 http://127.0.0.1:4318/v1，即可享受智能路由。</span><span class="lang-en-i">Change any API client's Base URL to http://127.0.0.1:4318/v1 and enjoy smart routing.</span><span class="lang-ja-i">任意の API クライアントの Base URL を http://127.0.0.1:4318/v1 に変更するだけで、インテリジェントルーティングを利用できます。</span><span class="lang-ko-i">임의의 API 클라이언트의 Base URL을 http://127.0.0.1:4318/v1로 변경하면 지능형 라우팅을 이용할 수 있습니다.</span></p></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Core Features -->
+  <section class="section" id="core-features">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">CORE FEATURES</span>
+        <h2 class="section-title"><span class="lang-zh-i">为 AI 基础设施而生的核心能力</span><span class="lang-en-i">Core capabilities for AI infrastructure</span><span class="lang-ja-i">AI インフラストラクチャのためのコア機能</span><span class="lang-ko-i">AI 인프라를 위한 핵심 기능</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">从协议适配到智能路由，从成本优化到隐私安全，SeasAGI 覆盖 LLM 网关的每一个环节。</span><span class="lang-en-i">From protocol adaptation to smart routing, from cost optimization to privacy, SeasAGI covers every aspect of an LLM gateway.</span><span class="lang-ja-i">プロトコル適合からインテリジェントルーティング、コスト最適化からプライバシー保護まで、SeasAGI は LLM ゲートウェイのあらゆる側面をカバーします。</span><span class="lang-ko-i">프로토콜 적응부터 지능형 라우팅, 비용 최적화부터 프라이버시 보호까지, SeasAGI는 LLM 게이트웨이의 모든 측면을 다룹니다.</span></p>
+      </div>
+      <div class="feature-block">
+        <div class="feature-text">
+          <span class="eyebrow">UNIFIED GATEWAY</span>
+          <h3 class="feature-title"><span class="lang-zh-i">一个端点，兼容所有 Provider</span><span class="lang-en-i">One endpoint, all providers</span><span class="lang-ja-i">ひとつのエンドポイント、全 Provider 互換</span><span class="lang-ko-i">하나의 엔드포인트, 모든 Provider 호환</span></h3>
+          <p class="feature-desc"><span class="lang-zh-i">暴露 OpenAI 兼容的 localhost:4318/v1，无需修改现有客户端。内置 17 个执行器 + 6 个转换器，自动适配协议差异。</span><span class="lang-en-i">Expose OpenAI-compatible localhost:4318/v1 with zero client changes. 17 executors + 6 translators auto-adapt protocol differences.</span><span class="lang-ja-i">OpenAI 互換の localhost:4318/v1 を公開し、既存のクライアントを変更不要。内蔵の 17 つのエグゼキューター + 6 つのトランスレーターがプロトコルの違いを自動適応します。</span><span class="lang-ko-i">OpenAI 호환 localhost:4318/v1을 노출하여 기존 클라이언트 변경 없이 사용 가능. 내장 17개 실행기 + 6개 변환기가 프로토콜 차이를 자동 적응합니다.</span></p>
+        </div>
+        <div class="feature-visual">
+          <div class="fv fv-gateway">
+            <div class="fv-chips"><span class="chip">OpenAI</span><span class="chip">Anthropic</span><span class="chip">Gemini</span><span class="chip">DeepSeek</span><span class="chip">Ollama</span></div>
+            <div class="fv-endpoint"><code>localhost:4318/v1</code></div>
+          </div>
+        </div>
+      </div>
+      <div class="feature-block feature-block-reverse">
+        <div class="feature-visual">
+          <div class="fv fv-chain">
+            <div class="chain-step primary"><strong>Primary</strong><span>OpenAI</span></div>
+            <div class="chain-link"><span class="lang-zh-i">429 惩罚降级 ↓</span><span class="lang-en-i">429 penalty fallback ↓</span><span class="lang-ja-i">429 ペナルティフェイルオーバー ↓</span><span class="lang-ko-i">429 페널티 장애 조치 ↓</span></div>
+            <div class="chain-step backup"><strong>Backup</strong><span>Anthropic</span></div>
+            <div class="chain-link"><span class="lang-zh-i">仍失败 → 兜底 ↓</span><span class="lang-en-i">Still failing → fallback ↓</span><span class="lang-ja-i">まだ失敗 → フォールバック ↓</span><span class="lang-ko-i">여전히 실패 → 폴백 ↓</span></div>
+            <div class="chain-step fallback"><strong>Fallback</strong><span class="lang-zh-i">Ollama 本地</span><span class="lang-en-i">Ollama local</span><span class="lang-ja-i">Ollama ローカル</span><span class="lang-ko-i">Ollama 로컬</span></div>
+          </div>
+        </div>
+        <div class="feature-text">
+          <span class="eyebrow">SMART ROUTING</span>
+          <h3 class="feature-title"><span class="lang-zh-i">Combo 步骤链，自动降级不停机</span><span class="lang-en-i">Combo chain, auto-failover without downtime</span><span class="lang-ja-i">Combo ステップチェーン、ダウンタイムなしの自動フェイルオーバー</span><span class="lang-ko-i">Combo 스텝 체인, 다운타임 없는 자동 장애 조치</span></h3>
+          <p class="feature-desc"><span class="lang-zh-i">配置主 → 备 → 兜底链路。429 触发 PenaltyManager 惩罚与冷却，会话粘性保证对话不中断。</span><span class="lang-en-i">Configure primary → backup → fallback chains. 429 triggers PenaltyManager cooldown, session sticky keeps conversations flowing.</span><span class="lang-ja-i">プライマリ → バックアップ → フォールバックチェーンを設定。429 が PenaltyManager のペナルティとクールダウンをトリガーし、セッションスティッキーが対話の継続を保証します。</span><span class="lang-ko-i">프라이머리 → 백업 → 폴백 체인을 설정. 429가 PenaltyManager 페널티와 쿨다운을 트리거하고, 세션 스티키가 대화의 연속성을 보장합니다.</span></p>
+        </div>
+      </div>
+      <div class="feature-block">
+        <div class="feature-text">
+          <span class="eyebrow">LOCAL-FIRST</span>
+          <h3 class="feature-title"><span class="lang-zh-i">API Key 永不上传</span><span class="lang-en-i">API Keys never leave your machine</span><span class="lang-ja-i">API Key はアップロードされません</span><span class="lang-ko-i">API Key는 업로드되지 않습니다</span></h3>
+          <p class="feature-desc"><span class="lang-zh-i">Key 仅存本地 Keychain，请求直连 Provider。恒定时间比较防止时序攻击，开源可审计。</span><span class="lang-en-i">Keys stored only in local Keychain, requests go directly to providers. Constant-time comparison prevents timing attacks, open source for auditability.</span><span class="lang-ja-i">Key はローカル Keychain のみに保存され、リクエストは Provider に直接送信されます。一定時間比較でタイミング攻撃を防ぎ、オープンソースで監査可能です。</span><span class="lang-ko-i">Key는 로컬 Keychain에만 저장되고, 요청은 Provider에 직접 전송됩니다. 일정 시간 비교로 타이밍 공격을 방지하고, 오픈소스로 감사 가능합니다.</span></p>
+        </div>
+        <div class="feature-visual">
+          <div class="fv fv-local">
+            <svg viewBox="0 0 120 120" width="120" height="120" aria-hidden="true">
+              <path d="M60 12l36 14v30c0 26-18 42-36 52-18-10-36-26-36-52V26z" fill="#1A2136" stroke="#22C55E" stroke-width="2.5"></path>
+              <path d="M48 60l8 8 18-18" fill="none" stroke="#22C55E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+              <rect x="52" y="46" width="16" height="14" rx="3" fill="none" stroke="#06B6D4" stroke-width="2.5"></rect>
+              <path d="M55 46v-4a5 5 0 0110 0v4" fill="none" stroke="#06B6D4" stroke-width="2.5"></path>
+            </svg>
+            <div class="fv-local-text"><strong><span class="lang-zh-i">本地 Keychain</span><span class="lang-en-i">Local Keychain</span><span class="lang-ja-i">ローカル Keychain</span><span class="lang-ko-i">로컬 Keychain</span></strong><span><span class="lang-zh-i">请求直连 Provider</span><span class="lang-en-i">Direct to Provider</span><span class="lang-ja-i">Provider へ直接接続</span><span class="lang-ko-i">Provider에 직접 연결</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bento -->
+  <section class="section section-surface" id="features-more">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">MORE CAPABILITIES</span>
+        <h2 class="section-title"><span class="lang-zh-i">不止于路由，覆盖完整治理链路</span><span class="lang-en-i">Beyond routing — full governance pipeline</span><span class="lang-ja-i">ルーティングにとどまらない、完全なガバナンスパイプライン</span><span class="lang-ko-i">라우팅에 그치지 않는, 완전한 거버넌스 파이프라인</span></h2>
+      </div>
+      <div class="bento-grid">
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">成本优化引擎</span><span class="lang-en-i">Cost Optimization</span><span class="lang-ja-i">コスト最適化エンジン</span><span class="lang-ko-i">비용 최적화 엔진</span></h3><p class="card-desc"><span class="lang-zh-i">按模型/渠道分组分析，任务类型差异化建议，四种快速策略一键预设。</span><span class="lang-en-i">Per-model/channel analysis, task-based suggestions, 4 quick strategy presets.</span><span class="lang-ja-i">モデル/チャネル別のグループ分析、タスクタイプ別の推奨、4 つのクイック戦略プリセットをワンクリックで設定。</span><span class="lang-ko-i">모델/채널별 그룹 분석, 태스크 타입별 차별화 추천, 4가지 빠른 전략 프리셋 원클릭 설정.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M18 17V9"></path><path d="M13 17V5"></path><path d="M8 17v-3"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">全链路可观测性</span><span class="lang-en-i">Full Observability</span><span class="lang-ja-i">フルスタック可観測性</span><span class="lang-ko-i">전체 체인 관측성</span></h3><p class="card-desc"><span class="lang-zh-i">错误分类分布、请求时间线、链路诊断、Recharts 可视化、成本估算，一目了然。</span><span class="lang-en-i">Error distribution, request timeline, route diagnostics, Recharts visualization, cost estimation.</span><span class="lang-ja-i">エラー分類分布、リクエストタイムライン、ルート診断、Recharts 可視化、コスト見積もりを一目で把握。</span><span class="lang-ko-i">에러 분류 분포, 요청 타임라인, 라우트 진단, Recharts 시각화, 비용 예측을 한눈에 파악.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h3M4 17v3h3M20 7V4h-3M20 17v3h-3M9 9h6v6H9z"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">Combo 优化工作台</span><span class="lang-en-i">Combo Workbench</span><span class="lang-ja-i">Combo 最適化ワークベンチ</span><span class="lang-ko-i">Combo 최적화 워크벤치</span></h3><p class="card-desc"><span class="lang-zh-i">我的方案 / 优化建议 / 模板中心 / 执行分析，四个标签页，Combo 拖拽排序。</span><span class="lang-en-i">My combos / suggestions / templates / exec analysis — 4 tabs with drag-and-drop.</span><span class="lang-ja-i">マイ combos / 最適化の推奨 / テンプレートセンター / 実行分析、4 つのタブ、Combo のドラッグ&ドロップ並べ替え。</span><span class="lang-ko-i">내 combos / 최적화 추천 / 템플릿 센터 / 실행 분석, 4개 탭, Combo 드래그 앤 드롭 정렬.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">Playground 即时测试</span><span class="lang-en-i">Playground</span><span class="lang-ja-i">Playground リアルタイムテスト</span><span class="lang-ko-i">Playground 실시간 테스트</span></h3><p class="card-desc"><span class="lang-zh-i">内置聊天测试 UI，Combo 选择器 + 执行链可视化 + 步骤回退状态，边配边测。</span><span class="lang-en-i">Built-in chat UI, combo selector + execution chain visualization + step rollback status.</span><span class="lang-ja-i">内蔵チャットテスト UI、Combo セレクター + 実行チェーン可視化 + ステップロールバックステータス、設定しながらテスト。</span><span class="lang-ko-i">내장 채팅 테스트 UI, Combo 셀렉터 + 실행 체인 시각화 + 스텝 롤백 상태, 설정하면서 테스트.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">多语言 i18n</span><span class="lang-en-i">Multi-language i18n</span><span class="lang-ja-i">多言語 i18n</span><span class="lang-ko-i">다국어 i18n</span></h3><p class="card-desc"><span class="lang-zh-i">中文 / 英文 / 日文 / 韩文四语言界面，服务全球开发者团队。</span><span class="lang-en-i">Chinese / English / Japanese / Korean UI for global developer teams.</span><span class="lang-ja-i">中国語 / 英語 / 日本語 / 韓国語の 4 言語インターフェース、グローバルな開発者チームをサポート。</span><span class="lang-ko-i">중국어 / 영어 / 일본어 / 한국어 4개 언어 인터페이스, 글로벌 개발자 팀을 지원.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">自动健康检查与熔断</span><span class="lang-en-i">Health Check & Circuit Breaker</span><span class="lang-ja-i">自動ヘルスチェックとサーキットブレーカー</span><span class="lang-ko-i">자동 헬스 체크 및 서킷 브레이커</span></h3><p class="card-desc"><span class="lang-zh-i">5 分钟探测 + 自动禁用，逐 Key Cooldown + 熔断器 + 指数退避，保障稳定性。</span><span class="lang-en-i">5-min probe + auto-disable, per-key cooldown + circuit breaker + exponential backoff.</span><span class="lang-ja-i">5 分間プローブ + 自動無効化、Key ごとの Cooldown + サーキットブレーカー + 指数バックオフで安定性を保障。</span><span class="lang-ko-i">5분 프로브 + 자동 비활성화, Key별 Cooldown + 서킷 브레이커 + 지수 백오프로 안정성 보장.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5M2 12l10 5 10-5"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">MITM 一键接管</span><span class="lang-en-i">One-Click MITM Proxy</span><span class="lang-ja-i">MITM ワンクリック引継ぎ</span><span class="lang-ko-i">MITM 원클릭 인계</span></h3><p class="card-desc"><span class="lang-zh-i">一键开启 MITM 代理，自动安装 CA 证书 + 设置系统代理，透明接管 AI API 流量路由到本地网关。</span><span class="lang-en-i">One-click MITM proxy with auto CA cert + system proxy, transparently intercepts AI API traffic to local gateway.</span><span class="lang-ja-i">ワンクリックで MITM プロキシを有効化し、CA 証明書の自動インストール + システムプロキシの設定で、AI API トラフィックを透過的に引継ぎローカルゲートウェイへルーティングします。</span><span class="lang-ko-i">원클릭으로 MITM 프록시를 활성화하고, CA 인증서 자동 설치 + 시스템 프록시 설정으로, AI API 트래픽을 투명하게 인계하여 로컬 게이트웨이로 라우팅합니다.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h14a2 2 0 012 2z"></path><path d="M7 12h10"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">Token 压缩 + 语义缓存</span><span class="lang-en-i">Token Compression + Semantic Cache</span><span class="lang-ja-i">Token 圧縮 + セマンティックキャッシュ</span><span class="lang-ko-i">Token 압축 + 시맨틱 캐시</span></h3><p class="card-desc"><span class="lang-zh-i">RTK / Caveman 压缩管线与语义缓存，减少冗余 token、截断低价值上下文，提升幂等请求命中率。</span><span class="lang-en-i">RTK/Caveman compression plus semantic cache reduces redundant tokens and raises idempotent hit rates.</span><span class="lang-ja-i">RTK / Caveman 圧縮パイプラインとセマンティックキャッシュで、冗長な token を削減し、低価値のコンテキストを切り詰め、冪等リクエストのヒット率を向上させます。</span><span class="lang-ko-i">RTK / Caveman 압축 파이프라인과 시맨틱 캐시로, 중복 token을 줄이고 저가치 컨텍스트를 절단하며, 멱등 요청의 적중률을 향상시킵니다.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20"></path><path d="M7 7l10 10M17 7L7 17"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">Fusion 路由 + 协议翻译</span><span class="lang-en-i">Fusion Routing + Protocol Translation</span><span class="lang-ja-i">Fusion ルーティング + プロトコル翻訳</span><span class="lang-ko-i">Fusion 라우팅 + 프로토콜 번역</span></h3><p class="card-desc"><span class="lang-zh-i">Fusion 并发候选、模型族回退、Reasoning Replay，Chat Completions / Responses API 双向转换。</span><span class="lang-en-i">Fusion fan-out, model-family fallback, reasoning replay, bidirectional Chat Completions / Responses API translation.</span><span class="lang-ja-i">Fusion の並行候補、モデルファミリーフォールバック、Reasoning Replay、Chat Completions / Responses API の双方向変換。</span><span class="lang-ko-i">Fusion 동시 후보, 모델 패밀리 폴백, Reasoning Replay, Chat Completions / Responses API 양방향 변환.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-9 4 18 3-9h4"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">系统诊断中心</span><span class="lang-en-i">Diagnostics Center</span><span class="lang-ja-i">システム診断センター</span><span class="lang-ko-i">시스템 진단 센터</span></h3><p class="card-desc"><span class="lang-zh-i">端口、连通性、证书、代理残留、出口 IP 和 TLS 状态统一面板，问题更快发现与修复。</span><span class="lang-en-i">One panel for ports, connectivity, certificates, residual proxy, egress IP, and TLS status.</span><span class="lang-ja-i">ポート、接続性、証明書、プロキシ残留、エグレス IP と TLS ステータスを統一パネルで、問題の迅速な発見と修正を実現。</span><span class="lang-ko-i">포트, 연결성, 인증서, 프록시 잔류, 이그레스 IP 및 TLS 상태를 통합 패널에서, 문제를 더 빠르게 발견하고 수정.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7v10l10 5 10-5V7L12 2z"></path><path d="M2 7l10 5 10-5"></path><path d="M12 22V12"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">TLS 指纹伪装 + 智能熔断</span><span class="lang-en-i">TLS Fingerprint + Smart Breaker</span><span class="lang-ja-i">TLS フィンガープリント偽装 + スマートブレーカー</span><span class="lang-ko-i">TLS 핑거프린트 위장 + 스마트 브레이커</span></h3><p class="card-desc"><span class="lang-zh-i">自动适配更接近真实客户端的 TLS 指纹，异常时自动熔断与恢复，通道更稳。</span><span class="lang-en-i">More realistic TLS fingerprints with automatic breaker and recovery for stable channels.</span><span class="lang-ja-i">よりリアルなクライアントに近い TLS フィンガープリントを自動適応し、異常時に自動的にブレーカーと復旧でチャネルを安定化。</span><span class="lang-ko-i">더 실제 클라이언트에 가까운 TLS 핑거프린트를 자동 적응하고, 이상 시 자동 브레이커 및 복구로 채널을 안정화.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">Eval 评估 + 性能审计</span><span class="lang-en-i">Eval + Performance Audit</span><span class="lang-ja-i">Eval 評価 + パフォーマンス監査</span><span class="lang-ko-i">Eval 평가 + 성능 감사</span></h3><p class="card-desc"><span class="lang-zh-i">上线前量化效果，运行中持续看延迟和瓶颈，让路由决策有数据支撑。</span><span class="lang-en-i">Measure quality before rollout and keep latency and bottlenecks visible in production.</span><span class="lang-ja-i">リリース前に効果を定量化し、実行中はレイテンシとボトルネックを継続的に可視化し、ルーティングの意思決定をデータで裏付け。</span><span class="lang-ko-i">릴리스 전 효과를 정량화하고, 실행 중 레이턴시와 병목을 지속적으로 시각화하여, 라우팅 의사결정을 데이터로 뒷받침.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path><path d="M14 2v6h6"></path><path d="M8 13h8M8 17h5"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">Plugin Hook + MCP Gateway</span><span class="lang-en-i">Plugin Hook + MCP Gateway</span><span class="lang-ja-i">Plugin Hook + MCP Gateway</span><span class="lang-ko-i">Plugin Hook + MCP Gateway</span></h3><p class="card-desc"><span class="lang-zh-i">14 个 Hook + 20 个 MCP 工具，把路由、拦截和自动化能力开放出来，按业务流程扩展。</span><span class="lang-en-i">14 hooks + 20 MCP tools. Open routing, interception, and automation for custom workflow extension.</span><span class="lang-ja-i">14 個の Hook + 20 個の MCP ツールで、ルーティング、インターセプト、自動化機能を開放し、ビジネスフローに応じて拡張。</span><span class="lang-ko-i">14개 Hook + 20개 MCP 도구로, 라우팅, 인터셉트 및 자동화 기능을 개방하여, 비즈니스 워크플로우에 맞게 확장.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"></path><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">Open Core 云端</span><span class="lang-en-i">Open-Core Cloud</span><span class="lang-ja-i">Open Core クラウド</span><span class="lang-ko-i">Open Core 클라우드</span></h3><p class="card-desc"><span class="lang-zh-i">Server 分社区版（AGPL 3.0 基础控制面 + 中继）与企业版（计费、治理、Admin Dashboard），客户端可独立运行。</span><span class="lang-en-i">Server split into Community (AGPL 3.0 basic control + relay) and Enterprise (billing, governance, admin dashboard).</span><span class="lang-ja-i">Server はコミュニティ版（AGPL 3.0 基礎コントロールプレーン + リレー）とエンタープライズ版（課金、ガバナンス、Admin Dashboard）に分かれ、クライアントは単独で動作可能。</span><span class="lang-ko-i">Server는 커뮤니티 버전(AGPL 3.0 기초 컨트롤 플레인 + 릴레이)과 엔터프라이즈 버전(과금, 거버넌스, Admin Dashboard)으로 나뉘며, 클라이언트는 독립 실행 가능.</span></p></article>
+        <article class="card bento-card"><span class="icon-box"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"></path><path d="M3 6h18M16 10a4 4 0 01-8 0"></path></svg></span><h3 class="card-title"><span class="lang-zh-i">Token 市场</span><span class="lang-en-i">Token Market</span><span class="lang-ja-i">Token マーケット</span><span class="lang-ko-i">Token 마켓</span></h3><p class="card-desc"><span class="lang-zh-i">闲置 API Key 一键上架（一口价 / 折扣），扫码交易，平台 10% 佣金，管理后台风控审计。</span><span class="lang-en-i">List unused keys at fixed price or discount, QR code trading, 10% commission, admin risk control & audit.</span><span class="lang-ja-i">未使用の API Key をワンクリックで出品（固定価格 / 割引）、QR コード取引、プラットフォーム 10% 手数��、管理画面でリスクコントロールと監査。</span><span class="lang-ko-i">미사용 API Key를 원클릭으로 등록(고정가 / 할인), QR 코드 거래, 플랫폼 10% 수수료, 관리 화면에서 리스크 통제 및 감사.</span></p></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- MITM One-Click Proxy -->
+  <section class="section" id="mitm">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">MITM PROXY</span>
+        <h2 class="section-title"><span class="lang-zh-i">一键接管所有 AI 编程工具</span><span class="lang-en-i">One-Click Proxy for All AI Coding Tools</span><span class="lang-ja-i">すべての AI コーディングツールをワンクリックで接管</span><span class="lang-ko-i">모든 AI 코딩 도구를 원클릭으로 제어</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">无需修改 IDE 配置，MITM 代理自动拦截 Cursor、Copilot、Claude Code、Trae 等工具的 API 流量，透明路由到本地网关，实现多 Provider 切换与成本管控。</span><span class="lang-en-i">No IDE config changes needed. MITM proxy transparently intercepts API traffic from Cursor, Copilot, Claude Code, Trae and more, routing to your local gateway for multi-provider switching and cost control.</span><span class="lang-ja-i">IDE 設定の変更不要。MITM プロキシが Cursor、Copilot、Claude Code、Trae などの API トラフィックを透過的に傍受し、ローカルゲートウェイへルーティングしてマルチプロバイダー切替とコスト管理を実現。</span><span class="lang-ko-i">IDE 설정 변경 불필요. MITM 프록시가 Cursor, Copilot, Claude Code, Trae 등의 API 트래픽을 투명하게 가로채 로컬 게이트웨이로 라우팅하여 멀티 프로바이더 전환과 비용 관리를 구현.</span></p>
+      </div>
+      <div class="feature-grid cols-3">
+        <div class="card bento-card">
+          <h3 class="card-title"><span class="lang-zh-i">15+ 接管目标</span><span class="lang-en-i">15+ Proxy Targets</span><span class="lang-ja-i">15+ プロキシターゲット</span><span class="lang-ko-i">15+ 프록시 타겟</span></h3>
+          <p class="card-desc"><span class="lang-zh-i">Cursor / GitHub Copilot / Codex / Zed / Claude Code / Trae / Windsurf / Continue / Cline / Augment / Codeium / Cody 等</span><span class="lang-en-i">Cursor / GitHub Copilot / Codex / Zed / Claude Code / Trae / Windsurf / Continue / Cline / Augment / Codeium / Cody and more</span><span class="lang-ja-i">Cursor / GitHub Copilot / Codex / Zed / Claude Code / Trae / Windsurf / Continue / Cline / Augment / Codeium / Cody など</span><span class="lang-ko-i">Cursor / GitHub Copilot / Codex / Zed / Claude Code / Trae / Windsurf / Continue / Cline / Augment / Codeium / Cody 등</span></p>
+        </div>
+        <div class="card bento-card">
+          <h3 class="card-title"><span class="lang-zh-i">CA 证书信任</span><span class="lang-en-i">CA Certificate Trust</span><span class="lang-ja-i">CA 証明書信頼</span><span class="lang-ko-i">CA 인증서 신뢰</span></h3>
+          <p class="card-desc"><span class="lang-zh-i">一键安装根证书 → 自动签发域名证书 → 透明 HTTPS 代理，全程本地完成，无需手动配置。</span><span class="lang-en-i">One-click root CA install → auto domain certificate signing → transparent HTTPS proxy, all local, zero manual config.</span><span class="lang-ja-i">ワンクリックでルート CA インストール → ドメイン証明書の自動署名 → 透過 HTTPS プロキシ。すべてローカルで完結、手動設定不要。</span><span class="lang-ko-i">원클릭 루트 CA 설치 → 자동 도메인 인증서 서명 → 투명 HTTPS 프록시. 모두 로컬에서 완료, 수동 설정 불필요.</span></p>
+        </div>
+        <div class="card bento-card">
+          <h3 class="card-title"><span class="lang-zh-i">23+ 域名拦截</span><span class="lang-en-i">23+ Domain Interception</span><span class="lang-ja-i">23+ ドメイン傍受</span><span class="lang-ko-i">23+ 도메인 가로채기</span></h3>
+          <p class="card-desc"><span class="lang-zh-i">覆盖 OpenAI / Anthropic / Google / DeepSeek / 智谱 / 月之暗面 / MiniMax / 小米 / 字节 / 腾讯 / 阿里 / 百度 等全部主流厂商 API 域名。</span><span class="lang-en-i">Covers OpenAI / Anthropic / Google / DeepSeek / Zhipu / Moonshot / MiniMax / Xiaomi / ByteDance / Tencent / Alibaba / Baidu and more.</span><span class="lang-ja-i">OpenAI / Anthropic / Google / DeepSeek / 智谱 / Moonshot / MiniMax / Xiaomi / ByteDance / Tencent / Alibaba / Baidu など主要 API ドメインをカバー。</span><span class="lang-ko-i">OpenAI / Anthropic / Google / DeepSeek / Zhipu / Moonshot / MiniMax / Xiaomi / ByteDance / Tencent / Alibaba / Baidu 등 주요 API 도메인 커버.</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Token Market -->
+  <section class="section" id="token-market">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">MARKETPLACE</span>
+        <h2 class="section-title"><span class="lang-zh-i">开发者间的 Token 交易市场</span><span class="lang-en-i">Token Marketplace for Developers</span><span class="lang-ja-i">開発者向け Token 取引市場</span><span class="lang-ko-i">개발자를 위한 Token 거래 마켓</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">闲置 API 额度一键上架出售，其他用户按量购买。让闲置算力变现，降低 AI 开发成本。</span><span class="lang-en-i">List unused API quota for sale, others buy on-demand. Turn idle compute into revenue, lower your AI development costs.</span><span class="lang-ja-i">未使用の API クォータをワンクリックで出品、他のユーザーがオンデマンドで購入。アイドル計算リソースを収益化し、AI 開発コストを削減。</span><span class="lang-ko-i">미사용 API 할당량을 원클릭으로 등록, 다른 사용자가 온디맨드로 구매. 유휴 컴퓨팅 자원을 수익화하고 AI 개발 비용을 절감.</span></p>
+      </div>
+      <div class="feature-grid cols-3">
+        <div class="card bento-card">
+          <h3 class="card-title"><span class="lang-zh-i">卖家信誉体系</span><span class="lang-en-i">Seller Reputation</span><span class="lang-ja-i">出品者レピュテーション</span><span class="lang-ko-i">판매자 신뢰도</span></h3>
+          <p class="card-desc"><span class="lang-zh-i">钻石 / 黄金 / 白银 / 青铜四级信誉，基于可用率、响应速度、历史交易量自动评级。</span><span class="lang-en-i">Diamond / Gold / Silver / Bronze tiers, auto-rated by availability, response speed, and historical volume.</span><span class="lang-ja-i">ダイヤモンド / ゴールド / シルバー / ブロンズの 4 段階レピュテーション。可用性、応答速度、取引履歴に基づき自動評価。</span><span class="lang-ko-i">다이아몬드 / 골드 / 실버 / 브론즈 4단계 신뢰도. 가용성, 응답 속도, 거래 이력 기반 자동 평가.</span></p>
+        </div>
+        <div class="card bento-card">
+          <h3 class="card-title"><span class="lang-zh-i">自动结算</span><span class="lang-en-i">Auto Settlement</span><span class="lang-ja-i">自動決済</span><span class="lang-ko-i">자동 정산</span></h3>
+          <p class="card-desc"><span class="lang-zh-i">按 Token 用量实时计费，平台 10% 佣金，自动分账，支持 Stripe 支付与提现。</span><span class="lang-en-i">Real-time billing by token usage, 10% platform commission, auto-split, Stripe payments and withdrawals.</span><span class="lang-ja-i">Token 使用量に基づくリアルタイム課金、プラットフォーム 10% 手数料、自動分割、Stripe 決済と出金に対応。</span><span class="lang-ko-i">Token 사용량 기반 실시간 과금, 플랫폼 10% 수수료, 자동 분할, Stripe 결제 및 출금 지원.</span></p>
+        </div>
+        <div class="card bento-card">
+          <h3 class="card-title"><span class="lang-zh-i">免费通道导入</span><span class="lang-en-i">Free Channel Import</span><span class="lang-ja-i">無料チャネルインポート</span><span class="lang-ko-i">무료 채널 가져오기</span></h3>
+          <p class="card-desc"><span class="lang-zh-i">28+ 免费通道种子（GLM-4-Flash / OpenRouter free / DuckDuckGo 等），一键导入为本地通道，零成本体验。</span><span class="lang-en-i">28+ free channel seeds (GLM-4-Flash / OpenRouter free / DuckDuckGo etc.), one-click import as local channels, zero-cost experience.</span><span class="lang-ja-i">28+ 無料チャネルシード（GLM-4-Flash / OpenRouter free / DuckDuckGo など）、ワンクリックでローカルチャネルにインポート、ゼロコストで体験。</span><span class="lang-ko-i">28+ 무료 채널 시드(GLM-4-Flash / OpenRouter free / DuckDuckGo 등), 원클릭으로 로컬 채널 가져오기, 무료 체험.</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Latest Models -->
+  <section class="section" id="models">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">MODELS</span>
+        <h2 class="section-title"><span class="lang-zh-i">最新模型矩阵</span><span class="lang-en-i">Latest Model Matrix</span><span class="lang-ja-i">最新モデルマトリックス</span><span class="lang-ko-i">최신 모델 매트릭스</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">覆盖 11 家厂商 70+ 模型，从旗舰推理到轻量快速，从永久免费到企业级</span><span class="lang-en-i">70+ models from 11 providers, from flagship reasoning to lightweight fast, from permanently free to enterprise-grade</span><span class="lang-ja-i">11 社 70 以上のモデル、旗艦推論から軽量高速まで、永久無料からエンタープライズ級まで</span><span class="lang-ko-i">11개사 70+ 모델, 플래그십 추론부터 경량 고속까지, 영구 무료부터 엔터프라이즈급까지</span></p>
+      </div>
+      <div class="feature-grid cols-4">
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>GPT-5.6 Sol</h3><p class="model-meta">OpenAI · 1M ctx</p><p class="model-caps">chat · vision · tools · reasoning</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>Claude Opus 5</h3><p class="model-meta">Anthropic · 200K ctx</p><p class="model-caps">chat · vision · tools · reasoning</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>Gemini 3.1 Pro</h3><p class="model-meta">Google · 2M ctx</p><p class="model-caps">chat · vision · tools · reasoning</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>Qwen3.8-Max</h3><p class="model-meta">Alibaba · 1M ctx</p><p class="model-caps">chat · vision · tools</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>Kimi K3</h3><p class="model-meta">Moonshot · 256K ctx</p><p class="model-caps">chat · tools · reasoning</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>MiMo-V2.5-Pro</h3><p class="model-meta">Xiaomi · 1M ctx</p><p class="model-caps">chat · tools · agent</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>Doubao-Seed-2.1-Pro</h3><p class="model-meta">ByteDance · 256K ctx</p><p class="model-caps">chat · vision · tools · reasoning</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>Hunyuan Hy3</h3><p class="model-meta">Tencent · 256K ctx</p><p class="model-caps">chat · reasoning · tools</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>GLM-5</h3><p class="model-meta">Zhipu · 128K ctx</p><p class="model-caps">chat · tools</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>MiniMax-M3</h3><p class="model-meta">MiniMax · 1M ctx</p><p class="model-caps">chat · tools</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>DeepSeek V4 Pro</h3><p class="model-meta">DeepSeek · 1M ctx</p><p class="model-caps">chat · reasoning</p></div>
+        <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>Grok 4</h3><p class="model-meta">xAI · 256K ctx</p><p class="model-caps">chat · vision · tools</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Free Models -->
+  <section class="section section-surface" id="free-models">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">FREE</span>
+        <h2 class="section-title"><span class="lang-zh-i">免费模型专区</span><span class="lang-en-i">Free Models Zone</span><span class="lang-ja-i">無料モデルゾーン</span><span class="lang-ko-i">무료 모델 존</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">永久免费、注册赠送、每月 recurring、keyless 通道 — 多种免费方式零成本体验 AI</span><span class="lang-en-i">Permanently free, sign-up bonus, monthly recurring, keyless channels — experience AI at zero cost</span><span class="lang-ja-i">永久無料、登録ボーナス、月次再提供、Keyless チャネル — ゼロコストで AI を体験</span><span class="lang-ko-i">영구 무료, 가입 보너스, 월간 반복, Keyless 채널 — 제로 비용으로 AI 경험</span></p>
+      </div>
+      <div class="feature-grid cols-4">
+        <div class="card model-card"><span class="model-tag free">永久免费</span><h3>GLM-4-Flash</h3><p class="model-meta">Zhipu · 128K ctx</p><p class="model-caps">无限制 · keyless</p></div>
+        <div class="card model-card"><span class="model-tag free">永久免费</span><h3>GLM-4.5-Flash</h3><p class="model-meta">Zhipu · 128K ctx</p><p class="model-caps">无限制 · keyless</p></div>
+        <div class="card model-card"><span class="model-tag free">Free</span><h3>Nemotron 3 Ultra</h3><p class="model-meta">OpenRouter · 1M ctx</p><p class="model-caps">20 req/min · 200 req/day</p></div>
+        <div class="card model-card"><span class="model-tag free">Free</span><h3>GLM 5.2</h3><p class="model-meta">OpenRouter · 256K ctx</p><p class="model-caps">20 req/min · 200 req/day</p></div>
+        <div class="card model-card"><span class="model-tag free">Free</span><h3>Inkling</h3><p class="model-meta">OpenRouter · 262K ctx</p><p class="model-caps">20 req/min · 200 req/day</p></div>
+        <div class="card model-card"><span class="model-tag free">Free</span><h3>Laguna S 2.1</h3><p class="model-meta">OpenRouter · 262K ctx</p><p class="model-caps">20 req/min · 200 req/day</p></div>
+        <div class="card model-card"><span class="model-tag free">注册赠送</span><h3>DeepSeek</h3><p class="model-meta">全模型 · 500万 tokens</p><p class="model-caps">one-time-initial</p></div>
+        <div class="card model-card"><span class="model-tag free">注册赠送</span><h3>Xiaomi MiMo</h3><p class="model-meta">全模型 · $2 额度</p><p class="model-caps">one-time-initial</p></div>
+        <div class="card model-card"><span class="model-tag free">Keyless</span><h3>DuckDuckGo AI</h3><p class="model-meta">web-cookie · 无限制</p><p class="model-caps">GPT-4o · Llama · Claude</p></div>
+        <div class="card model-card"><span class="model-tag free">Keyless</span><h3>Felo</h3><p class="model-meta">web-cookie · 无限制</p><p class="model-caps">多模型路由</p></div>
+        <div class="card model-card"><span class="model-tag free">每月免费</span><h3>ERNIE Speed</h3><p class="model-meta">Baidu · recurring</p><p class="model-caps">monthly recurring</p></div>
+        <div class="card model-card"><span class="model-tag free">每月免费</span><h3>Hunyuan Lite</h3><p class="model-meta">Tencent · recurring</p><p class="model-caps">monthly recurring</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats / Open Source -->
+  <section class="section" id="opensource">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">TRUST</span>
+        <h2 class="section-title"><span class="lang-zh-i">被开发者选择的理由</span><span class="lang-en-i">Why developers choose SeasAGI</span><span class="lang-ja-i">開発者が SeasAGI を選ぶ理由</span><span class="lang-ko-i">개발자가 SeasAGI를 선택하는 이유</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">开源、透明、可审计。从个人开发者到企业团队，SeasAGI 提供清晰的边界与可扩展的治理。</span><span class="lang-en-i">Open source, transparent, auditable. From solo developers to enterprise teams, SeasAGI provides clear boundaries and extensible governance.</span><span class="lang-ja-i">オープンソース、透明性、監査可能性。個人開発者からエンタープライズチームまで、SeasAGI は明確な境界と拡張可能なガバナンスを提供します。</span><span class="lang-ko-i">오픈소스, 투명성, 감사 가능. 개인 개발자부터 엔터프라이즈 팀까지, SeasAGI는 명확한 경계와 확장 가능한 거버넌스를 제공합니다.</span></p>
+      </div>
+      <div class="stats-row">
+        <div class="card stat-card"><span class="stat-num">17</span><span class="stat-label"><span class="lang-zh-i">Provider 执行器</span><span class="lang-en-i">Provider Executors</span><span class="lang-ja-i">Provider エグゼキューター</span><span class="lang-ko-i">Provider 실행기</span></span></div>
+        <div class="card stat-card"><span class="stat-num">6</span><span class="stat-label"><span class="lang-zh-i">协议转换器</span><span class="lang-en-i">Protocol Translators</span><span class="lang-ja-i">プロトコルトランスレーター</span><span class="lang-ko-i">프로토콜 변환기</span></span></div>
+        <div class="card stat-card"><span class="stat-num">28+</span><span class="stat-label"><span class="lang-zh-i">免费通道种子</span><span class="lang-en-i">Free Channel Seeds</span><span class="lang-ja-i">無料チャネルシード</span><span class="lang-ko-i">무료 채널 시드</span></span></div>
+        <div class="card stat-card"><span class="stat-num">15+</span><span class="stat-label"><span class="lang-zh-i">MITM 接管目标</span><span class="lang-en-i">MITM Targets</span><span class="lang-ja-i">MITM ターゲット</span><span class="lang-ko-i">MITM 타겟</span></span></div>
+        <div class="card stat-card"><span class="stat-num">2</span><span class="stat-label"><span class="lang-zh-i">开源许可证</span><span class="lang-en-i">Open Licenses</span><span class="lang-ja-i">オープンソースライセンス</span><span class="lang-ko-i">오픈소스 라이선스</span></span></div>
+        <div class="card stat-card"><span class="stat-num">4</span><span class="stat-label"><span class="lang-zh-i">界面语言</span><span class="lang-en-i">UI Languages</span><span class="lang-ja-i">UI 言語</span><span class="lang-ko-i">UI 언어</span></span></div>
+      </div>
+      <figure class="testimonial">
+        <blockquote><span class="lang-zh-i">"SeasAGI 把我们从多 Provider 的混乱里解放出来。现在团队只用改一个 Base URL，就能得到自动降级和成本看板。"</span><span class="lang-en-i">"SeasAGI freed us from multi-provider chaos. Now the team just changes one Base URL to get auto-failover and cost visibility."</span><span class="lang-ja-i">「SeasAGI は私たちを複数 Provider の混乱から解放してくれました。今、チームは Base URL を一つ変更するだけで、自動フェイルオーバーとコストダッシュボードを利用できます。」</span><span class="lang-ko-i">"SeasAGI는 우리를 다중 Provider의 혼란에서 해방시켰습니다. 이제 팀은 Base URL 하나만 변경하면 자동 장애 조치와 비용 대시보드를 얻을 수 있습니다."</span></blockquote>
+        <figcaption><span class="lang-zh-i">—— 某 AI 应用团队技术负责人</span><span class="lang-en-i">— Tech Lead, an AI application team</span><span class="lang-ja-i">— ある AI アプリチームのテックリード</span><span class="lang-ko-i">— 한 AI 애플리케이션 팀의 테크 리드</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Competitor Comparison -->
+  <section class="section" id="compare">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">COMPARISON</span>
+        <h2 class="section-title"><span class="lang-zh-i">竞品优势对比</span><span class="lang-en-i">Competitive Advantages</span><span class="lang-ja-i">競争優位性</span><span class="lang-ko-i">경쟁 우위</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">SeasAGI vs 9Router / cc-switch / FreeLLMAPI — 只列优势，清晰对比</span><span class="lang-en-i">SeasAGI vs 9Router / cc-switch / FreeLLMAPI — advantages only, clear comparison</span><span class="lang-ja-i">SeasAGI vs 9Router / cc-switch / FreeLLMAPI — 利点のみ、明確な比較</span><span class="lang-ko-i">SeasAGI vs 9Router / cc-switch / FreeLLMAPI — 장점만, 명확한 비교</span></p>
+      </div>
+      <div class="cmp-grid">
+        <article class="cmp-card" data-featured>
+          <div class="cmp-card-head"><span class="cmp-card-icon"><img src="./assets/seasagi-icon.png" alt="SeasAGI Logo" width="32" height="32"></span><div><div class="cmp-card-name">SeasAGI</div><span class="cmp-card-tag">Go</span><span class="cmp-card-tag">TypeScript</span></div></div>
+          <p class="cmp-card-desc"><span class="lang-zh-i">开源客户端 + 社区版云端 + 企业版云端的分层 AI 网关平台</span><span class="lang-en-i">Layered AI gateway: open-source client + community + enterprise server</span><span class="lang-ja-i">階層型 AI ゲートウェイ：オープンソースクライアント + コミュニティ + エンタープライズサーバー</span><span class="lang-ko-i">계층형 AI 게이트웨이: 오픈소스 클라이언트 + 커뮤니티 + 엔터프라이즈 서버</span></p>
+          <ul class="adv-list">
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">桌面原生应用（Wails + 系统托盘 + 自动更新）</span><span class="lang-en-i">Native desktop app (Wails + tray + auto-update)</span><span class="lang-ja-i">ネイティブデスクトップアプリ（Wails + トレイ + 自動更新）</span><span class="lang-ko-i">네이티브 데스크톱 앱 (Wails + 트레이 + 자동 업데이트)</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">客户端本地代理，直连 Provider，无服务端瓶颈</span><span class="lang-en-i">Client-side proxy, direct to providers, no server bottleneck</span><span class="lang-ja-i">クライアントサイドプロキシ、Provider 直結、サーバーボトルネックなし</span><span class="lang-ko-i">클라이언트 사이드 프록시, Provider 직접 연결, 서버 병목 없음</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">会话粘滞路由（SHA1 + 30min TTL）</span><span class="lang-en-i">Session sticky routing (SHA1 + 30min TTL)</span><span class="lang-ja-i">セッション粘着ルーティング（SHA1 + 30分 TTL）</span><span class="lang-ko-i">세션 스티키 라우팅 (SHA1 + 30분 TTL)</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">动态 429 惩罚降级 + 排序预设</span><span class="lang-en-i">Dynamic 429 penalty + sort presets</span><span class="lang-ja-i">動的 429 ペナルティ + ソートプリセット</span><span class="lang-ko-i">동적 429 페널티 + 정렬 프리셋</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">完整多租户 + Stripe 支付 + 套餐门控</span><span class="lang-en-i">Full multi-tenant + Stripe + plan gating</span><span class="lang-ja-i">完全なマルチテナント + Stripe + プランゲーティング</span><span class="lang-ko-i">완전한 멀티테넌트 + Stripe + 플랜 게이팅</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">17 执行器 + 6 协议翻译 + 多模态扁平化</span><span class="lang-en-i">17 executors + 6 translators + content flattening</span><span class="lang-ja-i">17 実行器 + 6 変換器 + コンテンツフラット化</span><span class="lang-ko-i">17 실행기 + 6 변환기 + 콘텐츠 평탄화</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">MITM 一键接管 AI API 流量</span><span class="lang-en-i">One-click MITM proxy for AI API traffic</span><span class="lang-ja-i">AI API トラフィックのワンクリック MITM プロキシ</span><span class="lang-ko-i">AI API 트래픽 원클릭 MITM 프록시</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">RTK / Caveman Token 压缩 + 语义缓存</span><span class="lang-en-i">RTK/Caveman token compression + semantic cache</span><span class="lang-ja-i">RTK/Caveman Token 圧縮 + セマンティックキャッシュ</span><span class="lang-ko-i">RTK/Caveman Token 압축 + 시맨틱 캐시</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">Fusion 路由 + 模型族回退 + Reasoning Replay</span><span class="lang-en-i">Fusion routing + model-family fallback + reasoning replay</span><span class="lang-ja-i">Fusion ルーティング + モデルファミリーフォールバック + Reasoning Replay</span><span class="lang-ko-i">Fusion 라우팅 + 모델 패밀리 폴백 + Reasoning Replay</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">诊断中心 + TLS 指纹伪装 + 智能熔断</span><span class="lang-en-i">Diagnostics center + TLS fingerprint + smart breaker</span><span class="lang-ja-i">診断センター + TLS フィンガープリント + スマートブレーカー</span><span class="lang-ko-i">진단 센터 + TLS 핑거프린트 + 스마트 브레이커</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">Eval 评估 + Plugin Hook + MCP Gateway</span><span class="lang-en-i">Eval + Plugin Hook + MCP Gateway</span><span class="lang-ja-i">Eval + Plugin Hook + MCP Gateway</span><span class="lang-ko-i">Eval + Plugin Hook + MCP Gateway</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">审计/风控/告警 + i18n 四语言</span><span class="lang-en-i">Audit/risk/alert + 4-language i18n</span><span class="lang-ja-i">監査/リスク/アラート + 4 言語 i18n</span><span class="lang-ko-i">감사/리스크/알림 + 4 언어 i18n</span></li>
+          </ul>
+        </article>
+        <article class="cmp-card">
+          <div class="cmp-card-head"><span class="cmp-card-icon">9️⃣</span><div><div class="cmp-card-name">9Router</div><span class="cmp-card-tag">Rust</span></div></div>
+          <p class="cmp-card-desc"><span class="lang-zh-i">Rust 实现的高性能 LLM API 路由器</span><span class="lang-en-i">High-performance LLM API router in Rust</span><span class="lang-ja-i">Rust による高性能 LLM API ルーター</span><span class="lang-ko-i">Rust 기반 고성능 LLM API 라우터</span></p>
+          <ul class="adv-list">
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">Rust 原生高性能，内存安全</span><span class="lang-en-i">Rust native performance, memory-safe</span><span class="lang-ja-i">Rust ネイティブの高性能、メモリセーフ</span><span class="lang-ko-i">Rust 네이티브 고성능, 메모리 안전</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">轻量级单二进制部署</span><span class="lang-en-i">Lightweight single binary deployment</span><span class="lang-ja-i">軽量シングルバイナリデプロイ</span><span class="lang-ko-i">경량 단일 바이너리 배포</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无桌面客户端，无本地网关代理</span><span class="lang-en-i">No desktop client, no local gateway proxy</span><span class="lang-ja-i">デスクトップクライアントなし、ローカルゲートウェイプロキシなし</span><span class="lang-ko-i">데스크톱 클라이언트 없음, 로컬 게이트웨이 프록시 없음</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无多租户/计费/支付体系</span><span class="lang-en-i">No multi-tenant/billing/payment</span><span class="lang-ja-i">マルチテナント/課金/決済なし</span><span class="lang-ko-i">멀티테넌트/과금/결제 없음</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无会话粘滞/动态惩罚/健康检查</span><span class="lang-en-i">No session sticky/penalty/health check</span><span class="lang-ja-i">セッション粘着/ペナルティ/ヘルスチェックなし</span><span class="lang-ko-i">세션 스티키/페널티/헬스 체크 없음</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无协议翻译/OAuth</span><span class="lang-en-i">No protocol translation/OAuth</span><span class="lang-ja-i">プロトコル変換/OAuth なし</span><span class="lang-ko-i">프로토콜 변환/OAuth 없음</span></li>
+          </ul>
+        </article>
+        <article class="cmp-card">
+          <div class="cmp-card-head"><span class="cmp-card-icon">⚡</span><div><div class="cmp-card-name">cc-switch</div><span class="cmp-card-tag">Go</span></div></div>
+          <p class="cmp-card-desc"><span class="lang-zh-i">Go 实现的 LLM API 切换代理</span><span class="lang-en-i">LLM API switching proxy in Go</span><span class="lang-ja-i">Go による LLM API 切り替えプロキシ</span><span class="lang-ko-i">Go 기반 LLM API 전환 프록시</span></p>
+          <ul class="adv-list">
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">Go 实现，部署简单</span><span class="lang-en-i">Go implementation, simple deployment</span><span class="lang-ja-i">Go 実装、シンプルなデプロイ</span><span class="lang-ko-i">Go 구현, 간단한 배포</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">基础模型切换与代理</span><span class="lang-en-i">Basic model switching and proxy</span><span class="lang-ja-i">基本的なモデル切り替えとプロキシ</span><span class="lang-ko-i">기본 모델 전환 및 프록시</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无桌面客户端，无本地网关</span><span class="lang-en-i">No desktop client, no local gateway</span><span class="lang-ja-i">デスクトップクライアントなし、ローカルゲートウェイなし</span><span class="lang-ko-i">데스크톱 클라이언트 없음, 로컬 게이트웨이 없음</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无多租户/计费/支付</span><span class="lang-en-i">No multi-tenant/billing/payment</span><span class="lang-ja-i">マルチテナント/課金/決済なし</span><span class="lang-ko-i">멀티테넌트/과금/결제 없음</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无智能路由/Combo/会话粘滞</span><span class="lang-en-i">No smart routing/combo/session sticky</span><span class="lang-ja-i">スマートルーティング/Combo/セッション粘着なし</span><span class="lang-ko-i">스마트 라우팅/Combo/세션 스티키 없음</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无可视化/分析/成本估算</span><span class="lang-en-i">No visualization/analytics/cost estimation</span><span class="lang-ja-i">可視化/分析/コスト推定なし</span><span class="lang-ko-i">시각화/분석/비용 추정 없음</span></li>
+          </ul>
+        </article>
+        <article class="cmp-card">
+          <div class="cmp-card-head"><span class="cmp-card-icon">🆓</span><div><div class="cmp-card-name">FreeLLMAPI</div><span class="cmp-card-tag">Node.js</span><span class="cmp-card-tag">TypeScript</span></div></div>
+          <p class="cmp-card-desc"><span class="lang-zh-i">自托管 LLM API 网关，前后端 TypeScript 统一栈</span><span class="lang-en-i">Self-hosted LLM API gateway, full-stack TypeScript</span><span class="lang-ja-i">セルフホスト LLM API ゲートウェイ、フルスタック TypeScript</span><span class="lang-ko-i">셀프호스트 LLM API 게이트웨이, 풀스택 TypeScript</span></p>
+          <ul class="adv-list">
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">前后端 TypeScript 统一栈，开发效率高</span><span class="lang-en-i">Full-stack TypeScript, high dev efficiency</span><span class="lang-ja-i">フルスタック TypeScript、高い開発効率</span><span class="lang-ko-i">풀스택 TypeScript, 높은 개발 효율</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">动态 429 惩罚降级 + Fallback 排序预设</span><span class="lang-en-i">Dynamic 429 penalty + fallback sort presets</span><span class="lang-ja-i">動的 429 ペナルティ + Fallback ソートプリセット</span><span class="lang-ko-i">동적 429 페널티 + Fallback 정렬 프리셋</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">丰富的分析可视化 + Playground</span><span class="lang-en-i">Rich analytics visualization + Playground</span><span class="lang-ja-i">豊富な分析可視化 + Playground</span><span class="lang-ko-i">풍부한 분석 시각화 + Playground</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无桌面客户端，服务端代理有单点瓶颈</span><span class="lang-en-i">No desktop client, server proxy single-point bottleneck</span><span class="lang-ja-i">デスクトップクライアントなし、サーバープロキシ単一障害点ボトルネック</span><span class="lang-ko-i">데스크톱 클라이언트 없음, 서버 프록시 단일 장애점 병목</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无多租户/计费/支付</span><span class="lang-en-i">No multi-tenant/billing/payment</span><span class="lang-ja-i">マルチテナント/課金/決済なし</span><span class="lang-ko-i">멀티테넌트/과금/결제 없음</span></li>
+            <li style="color:var(--text-muted)"><span style="color:var(--accent-cyan)">△</span> <span class="lang-zh-i">无协议翻译/OAuth/Keychain</span><span class="lang-en-i">No protocol translation/OAuth/Keychain</span><span class="lang-ja-i">プロトコル変換/OAuth/Keychain なし</span><span class="lang-ko-i">프로토콜 변환/OAuth/Keychain 없음</span></li>
+          </ul>
+        </article>
+      </div>
+      <div class="cmp-table-wrap">
+        <table class="cmp-table">
+          <thead><tr>
+            <th><span class="lang-zh-i">能力维度</span><span class="lang-en-i">Capability</span><span class="lang-ja-i">機能</span><span class="lang-ko-i">기능</span></th>
+            <th>SeasAGI</th><th>9Router</th><th>cc-switch</th><th>FreeLLMAPI</th>
+          </tr></thead>
+          <tbody>
+            <tr><td><span class="lang-zh-i">桌面原生客户端</span><span class="lang-en-i">Native Desktop Client</span><span class="lang-ja-i">ネイティブデスクトップクライアント</span><span class="lang-ko-i">네이티브 데스크톱 클라이언트</span></td><td class="cmp-yes">✓ Wails</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">本地网关代理</span><span class="lang-en-i">Local Gateway Proxy</span><span class="lang-ja-i">ローカルゲートウェイプロキシ</span><span class="lang-ko-i">로컬 게이트웨이 프록시</span></td><td class="cmp-yes">✓ <span class="lang-zh-i">直连</span><span class="lang-en-i">direct</span><span class="lang-ja-i">直接</span><span class="lang-ko-i">직접</span></td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-partial">△ <span class="lang-zh-i">服务端</span><span class="lang-en-i">server</span><span class="lang-ja-i">サーバー</span><span class="lang-ko-i">서버</span></td></tr>
+            <tr><td><span class="lang-zh-i">会话粘滞路由</span><span class="lang-en-i">Session Sticky Routing</span><span class="lang-ja-i">セッション粘着ルーティング</span><span class="lang-ko-i">세션 스티키 라우팅</span></td><td class="cmp-yes">✓ SHA1</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓ SHA1</td></tr>
+            <tr><td><span class="lang-zh-i">动态 429 惩罚</span><span class="lang-en-i">Dynamic 429 Penalty</span><span class="lang-ja-i">動的 429 ペナルティ</span><span class="lang-ko-i">동적 429 페널티</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓</td></tr>
+            <tr><td><span class="lang-zh-i">Key 健康检查</span><span class="lang-en-i">Key Health Check</span><span class="lang-ja-i">Key ヘルスチェック</span><span class="lang-ko-i">Key 헬스 체크</span></td><td class="cmp-yes">✓ 5min</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓</td></tr>
+            <tr><td><span class="lang-zh-i">per-key Cooldown</span><span class="lang-en-i">Per-key Cooldown</span><span class="lang-ja-i">Per-key Cooldown</span><span class="lang-ko-i">Per-key Cooldown</span></td><td class="cmp-yes">✓ 120s</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓</td></tr>
+            <tr><td><span class="lang-zh-i">多租户 + 支付</span><span class="lang-en-i">Multi-tenant + Payment</span><span class="lang-ja-i">マルチテナント + 決済</span><span class="lang-ko-i">멀티테넌트 + 결제</span></td><td class="cmp-yes">✓ Stripe</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">协议翻译</span><span class="lang-en-i">Protocol Translation</span><span class="lang-ja-i">プロトコル変換</span><span class="lang-ko-i">프로토콜 변환</span></td><td class="cmp-yes">✓ 6 <span class="lang-zh-i">种</span><span class="lang-en-i">types</span><span class="lang-ja-i">種</span><span class="lang-ko-i">종류</span></td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">OAuth PKCE</span><span class="lang-en-i">OAuth PKCE</span><span class="lang-ja-i">OAuth PKCE</span><span class="lang-ko-i">OAuth PKCE</span></td><td class="cmp-yes">✓ 4 Provider</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">Keychain 安全存储</span><span class="lang-en-i">Keychain Storage</span><span class="lang-ja-i">Keychain ストレージ</span><span class="lang-ko-i">Keychain 스토리지</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">成本估算</span><span class="lang-en-i">Cost Estimation</span><span class="lang-ja-i">コスト推定</span><span class="lang-ko-i">비용 추정</span></td><td class="cmp-yes">✓ GPT-4o</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓</td></tr>
+            <tr><td><span class="lang-zh-i">错误分类分布</span><span class="lang-en-i">Error Distribution</span><span class="lang-ja-i">エラー分類</span><span class="lang-ko-i">에러 분류</span></td><td class="cmp-yes">✓ 7 <span class="lang-zh-i">类</span><span class="lang-en-i">types</span><span class="lang-ja-i">種類</span><span class="lang-ko-i">종류</span></td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓</td></tr>
+            <tr><td><span class="lang-zh-i">请求时间线</span><span class="lang-en-i">Request Timeline</span><span class="lang-ja-i">リクエストタイムライン</span><span class="lang-ko-i">요청 타임라인</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓</td></tr>
+            <tr><td>Playground</td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓</td></tr>
+            <tr><td><span class="lang-zh-i">Combo 拖拽排序</span><span class="lang-en-i">Combo Drag Sort</span><span class="lang-ja-i">Combo ドラッグソート</span><span class="lang-ko-i">Combo 드래그 정렬</span></td><td class="cmp-yes">✓ @dnd-kit</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓ @dnd-kit</td></tr>
+            <tr><td><span class="lang-zh-i">Token 市场</span><span class="lang-en-i">Token Market</span><span class="lang-ja-i">Token マーケット</span><span class="lang-ko-i">Token 마켓</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">Token 压缩 / 语义缓存</span><span class="lang-en-i">Token Compression / Semantic Cache</span><span class="lang-ja-i">Token 圧縮 / セマンティックキャッシュ</span><span class="lang-ko-i">Token 압축 / 시맨틱 캐시</span></td><td class="cmp-yes">✓ RTK + Caveman</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">Fusion 路由 / 模型族回退</span><span class="lang-en-i">Fusion Routing / Family Fallback</span><span class="lang-ja-i">Fusion ルーティング / ファミリーフォールバック</span><span class="lang-ko-i">Fusion 라우팅 / 패밀리 폴백</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">Responses API 翻译</span><span class="lang-en-i">Responses API Translation</span><span class="lang-ja-i">Responses API 変換</span><span class="lang-ko-i">Responses API 변환</span></td><td class="cmp-yes">✓ <span class="lang-zh-i">双向</span><span class="lang-en-i">bidirectional</span><span class="lang-ja-i">双方向</span><span class="lang-ko-i">양방향</span></td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">A2A / per-key 配额 / CLI</span><span class="lang-en-i">A2A / Per-key Quota / CLI</span><span class="lang-ja-i">A2A / Per-key Quota / CLI</span><span class="lang-ko-i">A2A / Per-key Quota / CLI</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">审计/风控/告警</span><span class="lang-en-i">Audit/Risk/Alert</span><span class="lang-ja-i">監査/リスク/アラート</span><span class="lang-ko-i">감사/리스크/알림</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">诊断中心 / 代理体检</span><span class="lang-en-i">Diagnostics / Proxy Health</span><span class="lang-ja-i">診断 / プロキシヘルス</span><span class="lang-ko-i">진단 / 프록시 헬스</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">TLS 指纹伪装 / 智能熔断</span><span class="lang-en-i">TLS Fingerprint / Smart Breaker</span><span class="lang-ja-i">TLS フィンガープリント / スマートブレーカー</span><span class="lang-ko-i">TLS 핑거프린트 / 스마트 브레이커</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">Eval 评估 / 性能审计</span><span class="lang-en-i">Eval / Performance Audit</span><span class="lang-ja-i">Eval / パフォーマンス監査</span><span class="lang-ko-i">Eval / 성능 감사</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">Plugin Hook / MCP Gateway</span><span class="lang-en-i">Plugin Hook / MCP Gateway</span><span class="lang-ja-i">Plugin Hook / MCP Gateway</span><span class="lang-ko-i">Plugin Hook / MCP Gateway</span></td><td class="cmp-yes">✓ 14+20</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td>i18n</td><td class="cmp-yes">✓ 4 <span class="lang-zh-i">语言</span><span class="lang-en-i">languages</span><span class="lang-ja-i">言語</span><span class="lang-ko-i">언어</span></td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section class="section section-surface" id="pricing">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">PRICING</span>
+        <h2 class="section-title"><span class="lang-zh-i">开源免费，企业按需扩展</span><span class="lang-en-i">Open source free, enterprise on-demand</span><span class="lang-ja-i">オープンソースは無料、エンタープライズはオンデマンド</span><span class="lang-ko-i">오픈소스 무료, 엔터프라이즈 온디맨드</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">客户端完全开源免费；服务端社区版可自部署；企业版提供计费、多租户与治理后台。</span><span class="lang-en-i">Client is fully open source and free; server community edition is self-hostable; enterprise edition adds billing, multi-tenant, and governance.</span><span class="lang-ja-i">クライアントは完全にオープンソースで無料、サーバーコミュニティ版はセルフホスト可能、エンタープライズ版は課金・マルチテナント・ガバナンスを提供します。</span><span class="lang-ko-i">클라이언트는 완전히 오픈소스이며 무료, 서버 커뮤니티 에디션은 자체 호스팅 가능, 엔터프라이즈 에디션은 과금·멀티테넌시·거버넌스를 제공합니다.</span></p>
+      </div>
+      <div class="plan-audience-banner">
+        <div class="plan-audience-item"><span>💻</span><div><strong><span class="lang-zh-i">个人开发者</span><span class="lang-en-i">Individual</span><span class="lang-ja-i">個人開発者</span><span class="lang-ko-i">개인 개발자</span></strong><span class="lang-zh-i"> — 免费本地 + BYOK</span><span class="lang-en-i"> — Free local + BYOK</span><span class="lang-ja-i"> — ローカル無料 + BYOK</span><span class="lang-ko-i"> — 무료 로컬 + BYOK</span></div></div>
+        <span class="plan-audience-arrow">→</span>
+        <div class="plan-audience-item"><span>🚀</span><div><strong><span class="lang-zh-i">专业用户</span><span class="lang-en-i">Professional</span><span class="lang-ja-i">プロフェッショナル</span><span class="lang-ko-i">프로페셔널</span></strong><span class="lang-zh-i"> — 云端通道 + 千万 Token</span><span class="lang-en-i"> — Cloud channels + 10M quota</span><span class="lang-ja-i"> — クラウドチャネル + 1000万 Token</span><span class="lang-ko-i"> — 클라우드 채널 + 1000만 Token</span></div></div>
+        <span class="plan-audience-arrow">→</span>
+        <div class="plan-audience-item"><span>👥</span><div><strong><span class="lang-zh-i">小团队</span><span class="lang-en-i">Small Team</span><span class="lang-ja-i">スモールチーム</span><span class="lang-ko-i">소규모 팀</span></strong><span class="lang-zh-i"> — 共享配额 + 集中管理</span><span class="lang-en-i"> — Shared quota + central mgmt</span><span class="lang-ja-i"> — 共有クォータ + 一元管理</span><span class="lang-ko-i"> — 공유 할당량 + 중앙 관리</span></div></div>
+        <span class="plan-audience-arrow">→</span>
+        <div class="plan-audience-item"><span>🏢</span><div><strong><span class="lang-zh-i">企业</span><span class="lang-en-i">Enterprise</span><span class="lang-ja-i">エンタープライズ</span><span class="lang-ko-i">엔터프라이즈</span></strong><span class="lang-zh-i"> — 治理审计 + SLA</span><span class="lang-en-i"> — Governance + SLA</span><span class="lang-ja-i"> — ガバナンス + SLA</span><span class="lang-ko-i"> — 거버넌스 + SLA</span></div></div>
+      </div>
+      <div class="pricing-grid">
+        <article class="card price-card">
+          <span class="plan-name">Free</span>
+          <span class="plan-price">$0<small> <span class="lang-zh-i">/月</span><span class="lang-en-i">/mo</span><span class="lang-ja-i">/月</span><span class="lang-ko-i">/월</span></small></span>
+          <span class="plan-audience-label individual"><span class="lang-zh-i">开源客户端</span><span class="lang-en-i">Open Source</span><span class="lang-ja-i">オープンソース</span><span class="lang-ko-i">오픈소스</span></span>
+          <p class="plan-desc"><span class="lang-zh-i">客户端 GPL 3.0 全量开源</span><span class="lang-en-i">Client GPL 3.0, fully open source</span><span class="lang-ja-i">クライアント GPL 3.0、完全オープンソース</span><span class="lang-ko-i">클라이언트 GPL 3.0, 완전 오픈소스</span></p>
+          <ul class="plan-features">
+            <li><span class="lang-zh-i">SeasAGI-Client 全量免费</span><span class="lang-en-i">SeasAGI-Client fully free</span><span class="lang-ja-i">SeasAGI-Client 完全無料</span><span class="lang-ko-i">SeasAGI-Client 완전 무료</span></li>
+            <li><span class="lang-zh-i">任意个数本地通道</span><span class="lang-en-i">Unlimited local channels</span><span class="lang-ja-i">無制限のローカルチャネル</span><span class="lang-ko-i">무제한 로컬 채널</span></li>
+            <li><span class="lang-zh-i">智能路由 / 会话粘滞</span><span class="lang-en-i">Smart routing / session sticky</span><span class="lang-ja-i">スマートルーティング / セッションスティッキー</span><span class="lang-ko-i">스마트 라우팅 / 세션 스티키</span></li>
+            <li><span class="lang-zh-i">17 执行器 + 6 协议翻译</span><span class="lang-en-i">17 executors + 6 translators</span><span class="lang-ja-i">17エグゼキューター + 6トランスレーター</span><span class="lang-ko-i">17개 실행기 + 6개 번역기</span></li>
+            <li><span class="lang-zh-i">Playground / 日志 / 诊断</span><span class="lang-en-i">Playground / logs / diagnostics</span><span class="lang-ja-i">Playground / ログ / 診断</span><span class="lang-ko-i">Playground / 로그 / 진단</span></li>
+            <li><span class="lang-zh-i">社区版云端可选自托管</span><span class="lang-en-i">Community server self-host option</span><span class="lang-ja-i">コミュニティ版セルフホストオプション</span><span class="lang-ko-i">커뮤니티 서버 자체 호스팅 옵션</span></li>
+          </ul>
+          <a class="btn btn-primary price-cta" href="#download"><span class="lang-zh-i">免费下载</span><span class="lang-en-i">Free Download</span><span class="lang-ja-i">無料ダウンロード</span><span class="lang-ko-i">무료 다운로드</span></a>
+          <div class="plan-upgrade-path"><a href="#pricing"><span class="lang-zh-i">升级到 Pro →</span><span class="lang-en-i">Upgrade to Pro →</span><span class="lang-ja-i">Pro にアップグレード →</span><span class="lang-ko-i">Pro로 업그레이드 →</span></a></div>
+        </article>
+        <article class="card price-card price-card-featured">
+          <span class="plan-name plan-name-accent">Pro</span>
+          <span class="price-coming-soon"><span class="lang-zh-i">即将开放</span><span class="lang-en-i">Coming Soon</span><span class="lang-ja-i">近日公開</span><span class="lang-ko-i">출시 예정</span></span>
+          <span class="plan-price">$9.9<small> <span class="lang-zh-i">/月</span><span class="lang-en-i">/mo</span><span class="lang-ja-i">/月</span><span class="lang-ko-i">/월</span></small></span>
+          <span class="plan-audience-label professional"><span class="lang-zh-i">个人开发者</span><span class="lang-en-i">For professionals</span><span class="lang-ja-i">プロフェッショナル向け</span><span class="lang-ko-i">프로페셔널용</span></span>
+          <p class="plan-desc"><span class="lang-zh-i">个人效率 · 分析 · 轻量云增值</span><span class="lang-en-i">Personal efficiency, analytics, light cloud</span><span class="lang-ja-i">個人効率 · 分析 · 軽量クラウド</span><span class="lang-ko-i">개인 효율 · 분석 · 경량 클라우드</span></p>
+          <ul class="plan-features">
+            <li><span class="lang-zh-i">免费版全部功能</span><span class="lang-en-i">All Free features</span><span class="lang-ja-i">無料版の全機能</span><span class="lang-ko-i">무료 버전의 모든 기능</span></li>
+            <li><span class="lang-zh-i">30+ 云端通道直连</span><span class="lang-en-i">30+ cloud channels</span><span class="lang-ja-i">30+ クラウドチャネル直結</span><span class="lang-ko-i">30+ 클라우드 채널 직접 연결</span></li>
+            <li><span class="lang-zh-i">智能推荐模型组合</span><span class="lang-en-i">Smart model combo recommendations</span><span class="lang-ja-i">スマートなモデル組み合わせ推奨</span><span class="lang-ko-i">스마트 모델 조합 추천</span></li>
+            <li><span class="lang-zh-i">云端用量 + 账单 + 可视化</span><span class="lang-en-i">Cloud usage & billing & visualization</span><span class="lang-ja-i">クラウド使用量 + 請求 + 可視化</span><span class="lang-ko-i">클라우드 사용량 + 청구 + 시각화</span></li>
+            <li><span class="lang-zh-i">月 1000 万 Token 配额</span><span class="lang-en-i">10M tokens/month quota</span><span class="lang-ja-i">月1000万 Token クォータ</span><span class="lang-ko-i">월 1000만 Token 할당량</span></li>
+            <li><span class="lang-zh-i">邮件工单支持</span><span class="lang-en-i">Email ticket support</span><span class="lang-ja-i">メールチケットサポート</span><span class="lang-ko-i">이메일 티켓 지원</span></li>
+          </ul>
+          <span class="btn-coming-soon"><span class="lang-zh-i">即将开放</span><span class="lang-en-i">Coming Soon</span><span class="lang-ja-i">近日公開</span><span class="lang-ko-i">출시 예정</span></span>
+        </article>
+        <article class="card price-card">
+          <span class="plan-name">Teams</span>
+          <span class="price-coming-soon"><span class="lang-zh-i">即将开放</span><span class="lang-en-i">Coming Soon</span><span class="lang-ja-i">近日公開</span><span class="lang-ko-i">출시 예정</span></span>
+          <span class="plan-price">$24.9<small> <span class="lang-zh-i">/席位/月</span><span class="lang-en-i">/seat/mo</span><span class="lang-ja-i">/席/月</span><span class="lang-ko-i">/좌석/월</span></small></span>
+          <span class="plan-audience-label team"><span class="lang-zh-i">小团队</span><span class="lang-en-i">For small teams</span><span class="lang-ja-i">小規模チーム向け</span><span class="lang-ko-i">소규모 팀용</span></span>
+          <p class="plan-desc"><span class="lang-zh-i">协作 · 共享配置 · 集中管理</span><span class="lang-en-i">Collaboration, shared config, central billing</span><span class="lang-ja-i">コラボレーション · 共有設定 · 一元請求</span><span class="lang-ko-i">협업 · 공유 설정 · 중앙 청구</span></p>
+          <ul class="plan-features">
+            <li><span class="lang-zh-i">Pro 全部功能</span><span class="lang-en-i">All Pro features</span><span class="lang-ja-i">Pro の全機能</span><span class="lang-ko-i">Pro의 모든 기능</span></li>
+            <li><span class="lang-zh-i">60+ 云端通道</span><span class="lang-en-i">60+ cloud channels</span><span class="lang-ja-i">60+ クラウドチャネル</span><span class="lang-ko-i">60+ 클라우드 채널</span></li>
+            <li><span class="lang-zh-i">月 5000 万 Token 配额</span><span class="lang-en-i">50M tokens/month quota</span><span class="lang-ja-i">月5000万 Token クォータ</span><span class="lang-ko-i">월 5000만 Token 할당량</span></li>
+            <li><span class="lang-zh-i">团队共享策略与路由配置</span><span class="lang-en-i">Team shared config & routing rules</span><span class="lang-ja-i">チーム共有設定・ルーティングルール</span><span class="lang-ko-i">팀 공유 설정 및 라우팅 규칙</span></li>
+            <li><span class="lang-zh-i">集中账单与成本归因</span><span class="lang-en-i">Centralized billing & cost attribution</span><span class="lang-ja-i">一元請求・コスト帰属</span><span class="lang-ko-i">중앙화된 청구 및 비용 귀속</span></li>
+            <li><span class="lang-zh-i">基础权限与审计事件</span><span class="lang-en-i">Basic RBAC & audit events</span><span class="lang-ja-i">基本的な RBAC・監査イベント</span><span class="lang-ko-i">기본 RBAC 및 감사 이벤트</span></li>
+          </ul>
+          <span class="btn-coming-soon"><span class="lang-zh-i">即将开放</span><span class="lang-en-i">Coming Soon</span><span class="lang-ja-i">近日公開</span><span class="lang-ko-i">출시 예정</span></span>
+        </article>
+        <article class="card price-card">
+          <span class="plan-name">Enterprise</span>
+          <span class="price-coming-soon"><span class="lang-zh-i">即将开放</span><span class="lang-en-i">Coming Soon</span><span class="lang-ja-i">近日公開</span><span class="lang-ko-i">출시 예정</span></span>
+          <span class="plan-price"><span class="lang-zh-i" style="font-size:24px;font-weight:700;">联系销售</span><span class="lang-en-i" style="font-size:24px;font-weight:700;">Contact Sales</span><span class="lang-ja-i" style="font-size:24px;font-weight:700;">お問い合わせ</span><span class="lang-ko-i" style="font-size:24px;font-weight:700;">문의하기</span></span>
+          <span class="plan-audience-label enterprise-aud"><span class="lang-zh-i">企业</span><span class="lang-en-i">For enterprises</span><span class="lang-ja-i">エンタープライズ向け</span><span class="lang-ko-i">엔터프라이즈용</span></span>
+          <p class="plan-desc"><span class="lang-zh-i">治理 · 审计 · 合规 · SLA</span><span class="lang-en-i">Governance, audit, compliance & SLA</span><span class="lang-ja-i">ガバナンス · 監査 · コンプライアンス · SLA</span><span class="lang-ko-i">거버넌스 · 감사 · 컴플라이언스 · SLA</span></p>
+          <ul class="plan-features">
+            <li><span class="lang-zh-i">Teams 全部功能</span><span class="lang-en-i">All Teams features</span><span class="lang-ja-i">Teams の全機能</span><span class="lang-ko-i">Teams의 모든 기능</span></li>
+            <li><span class="lang-zh-i">全模型与通道开放</span><span class="lang-en-i">Access to all models & channels</span><span class="lang-ja-i">全モデル・チャネルへのアクセス</span><span class="lang-ko-i">모든 모델 및 채널 액세스</span></li>
+            <li><span class="lang-zh-i">自定义配额与策略</span><span class="lang-en-i">Custom quota & policies</span><span class="lang-ja-i">カスタムクォータ・ポリシー</span><span class="lang-ko-i">맞춤 할당량 및 정책</span></li>
+            <li>SSO / SCIM / RBAC</li>
+            <li><span class="lang-zh-i">审计日志与报表</span><span class="lang-en-i">Audit logs & reports</span><span class="lang-ja-i">監査ログ・レポート</span><span class="lang-ko-i">감사 로그 및 보고서</span></li>
+            <li><span class="lang-zh-i">专属客户经理 & SLA</span><span class="lang-en-i">Dedicated account manager & SLA</span><span class="lang-ja-i">専任アカウントマネージャー & SLA</span><span class="lang-ko-i">전담 계정 매니저 & SLA</span></li>
+          </ul>
+          <span class="btn-coming-soon"><span class="lang-zh-i">即将开放</span><span class="lang-en-i">Coming Soon</span><span class="lang-ja-i">近日公開</span><span class="lang-ko-i">출시 예정</span></span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Channel Status + Open Source Banner -->
+  <section class="section" id="channels">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">CHANNELS</span>
+        <h2 class="section-title"><span class="lang-zh-i">云端通道状态</span><span class="lang-en-i">Cloud Channel Status</span><span class="lang-ja-i">クラウドチャネルステータス</span><span class="lang-ko-i">클라우드 채널 상태</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">实时查看云端各 Provider 通道的健康状态和性价比</span><span class="lang-en-i">Real-time health status and cost-performance of cloud provider channels</span><span class="lang-ja-i">クラウドプロバイダーの各チャネルの健全性とコストパフォーマンスをリアルタイムで確認</span><span class="lang-ko-i">클라우드 프로바이더 채널의 실시간 상태 및 비용 효율성 확인</span></p>
+      </div>
+      <div class="ch-stats">
+        <div class="card stat-card"><span class="stat-num">48</span><span class="stat-label"><span class="lang-zh-i">在线通道</span><span class="lang-en-i">Online Channels</span><span class="lang-ja-i">オンラインチャネル</span><span class="lang-ko-i">온라인 채널</span></span></div>
+        <div class="card stat-card"><span class="stat-num">99.2%</span><span class="stat-label"><span class="lang-zh-i">可用率</span><span class="lang-en-i">Availability</span><span class="lang-ja-i">可用率</span><span class="lang-ko-i">가용성</span></span></div>
+        <div class="card stat-card"><span class="stat-num">&lt;200ms</span><span class="stat-label"><span class="lang-zh-i">平均延迟</span><span class="lang-en-i">Avg Latency</span><span class="lang-ja-i">平均レイテンシ</span><span class="lang-ko-i">평균 지연</span></span></div>
+        <div class="card stat-card"><span class="stat-num">24</span><span class="stat-label"><span class="lang-zh-i">覆盖区域</span><span class="lang-en-i">Regions</span><span class="lang-ja-i">カバレッジエリア</span><span class="lang-ko-i">커버 리전</span></span></div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="cht-tbl">
+          <thead><tr>
+            <th><span class="lang-zh-i">通道</span><span class="lang-en-i">Channel</span><span class="lang-ja-i">チャネル</span><span class="lang-ko-i">채널</span></th>
+            <th>Provider</th>
+            <th><span class="lang-zh-i">模型</span><span class="lang-en-i">Model</span><span class="lang-ja-i">モデル</span><span class="lang-ko-i">모델</span></th>
+            <th><span class="lang-zh-i">状态</span><span class="lang-en-i">Status</span><span class="lang-ja-i">ステータス</span><span class="lang-ko-i">상태</span></th>
+            <th><span class="lang-zh-i">延迟</span><span class="lang-en-i">Latency</span><span class="lang-ja-i">レイテンシ</span><span class="lang-ko-i">지연</span></th>
+            <th><span class="lang-zh-i">输入价格</span><span class="lang-en-i">Input Price</span><span class="lang-ja-i">入力価格</span><span class="lang-ko-i">입력 가격</span></th>
+            <th><span class="lang-zh-i">输出价格</span><span class="lang-en-i">Output Price</span><span class="lang-ja-i">出力価格</span><span class="lang-ko-i">출력 가격</span></th>
+            <th><span class="lang-zh-i">区域</span><span class="lang-en-i">Region</span><span class="lang-ja-i">リージョン</span><span class="lang-ko-i">리전</span></th>
+          </tr></thead>
+          <tbody>
+            <tr><td>OpenAI</td><td>GPT-5.4</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>120ms</td><td>$5.00/M</td><td>$20.00/M</td><td>US</td></tr>
+            <tr><td>OpenAI</td><td>GPT-5.4-mini</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>95ms</td><td>$0.50/M</td><td>$2.00/M</td><td>US</td></tr>
+            <tr><td>Anthropic</td><td>Claude Sonnet 5</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>180ms</td><td>$3.00/M</td><td>$15.00/M</td><td>US</td></tr>
+            <tr><td>Anthropic</td><td>Claude Opus 4.8</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>200ms</td><td>$15.00/M</td><td>$75.00/M</td><td>US</td></tr>
+            <tr><td>Google</td><td>Gemini 3.1 Pro</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>110ms</td><td>$2.50/M</td><td>$10.00/M</td><td>US</td></tr>
+            <tr><td>Google</td><td>Gemini 3.5 Flash</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>85ms</td><td>$0.15/M</td><td>$0.60/M</td><td>US</td></tr>
+            <tr><td>DeepSeek</td><td>DeepSeek V4 Pro</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>160ms</td><td>$0.27/M</td><td>$1.10/M</td><td>CN</td></tr>
+            <tr><td>Alibaba</td><td>Qwen3.8-Max</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>130ms</td><td>$2.00/M</td><td>$6.00/M</td><td>CN</td></tr>
+            <tr><td>Zhipu</td><td>GLM-5</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>120ms</td><td>$1.00/M</td><td>$3.00/M</td><td>CN</td></tr>
+            <tr><td>Zhipu</td><td>GLM-4-Flash</td><td><span class="dot on"></span><span class="lang-zh-i">免费</span><span class="lang-en-i">Free</span><span class="lang-ja-i">無料</span><span class="lang-ko-i">무료</span></td><td>100ms</td><td>—</td><td>—</td><td>CN</td></tr>
+            <tr><td>Moonshot</td><td>Kimi K3</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>150ms</td><td>$0.60/M</td><td>$2.50/M</td><td>CN</td></tr>
+            <tr><td>MiniMax</td><td>MiniMax-M3</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>140ms</td><td>$1.00/M</td><td>$3.00/M</td><td>CN</td></tr>
+            <tr><td>Xiaomi</td><td>MiMo-V2.5-Pro</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>170ms</td><td>$1.00/M</td><td>$3.00/M</td><td>CN</td></tr>
+            <tr><td>ByteDance</td><td>Doubao-Seed-2.1-Pro</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>130ms</td><td>$0.85/M</td><td>$4.30/M</td><td>CN</td></tr>
+            <tr><td>Tencent</td><td>Hunyuan Hy3</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>150ms</td><td>$1.20/M</td><td>$4.00/M</td><td>CN</td></tr>
+            <tr><td>Mistral</td><td>Mistral Large</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>170ms</td><td>$2.00/M</td><td>$6.00/M</td><td>EU</td></tr>
+            <tr><td>xAI</td><td>Grok 4</td><td><span class="dot on"></span><span class="lang-zh-i">在线</span><span class="lang-en-i">Online</span><span class="lang-ja-i">オンライン</span><span class="lang-ko-i">온라인</span></td><td>160ms</td><td>$5.00/M</td><td>$15.00/M</td><td>US</td></tr>
+            <tr><td>OpenRouter</td><td>openrouter/free</td><td><span class="dot on"></span><span class="lang-zh-i">免费</span><span class="lang-en-i">Free</span><span class="lang-ja-i">無料</span><span class="lang-ko-i">무료</span></td><td>200ms</td><td>—</td><td>—</td><td>US</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="os-banner">
+        <h3><span class="lang-zh-i">开源项目 · 三层许可</span><span class="lang-en-i">Open Source · Three-Tier Licensing</span><span class="lang-ja-i">オープンソースプロジェクト · 3階層ライセンス</span><span class="lang-ko-i">오픈소스 프로젝트 · 3단계 라이선스</span></h3>
+        <p><span class="lang-zh-i">SeasAGI 采用分层开源策略：<strong>客户端 GPL 3.0</strong> 全量开源，<strong>云端社区版 AGPL 3.0</strong> 开源可自托管，<strong>云端企业版</strong>闭源面向商业部署。欢迎 Star、Fork、Issue、PR。</span><span class="lang-en-i">SeasAGI adopts a layered open-source strategy: <strong>Client GPL 3.0</strong> fully open source, <strong>Cloud Community AGPL 3.0</strong> open source for self-host, <strong>Cloud Enterprise</strong> closed-source for commercial deployment. Stars, forks, issues and PRs welcome.</span><span class="lang-ja-i">SeasAGI は階層型オープンソース戦略を採用しています：<strong>クライアント GPL 3.0</strong> 完全オープンソース、<strong>クラウドコミュニティ版 AGPL 3.0</strong> セルフホスト可能なオープンソース、<strong>クラウドエンタープライズ版</strong> 商用展開向けのクローズドソース。Star、Fork、Issue、PRを歓迎します。</span><span class="lang-ko-i">SeasAGI는 계층형 오픈소스 전략을 채택합니다: <strong>클라이언트 GPL 3.0</strong> 완전 오픈소스, <strong>클라우드 커뮤니티 AGPL 3.0</strong> 자체 호스팅용 오픈소스, <strong>클라우드 엔터프라이즈</strong> 상용 배포용 클로즈드 소스. Star, Fork, Issue, PR을 환영합니다.</span></p>
+        <a class="btn btn-primary" href="https://github.com/SeasX/SeasAGI" target="_blank" rel="noopener"><span class="lang-zh-i">Star on GitHub</span><span class="lang-en-i">Star on GitHub</span><span class="lang-ja-i">GitHubでStar</span><span class="lang-ko-i">GitHub에서 Star</span></a>
+        <a class="btn btn-ghost" href="https://discord.gg/NdMkGtqAA" target="_blank" rel="noopener"><span class="lang-zh-i">加入 Discord</span><span class="lang-en-i">Join Discord</span><span class="lang-ja-i">Discordに参加</span><span class="lang-ko-i">Discord 참여</span></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section" id="faq">
+    <div class="container container-narrow">
+      <div class="section-head">
+        <span class="eyebrow">FAQ</span>
+        <h2 class="section-title"><span class="lang-zh-i">常见问题</span><span class="lang-en-i">FAQ</span><span class="lang-ja-i">よくある質問</span><span class="lang-ko-i">자주 묻는 질문</span></h2>
+      </div>
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">SeasAGI 与 LiteLLM 有什么区别？</span><span class="lang-en-i">How is SeasAGI different from LiteLLM?</span><span class="lang-ja-i">SeasAGI は LiteLLM とどう違いますか？</span><span class="lang-ko-i">SeasAGI는 LiteLLM과 어떻게 다른가요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">SeasAGI 采用本地优先的桌面客户端架构，API Key 永不上传；同时原生支持 Combo 步骤链、429 惩罚降级、会话粘性等企业级路由策略，并以 Go 构建获得更高性能。</span><span class="lang-en-i">SeasAGI uses a local-first desktop client architecture where API keys never leave the machine. It natively supports combo chains, 429 penalty failover, session sticky routing, and is built in Go for higher performance.</span><span class="lang-ja-i">SeasAGI はローカル優先のデスクトップクライアントアーキテクチャを採用し、API Key がマシンから外部に送信されることはありません。Combo チェーン、429 ペナルティフェイルオーバー、セッションスティッキールーティングをネイティブにサポートし、Go で構築されて高いパフォーマンスを実現します。</span><span class="lang-ko-i">SeasAGI는 로컬 우선 데스크톱 클라이언트 아키텍처를 사용하여 API Key가 기기를 벗어나지 않습니다. Combo 체인, 429 페널티 페일오버, 세션 스티키 라우팅을 기본 지원하며 Go로 구축되어 더 높은 성능을 제공합니다.</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">API Key 是否真的不会上传？</span><span class="lang-en-i">Are API Keys really never uploaded?</span><span class="lang-ja-i">API Key は本当にアップロードされないのですか？</span><span class="lang-ko-i">API Key는 정말 업로드되지 않나요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">是的。SeasAGI-Client 将 API Key 存储在操作系统 Keychain 中，请求直接从本地网关发往 Provider，云端服务端不接触任何 Key。</span><span class="lang-en-i">Yes. SeasAGI-Client stores API keys in the OS Keychain. Requests go directly from the local gateway to the provider — the cloud server never touches any keys.</span><span class="lang-ja-i">はい。SeasAGI-Client は API Key を OS の Keychain に保存します。リクエストはローカルゲートウェイから直接 Provider に送信され、クラウドサーバーは Key に一切触れません。</span><span class="lang-ko-i">네. SeasAGI-Client는 API Key를 OS Keychain에 저장합니다. 요청은 로컬 게이트웨이에서 Provider로 직접 전송되며, 클라우드 서버는 Key에 접근하지 않습니다.</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">可以自部署服务端吗？</span><span class="lang-en-i">Can I self-host the server?</span><span class="lang-ja-i">サーバーを自己ホストできますか？</span><span class="lang-ko-i">서버를 자체 호스팅할 수 있나요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">可以。SeasAGI-Server 社区版基于 Go + Gin + SQLite，提供一键构建脚本与 systemd/nginx 部署方案，采用 AGPL 3.0 许可证。</span><span class="lang-en-i">Yes. SeasAGI-Server Community Edition is built with Go + Gin + SQLite, includes one-click build scripts and systemd/nginx deployment guides, under AGPL 3.0.</span><span class="lang-ja-i">はい。SeasAGI-Server Community Edition は Go + Gin + SQLite で構築され、ワンクリックビルドスクリプトと systemd/nginx デプロイガイドを提供し、AGPL 3.0 ライセンスの下で提供されます。</span><span class="lang-ko-i">네. SeasAGI-Server Community Edition은 Go + Gin + SQLite로 구축되었으며, 원클릭 빌드 스크립트와 systemd/nginx 배포 가이드를 제공하고 AGPL 3.0 라이선스로 제공됩니다.</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">支持哪些 Provider？</span><span class="lang-en-i">Which providers are supported?</span><span class="lang-ja-i">どの Provider に対応していますか？</span><span class="lang-ko-i">어떤 Provider를 지원하나요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">17 个 Provider 执行器：OpenAI、Azure、Anthropic、Gemini、DeepSeek、Grok、Mistral、OpenRouter、Vertex、Ollama，以及国产厂商 智谱 GLM、月之暗面 Kimi、MiniMax、小米 MiMo、字节豆包、腾讯混元、阿里通义。另有 28+ 免费通道种子（含 GLM-4-Flash 永久免费、OpenRouter free 系列、DuckDuckGo 等 keyless 通道）。</span><span class="lang-en-i">17 provider executors: OpenAI, Azure, Anthropic, Gemini, DeepSeek, Grok, Mistral, OpenRouter, Vertex, Ollama, plus Chinese providers Zhipu GLM, Moonshot Kimi, MiniMax, Xiaomi MiMo, ByteDance Doubao, Tencent Hunyuan, Alibaba Qwen. Plus 28+ free channel seeds (GLM-4-Flash, OpenRouter free series, DuckDuckGo keyless, etc.).</span><span class="lang-ja-i">17 のプロバイダー実行エンジン：OpenAI、Azure、Anthropic、Gemini、DeepSeek、Grok、Mistral、OpenRouter、Vertex、Ollama、および中国プロバイダー（智谱 GLM、Moonshot Kimi、MiniMax、Xiaomi MiMo、ByteDance Doubao、Tencent Hunyuan、Alibaba Qwen）。さらに 28 以上の無料チャネルシード（GLM-4-Flash、OpenRouter free シリーズ、DuckDuckGo など）。</span><span class="lang-ko-i">17개 프로바이더 실행기: OpenAI, Azure, Anthropic, Gemini, DeepSeek, Grok, Mistral, OpenRouter, Vertex, Ollama 및 중국 프로바이더(Zhipu GLM, Moonshot Kimi, MiniMax, Xiaomi MiMo, ByteDance Doubao, Tencent Hunyuan, Alibaba Qwen). 추가로 28+ 무료 채널 시드(GLM-4-Flash, OpenRouter free 시리즈, DuckDuckGo 등).</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">有哪些免费模型可用？</span><span class="lang-en-i">What free models are available?</span><span class="lang-ja-i">利用できる無料モデルは？</span><span class="lang-ko-i">어떤 무료 모델을 사용할 수 있나요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">永久免费：GLM-4-Flash / GLM-4.5-Flash（无限制）；OpenRouter free 系列：Nemotron 3 Ultra、GLM 5.2、Inkling、Laguna S（20 req/min, 200 req/day）；Keyless 通道：DuckDuckGo AI Chat、Felo、AI Horde、OpenCode Free；注册赠送：DeepSeek 500万 tokens、小米 $2、字节 50万/模型、阿里 100万/模型。</span><span class="lang-en-i">Permanently free: GLM-4-Flash / GLM-4.5-Flash (unlimited); OpenRouter free series: Nemotron 3 Ultra, GLM 5.2, Inkling, Laguna S (20 req/min, 200 req/day); Keyless channels: DuckDuckGo AI Chat, Felo, AI Horde, OpenCode Free; Sign-up bonus: DeepSeek 5M tokens, Xiaomi $2, ByteDance 500K/model, Alibaba 1M/model.</span><span class="lang-ja-i">永久無料：GLM-4-Flash / GLM-4.5-Flash（無制限）；OpenRouter free シリーズ：Nemotron 3 Ultra、GLM 5.2、Inkling、Laguna S（20 req/min, 200 req/day）；Keyless チャネル：DuckDuckGo AI Chat、Felo、AI Horde、OpenCode Free；登録ボーナス：DeepSeek 500万 tokens、Xiaomi $2、ByteDance 50万/モデル、Alibaba 100万/モデル。</span><span class="lang-ko-i">영구 무료: GLM-4-Flash / GLM-4.5-Flash(무제한); OpenRouter free 시리즈: Nemotron 3 Ultra, GLM 5.2, Inkling, Laguna S(20 req/min, 200 req/day); Keyless 채널: DuckDuckGo AI Chat, Felo, AI Horde, OpenCode Free; 가입 보너스: DeepSeek 500만 tokens, Xiaomi $2, ByteDance 50만/모델, Alibaba 100만/모델.</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">MITM 一键接管是什么？</span><span class="lang-en-i">What is the MITM one-click proxy?</span><span class="lang-ja-i">MITM ワンクリック接管とは？</span><span class="lang-ko-i">MITM 원클릭 제어란?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">MITM 一键接管让你无需修改 IDE 配置，通过本地代理透明拦截 Cursor、GitHub Copilot、Claude Code、Trae、Windsurf 等 15+ AI 编程工具的 API 流量，将其路由到本地网关。支持 23+ 厂商域名拦截（含国产厂商），一键安装 CA 证书即可使用。</span><span class="lang-en-i">MITM one-click proxy lets you transparently intercept API traffic from Cursor, GitHub Copilot, Claude Code, Trae, Windsurf and 15+ AI coding tools without changing IDE configs. Routes to your local gateway. Supports 23+ provider domains including Chinese vendors. Just install the CA certificate and go.</span><span class="lang-ja-i">MITM ワンクリック接管により、IDE 設定を変更することなく、Cursor、GitHub Copilot、Claude Code、Trae、Windsurf など 15 以上の AI コーディングツールの API トラフィックを透過的に傍受し、ローカルゲートウェイにルーティングできます。23 以上のプロバイダードメイン（中国プロバイダー含む）に対応。CA 証明書をインストールするだけですぐに使えます。</span><span class="lang-ko-i">MITM 원클릭 제어를 통해 IDE 설정 변경 없이 Cursor, GitHub Copilot, Claude Code, Trae, Windsurf 등 15+ AI 코딩 도구의 API 트래픽을 투명하게 가로채 로컬 게이트웨이로 라우팅할 수 있습니다. 23+ 프로바이더 도메인(중국 프로바이더 포함) 지원. CA 인증서 설치만으로 바로 사용 가능.</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">会话粘滞是什么？为什么需要？</span><span class="lang-en-i">What is session sticky routing?</span><span class="lang-ja-i">セッションスティッキールーティングとは何ですか？</span><span class="lang-ko-i">세션 스티키 라우팅이란 무엇인가요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">会话粘滞基于首条用户消息的 SHA1 哈希，将同一对话的后续请求自动路由到同一模型，防止多轮对话中途切换模型导致上下文断裂或幻觉。30 分钟 TTL 自动过期。</span><span class="lang-en-i">Session sticky routing uses SHA1 hash of the first user message to route all subsequent requests in the same conversation to the same model, preventing context breaks. 30-min TTL auto-expires.</span><span class="lang-ja-i">セッションスティッキールーティングは、最初のユーザーメッセージの SHA1 ハッシュに基づき、同じ会話の後続リクエストをすべて同じモデルにルーティングし、コンテキストの途絶を防ぎます。30 分の TTL で自動的に期限切れします。</span><span class="lang-ko-i">세션 스티키 라우팅은 첫 번째 사용자 메시지의 SHA1 해시를 기반으로 같은 대화의 모든 후속 요청을 동일한 모델로 라우팅하여 컨텍스트 단절을 방지합니다. 30분 TTL이 자동 만료됩니다.</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">和竞品相比有什么优势？</span><span class="lang-en-i">Advantages over competitors?</span><span class="lang-ja-i">競合との比較でどのような利点がありますか？</span><span class="lang-ko-i">경쟁 제품 대비 장점은?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">SeasAGI 是唯一提供桌面原生客户端 + 本地网关代理的方案，直连 Provider 无服务端瓶颈；唯一具备完整多租户 + Stripe 支付体系；唯一支持 6 种协议翻译 + OAuth PKCE。同时增加了 MITM 接管、Token 压缩、Fusion 路由、TLS 指纹、Eval、Plugin/MCP 等高级特性。</span><span class="lang-en-i">SeasAGI is the only solution with a native desktop client + local gateway proxy (direct to providers); the only one with full multi-tenant + Stripe; the only one with 6 protocol translators + OAuth PKCE. Plus MITM, token compression, Fusion routing, TLS fingerprint, Eval, Plugin/MCP.</span><span class="lang-ja-i">SeasAGI は、ネイティブデスクトップクライアント + ローカルゲートウェイプロキシ（Provider 直通）を実現した唯一のソリューションです。完全なマルチテナント + Stripe 決済、6 種類のプロトコルトランスレータ + OAuth PKCE にも対応しています。さらに MITM、Token 圧縮、Fusion ルーティング、TLS フィンガープリント、Eval、Plugin/MCP などの高度な機能も備えています。</span><span class="lang-ko-i">SeasAGI는 네이티브 데스크톱 클라이언트 + 로컬 게이트웨이 프록시(Provider 직접 연결)를 제공하는 유일한 솔루션입니다. 완전한 멀티테넌트 + Stripe 결제, 6종 프로토콜 트랜스레이터 + OAuth PKCE도 유일하게 지원합니다. 추가로 MITM, Token 압축, Fusion 라우팅, TLS 핑거프린트, Eval, Plugin/MCP 등의 고급 기능을 제공합니다.</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">怎样开始使用？</span><span class="lang-en-i">How do I get started?</span><span class="lang-ja-i">どのように始めればよいですか？</span><span class="lang-ko-i">어떻게 시작하나요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">1. 从 GitHub Releases 下载对应平台客户端 → 2. 安装后添加 Provider 通道 → 3. 将任何 API Client 的 Base URL 改为 http://127.0.0.1:4318/v1 → 4. 享受智能路由！</span><span class="lang-en-i">1. Download from GitHub Releases → 2. Add provider channels → 3. Change Base URL to http://127.0.0.1:4318/v1 → 4. Enjoy smart routing!</span><span class="lang-ja-i">1. GitHub Releases からダウンロード → 2. Provider チャネルを追加 → 3. Base URL を http://127.0.0.1:4318/v1 に変更 → 4. スマートルーティングをお楽しみください！</span><span class="lang-ko-i">1. GitHub Releases에서 다운로드 → 2. Provider 채널 추가 → 3. Base URL을 http://127.0.0.1:4318/v1로 변경 → 4. 스마트 라우팅을 즐기세요!</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">开源版有什么限制？</span><span class="lang-en-i">Any limits on open source version?</span><span class="lang-ja-i">オープンソース版に制限はありますか？</span><span class="lang-ko-i">오픈소스 버전에 제한이 있나요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">开源客户端（GPL 3.0）无功能限制，所有特性完全免费。云端社区版（AGPL 3.0）提供基础控制面与基础中继，支持自托管。企业版（闭源）提供远程加速通道、用量同步、治理审批、管理后台等增值服务。客户端本身永久免费，不受订阅状态影响。</span><span class="lang-en-i">The open-source client (GPL 3.0) has no feature limits — fully free forever. Community server (AGPL 3.0) provides basic control plane and relay for self-host. Enterprise (closed-source) offers relay gateways, usage sync, governance, admin dashboard. The local client never requires a subscription.</span><span class="lang-ja-i">オープンソースクライアント（GPL 3.0）は機能制限がなく、永続的に完全無料です。コミュニティサーバー（AGPL 3.0）は基本的なコントロールプレーンとリレーを提供し、自己ホストが可能です。エンタープライズ版（クローズドソース）はリレーゲートウェイ、使用量同期、ガバナンス、管理ダッシュボードを提供します。ローカルクライアントはサブスクリプションを一切必要としません。</span><span class="lang-ko-i">오픈소스 클라이언트(GPL 3.0)는 기능 제한이 없으며 영구적으로 완전 무료입니다. 커뮤니티 서버(AGPL 3.0)는 기본 컨트롤 플레인과 릴레이를 제공하여 자체 호스팅이 가능합니다. 엔터프라이즈 버전(폐쇄 소스)은 릴레이 게이트웨이, 사용량 동기화, 거버넌스, 관리 대시보드를 제공합니다. 로컬 클라이언트는 구독이 필요하지 않습니다.</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">配额用完后怎么办？</span><span class="lang-en-i">What happens when I exceed my quota?</span><span class="lang-ja-i">クォータを超えたらどうなりますか？</span><span class="lang-ko-i">할당량을 초과하면 어떻게 되나요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">各套餐均包含月度请求配额。超出部分按量计费，费用透明。建议使用 BYOK（自备 Key）避免超额费用，或升级到 Teams/Enterprise 获得更高配额。也可以在 Token 市场购买其他用户闲置的 API Key。</span><span class="lang-en-i">Each plan includes a monthly quota. Overages billed at transparent usage-based rates. Use BYOK to avoid charges, or upgrade to Teams/Enterprise for higher quotas. You can also buy unused API keys in the Token Market.</span><span class="lang-ja-i">各プランには月次リクエストクォータが含まれます。超過分は透明な従量課金で請求されます。BYOK（独自 Key 持ち込み）で課金を回避するか、Teams/Enterprise にアップグレードしてより高いクォータを取得できます。Token Market で他のユーザーの未使用 API Key を購入することもできます。</span><span class="lang-ko-i">각 플랜에는 월간 요청 할당량이 포함됩니다. 초과분은 투명한 사용량 기반 요금으로 청구됩니다. BYOK로 요금을 피하거나 Teams/Enterprise로 업그레이드하여 더 높은 할당량을 받을 수 있습니다. Token Market에서 다른 사용자의 미사용 API Key를 구매할 수도 있습니다.</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">Token 市场是什么？</span><span class="lang-en-i">What is the Token Market?</span><span class="lang-ja-i">Token Market とは何ですか？</span><span class="lang-ko-i">Token Market이란 무엇인가요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">Token 市场是 SeasAGI 客户端内置的 API Key 交易平台。用户可以将闲置的 API Key 上架出售（支持一口价和折扣两种模式），其他用户可浏览市场、查看卖家信息、扫码完成交易。平台收取 10% 佣金，卖家获得 90% 收益。交易二维码带 HMAC 签名和 5 分钟有效期，企业版提供完整的管理后台和风控审计。</span><span class="lang-en-i">The Token Market is a built-in API Key trading platform. Users can list unused keys for sale (fixed price or discount), browse the marketplace, and complete trades via QR code. Platform charges 10% commission, sellers receive 90%. Trade QR codes include HMAC signatures with 5-min expiry. Enterprise edition provides full admin dashboard with risk control.</span><span class="lang-ja-i">Token Market は SeasAGI クライアントに内蔵された API Key 取引プラットフォームです。ユーザーは未使用の API Key を出品販売し（固定価格と割引の 2 種類のモード）、マーケットを閲覧し、QR コードで取引を完了できます。プラットフォームは 10% の手数料を徴収し、出品者は 90% の収益を得ます。取引 QR コードには HMAC 署名と 5 分間の有効期限が付与されます。エンタープライズ版では完全な管理ダッシュボードとリスクコントロールを提供します。</span><span class="lang-ko-i">Token Market은 SeasAGI 클라이언트에 내장된 API Key 거래 플랫폼입니다. 사용자는 미사용 API Key를 판매 등록(고정가 및 할인 두 가지 모드)하고, 마켓플레이스를 탐색하며, QR 코드로 거래를 완료할 수 있습니다. 플랫폼은 10% 수수료를 부과하고 판매자는 90% 수익을 받습니다. 거래 QR 코드에는 HMAC 서명과 5분 유효기간이 포함됩니다. 엔터프라이즈 버전은 완전한 관리 대시보드와 리스크 관리를 제공합니다.</span></p>
+        </details>
+        <details class="faq-item">
+          <summary><span><span class="lang-zh-i">如何参与贡献？</span><span class="lang-en-i">How to contribute?</span><span class="lang-ja-i">コントリビュートするには？</span><span class="lang-ko-i">기여하려면 어떻게 하나요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p><span class="lang-zh-i">客户端全量开源（GPL 3.0），欢迎一切形式的贡献！可以 Star、Fork 仓库，提交 Issue 报告 Bug 或建议，创建 Pull Request 改进代码。详细的贡献指南请查看 GitHub 仓库的 CONTRIBUTING.md。</span><span class="lang-en-i">The client is fully open source (GPL 3.0). All contributions welcome! Star and fork the repo, submit issues for bugs or suggestions, create PRs to improve code. See CONTRIBUTING.md in the GitHub repo for details.</span><span class="lang-ja-i">クライアントは完全なオープンソース（GPL 3.0）です。あらゆる形式のコントリビュートを歓迎します！リポジトリに Star や Fork を行い、バグ報告や提案の Issue を提出し、PR を作成してコードを改善してください。詳細は GitHub リポジトリの CONTRIBUTING.md をご参照ください。</span><span class="lang-ko-i">클라이언트는 완전한 오픈소스(GPL 3.0)입니다. 모든 기여를 환영합니다! 리포지토리에 Star와 Fork를 하고, 버그나 제안을 Issue로 등록하며, PR을 생성하여 코드를 개선해 주세요. 자세한 내용은 GitHub 리포지토리의 CONTRIBUTING.md를 참조하세요.</span></p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- Final CTA -->
+  <section class="section section-cta" id="download">
+    <div class="cta-glow" aria-hidden="true"></div>
+    <div class="container cta-inner">
+      <h2 class="cta-title"><span class="lang-zh-i">今天就开始统一你的 AI 基础设施</span><span class="lang-en-i">Unify your AI infrastructure today</span><span class="lang-ja-i">今日から AI インフラを統合しましょう</span><span class="lang-ko-i">오늘 AI 인프라를 통합하세요</span></h2>
+      <p class="cta-subtitle"><span class="lang-zh-i">下载 SeasAGI 客户端，5 分钟内接入所有 Provider。</span><span class="lang-en-i">Download SeasAGI client and connect all providers in 5 minutes.</span><span class="lang-ja-i">SeasAGI クライアントをダウンロードして、5 分ですべての Provider を接続しましょう。</span><span class="lang-ko-i">SeasAGI 클라이언트를 다운로드하고 5분 안에 모든 Provider를 연결하세요.</span></p>
+      <a class="btn btn-primary btn-lg" href="https://github.com/SeasX/SeasAGI/releases" target="_blank" rel="noopener"><span class="lang-zh-i">免费下载客户端</span><span class="lang-en-i">Download Free</span><span class="lang-ja-i">無料でダウンロード</span><span class="lang-ko-i">무료 다운로드</span></a>
+    </div>
+  </section>
+</main>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <span class="brand-logo"><img src="./assets/seasagi-icon.png" alt="SeasAGI Logo" width="40" height="40"></span>
+      <span class="brand-name">SeasAGI</span>
+      <p class="footer-tagline"><span class="lang-zh-i">本地 LLM API 智能网关</span><span class="lang-en-i">Local LLM API Smart Gateway</span><span class="lang-ja-i">ローカル LLM API スマートゲートウェイ</span><span class="lang-ko-i">로컬 LLM API 스마트 게이트웨이</span></p>
+    </div>
+    <div class="footer-col">
+      <h4 class="footer-col-title"><span class="lang-zh-i">产品</span><span class="lang-en-i">Product</span><span class="lang-ja-i">プロダクト</span><span class="lang-ko-i">제품</span></h4>
+      <a href="#core-features"><span class="lang-zh-i">功能特性</span><span class="lang-en-i">Features</span><span class="lang-ja-i">機能特性</span><span class="lang-ko-i">기능 특성</span></a>
+      <a href="#download"><span class="lang-zh-i">下载客户端</span><span class="lang-en-i">Download</span><span class="lang-ja-i">ダウンロード</span><span class="lang-ko-i">다운로드</span></a>
+      <a href="#pricing"><span class="lang-zh-i">定价方案</span><span class="lang-en-i">Pricing</span><span class="lang-ja-i">料金プラン</span><span class="lang-ko-i">요금제</span></a>
+    </div>
+    <div class="footer-col">
+      <h4 class="footer-col-title"><span class="lang-zh-i">资源</span><span class="lang-en-i">Resources</span><span class="lang-ja-i">リソース</span><span class="lang-ko-i">리소스</span></h4>
+      <a href="https://SeasAGI.SeasX.ai" target="_blank" rel="noopener"><span class="lang-zh-i">官网</span><span class="lang-en-i">Website</span><span class="lang-ja-i">公式サイト</span><span class="lang-ko-i">웹사이트</span></a>
+      <a href="https://github.com/SeasX/SeasAGI" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://discord.gg/NdMkGtqAA" target="_blank" rel="noopener">Discord</a>
+    </div>
+  </div>
+  <div class="container footer-bottom">
+    <span class="footer-copy">© 2026 SeasAGI. <span class="lang-zh-i">客户端 GPL 3.0 · 云端社区版 AGPL 3.0 · 企业版闭源</span><span class="lang-en-i">Client GPL 3.0 · Cloud Community AGPL 3.0 · Enterprise Closed Source</span><span class="lang-ja-i">クライアント GPL 3.0 · クラウドコミュニティ版 AGPL 3.0 · エンタープライズ版クローズドソース</span><span class="lang-ko-i">클라이언트 GPL 3.0 · 클라우드 커뮤니티 AGPL 3.0 · 엔터프라이즈 폐쇄 소스</span></span>
+    <span><a href="./privacy.html"><span class="lang-zh-i">隐私政策</span><span class="lang-en-i">Privacy</span><span class="lang-ja-i">プライバシーポリシー</span><span class="lang-ko-i">개인정보처리방침</span></a> · <a href="./terms.html"><span class="lang-zh-i">服务条款</span><span class="lang-en-i">Terms</span><span class="lang-ja-i">利用規約</span><span class="lang-ko-i">이용약관</span></a> · <a href="https://github.com/SeasX/SeasAGI/blob/main/LICENSE" target="_blank" rel="noopener"><span class="lang-zh-i">许可证</span><span class="lang-en-i">License</span><span class="lang-ja-i">ライセンス</span><span class="lang-ko-i">라이선스</span></a></span>
+  </div>
+</footer>
+
+<!-- Enterprise Contact Modal -->
+<div class="modal-overlay" id="entModal">
+  <div class="modal-box">
+    <div class="modal-close" onclick="hideEntForm()">&times;</div>
+    <h3><span class="lang-zh-i">企业版咨询</span><span class="lang-en-i">Enterprise Inquiry</span><span class="lang-ja-i">エンタープライズ版お問い合わせ</span><span class="lang-ko-i">엔터프라이즈 문의</span></h3>
+    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:14px;"><span class="lang-zh-i">填写以下信息，我们的团队将在 2 个工作日内与您联系。</span><span class="lang-en-i">Fill out the form and our team will contact you within 2 business days.</span><span class="lang-ja-i">以下の情報をご入力ください。担当チームが 2 営業日以内にご連絡いたします。</span><span class="lang-ko-i">아래 정보를 입력해 주세요. 담당팀이 영업일 기준 2일 이내에 연락드립니다.</span></p>
+    <form id="entForm" onsubmit="event.preventDefault();submitEntForm()">
+      <div class="form-row"><input type="text" name="contact" placeholder="Your name / 联系人 / お名前 / 이름" required/></div>
+      <div class="form-row"><input type="email" name="email" placeholder="Email / 邮箱 / メールアドレス / 이메일" required/></div>
+      <div class="form-row"><input type="text" name="cname" placeholder="Company / 公司名称 / 会社名 / 회사명" required/></div>
+      <div class="form-row"><input type="text" name="tsize" placeholder="Team size / 团队规模 / チーム規模 / 팀 규모"/></div>
+      <div class="form-row"><input type="text" name="ucase" placeholder="Use case / 使用场景 / ユースケース / 사용 사례"/></div>
+      <div class="form-row"><textarea name="msg" rows="3" placeholder="Additional message / 补充说明 / 追加メッセージ / 추가 메시지"></textarea></div>
+      <button type="submit" class="btn btn-primary" style="width:100%;"><span class="lang-zh-i">提交</span><span class="lang-en-i">Submit</span><span class="lang-ja-i">送信</span><span class="lang-ko-i">제출</span></button>
+    </form>
+  </div>
+</div>
+
+<script>
+// header scroll shadow
+(function(){var h=document.querySelector(".site-header");if(h){function s(){h.classList.toggle("scrolled",window.scrollY>8);}window.addEventListener("scroll",s,{passive:true});s();}})();
+
+// language toggle (en → zh → ja → ko → en)
+var _langCycle=["en","zh","ja","ko"];
+var _langBtn={en:"中文",zh:"日本語",ja:"한국어",ko:"English"};
+var _langHtml={en:"en",zh:"zh-CN",ja:"ja",ko:"ko"};
+function toggleLang(){var b=document.body;var cur="en";for(var i=0;i<_langCycle.length;i++){if(b.classList.contains("lang-"+_langCycle[i])){cur=_langCycle[i];break;}}for(var j=0;j<_langCycle.length;j++){b.classList.remove("lang-"+_langCycle[j]);}var idx=_langCycle.indexOf(cur);var nxt=_langCycle[(idx+1)%_langCycle.length];if(nxt!=="en"){b.classList.add("lang-"+nxt);}document.getElementById("langToggle").textContent=_langBtn[nxt];document.documentElement.lang=_langHtml[nxt];}
+
+// enterprise modal
+function showEntForm(){document.getElementById("entModal").classList.add("open")}
+function hideEntForm(){document.getElementById("entModal").classList.remove("open")}
+function submitEntForm(){var form=document.getElementById("entForm");var data={company_name:form.cname.value,contact_name:form.contact.value,email:form.email.value,team_size:form.tsize.value,use_case:form.ucase.value,message:form.msg.value};fetch('/api/v1/checkout/enterprise-lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json()}).then(function(r){alert(r.message||r.message_zh||'Submitted');hideEntForm();form.reset()}).catch(function(){alert('Submission failed. Please email us directly.')})}
+document.getElementById("entModal").addEventListener("click",function(e){if(e.target===this)hideEntForm()})
+</script>
+</body>
+</html>

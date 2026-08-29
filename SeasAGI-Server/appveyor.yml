@@ -1,0 +1,199 @@
+version: '0.1.{build}'
+
+# Skip tags to avoid double builds on tagged releases
+skip_tags: true
+
+# Matrix: run on all three platforms in parallel
+image:
+  - macos-monterey
+  - Ubuntu2204
+  - Visual Studio 2022
+
+environment:
+  SEASAGI_VERSION: 0.1.0
+  GOPATH: $(HOME)/go
+  CGO_ENABLED: 1
+
+# Cache node_modules to speed up builds
+cache:
+  - src-admin/node_modules -> src-admin/package-lock.json
+
+install:
+  #############################################################################
+  # macOS
+  #############################################################################
+  - sh: |
+      if [ "$(uname)" = "Darwin" ]; then
+        echo "=== macOS Build ==="
+        echo "Go: $(go version 2>/dev/null || echo 'NOT FOUND')"
+        echo "Node: $(node --version 2>/dev/null || echo 'NOT FOUND')"
+        echo "npm: $(npm --version 2>/dev/null || echo 'NOT FOUND')"
+        # Xcode CLT is pre-installed, provides gcc for CGO/SQLite
+      fi
+
+  #############################################################################
+  # Linux
+  #############################################################################
+  - sh: |
+      if [ "$(uname)" = "Linux" ]; then
+        echo "=== Linux Build ==="
+        # Install gcc for CGO/SQLite
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq gcc libc6-dev
+        echo "Go: $(go version 2>/dev/null || echo 'NOT FOUND')"
+        echo "Node: $(node --version 2>/dev/null || echo 'NOT FOUND')"
+        echo "npm: $(npm --version 2>/dev/null || echo 'NOT FOUND')"
+      fi
+
+  #############################################################################
+  # Windows
+  #############################################################################
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "=== Windows Build ==="
+        # Go, Node.js are pre-installed on AppVeyor Windows image
+        # MinGW is required for CGO/SQLite on Windows
+        Write-Host "Go: $(go version 2>&1)"
+        Write-Host "Node: $(node --version 2>&1)"
+        Write-Host "npm: $(npm --version 2>&1)"
+        # Check for gcc (MinGW)
+        $gcc = Get-Command gcc -ErrorAction SilentlyContinue
+        if (-not $gcc) {
+          Write-Host "WARNING: gcc not found - CGO/SQLite build may fail"
+        } else {
+          Write-Host "gcc: $(gcc --version 2>&1 | Select-Object -First 1)"
+        }
+      }
+
+before_build:
+  #############################################################################
+  # Build admin frontend
+  #############################################################################
+  - sh: |
+      echo "Building admin frontend..."
+      cd src-admin
+      npm install --prefer-offline --no-audit --no-fund 2>&1 | tail -5
+      npm run build 2>&1 | tail -10
+      # Copy admin dist to platform-api embedded directory
+      rm -rf ../platform-api/cmd/admin_dist
+      cp -r dist ../platform-api/cmd/admin_dist
+      echo "Admin frontend built and copied"
+      cd ..
+
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "Building admin frontend..."
+        cd src-admin
+        npm install --prefer-offline --no-audit --no-fund 2>&1 | Select-Object -Last 5
+        npm run build 2>&1 | Select-Object -Last 10
+        # Copy admin dist to platform-api embedded directory
+        if (Test-Path ..\platform-api\cmd\admin_dist) {
+          Remove-Item -Recurse -Force ..\platform-api\cmd\admin_dist
+        }
+        Copy-Item -Recurse dist ..\platform-api\cmd\admin_dist
+        Write-Host "Admin frontend built and copied"
+        cd ..
+      }
+
+build_script:
+  #############################################################################
+  # Build platform-api
+  #############################################################################
+  - sh: |
+      echo "Building platform-api..."
+      cd platform-api
+      go build -ldflags="-s -w -X main.Version=${SEASAGI_VERSION:-0.1.0}" -o ../build/platform-api .
+      echo "platform-api built: $(ls -la ../build/platform-api 2>/dev/null)"
+      cd ..
+
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "Building platform-api..."
+        cd platform-api
+        go build -ldflags="-s -w -X main.Version=$env:SEASAGI_VERSION" -o ..\build\platform-api.exe .
+        Write-Host "platform-api built"
+        cd ..
+      }
+
+  #############################################################################
+  # Build relay-gateway
+  #############################################################################
+  - sh: |
+      echo "Building relay-gateway..."
+      cd relay-gateway
+      go build -ldflags="-s -w -X main.Version=${SEASAGI_VERSION:-0.1.0}" -o ../build/relay-gateway .
+      echo "relay-gateway built: $(ls -la ../build/relay-gateway 2>/dev/null)"
+      cd ..
+
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "Building relay-gateway..."
+        cd relay-gateway
+        go build -ldflags="-s -w -X main.Version=$env:SEASAGI_VERSION" -o ..\build\relay-gateway.exe .
+        Write-Host "relay-gateway built"
+        cd ..
+      }
+
+test_script:
+  #############################################################################
+  # Run Go tests for both modules
+  #############################################################################
+  - sh: |
+      echo "Running platform-api tests..."
+      cd platform-api
+      go test ./... 2>&1
+      cd ..
+      echo "Running relay-gateway tests..."
+      cd relay-gateway
+      go test ./... 2>&1
+      cd ..
+
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "Running platform-api tests..."
+        cd platform-api
+        go test ./... 2>&1
+        cd ..
+        Write-Host "Running relay-gateway tests..."
+        cd relay-gateway
+        go test ./... 2>&1
+        cd ..
+      }
+
+after_test:
+  #############################################################################
+  # Package artifacts
+  #############################################################################
+  - sh: |
+      echo "Packaging artifacts..."
+      mkdir -p artifacts
+      if [ -f build/platform-api ]; then cp build/platform-api artifacts/; fi
+      if [ -f build/relay-gateway ]; then cp build/relay-gateway artifacts/; fi
+      if [ -d platform-api/cmd/admin_dist ]; then
+        tar czf artifacts/admin-frontend.tar.gz -C platform-api/cmd admin_dist
+      fi
+      ls -la artifacts/
+
+  - ps: |
+      if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
+        Write-Host "Packaging artifacts..."
+        if (-not (Test-Path artifacts)) { New-Item -ItemType Directory -Path artifacts }
+        if (Test-Path build\platform-api.exe) { Copy-Item build\platform-api.exe artifacts\ }
+        if (Test-Path build\relay-gateway.exe) { Copy-Item build\relay-gateway.exe artifacts\ }
+        Get-ChildItem artifacts
+      }
+
+# Upload build artifacts
+artifacts:
+  - path: artifacts/
+    name: SeasAGI-Server-$(APPVEYOR_BUILD_WORKER_IMAGE)
+    type: File
+
+# Notifications
+notifications:
+  - provider: Email
+    to:
+      - $(APPVEYOR_REPO_COMMIT_AUTHOR_EMAIL)
+    on_build_success: false
+    on_build_failure: true
+    on_build_status_changed: true

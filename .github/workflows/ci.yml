@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  server-platform-api:
+    name: Server platform-api
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: SeasAGI-Server/platform-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - run: go build ./...
+      - run: go test ./... -timeout 120s
+      - run: go vet ./...
+
+  server-relay-gateway:
+    name: Server relay-gateway
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: SeasAGI-Server/relay-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - run: go build ./...
+      - run: go test ./... -timeout 120s
+      - run: go vet ./...
+
+  client:
+    name: Client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: SeasAGI-Client/src-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - run: go build ./...
+      - run: go test ./... -timeout 120s
+      - run: go vet ./...
