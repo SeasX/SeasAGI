@@ -393,7 +393,7 @@ func migrate() error {
 					plan_id TEXT NOT NULL DEFAULT '',
 					amount REAL NOT NULL DEFAULT 0,
 					currency TEXT NOT NULL DEFAULT 'USD',
-					provider TEXT NOT NULL DEFAULT 'stripe',
+					provider TEXT NOT NULL DEFAULT '',
 					provider_session_id TEXT NOT NULL DEFAULT '',
 					status TEXT NOT NULL DEFAULT 'pending',
 					created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -404,7 +404,7 @@ func migrate() error {
 					session_id TEXT PRIMARY KEY,
 					user_id TEXT NOT NULL,
 					plan_id TEXT NOT NULL,
-					provider TEXT NOT NULL DEFAULT 'stripe',
+					provider TEXT NOT NULL DEFAULT '',
 					provider_session_id TEXT NOT NULL DEFAULT '',
 					status TEXT NOT NULL DEFAULT 'pending',
 					checkout_url TEXT NOT NULL DEFAULT '',
@@ -947,6 +947,23 @@ func migrate() error {
 				)`,
 				`CREATE INDEX IF NOT EXISTS idx_seasagi_backups_status ON seasagi_backups(status)`,
 				`CREATE INDEX IF NOT EXISTS idx_seasagi_backups_created ON seasagi_backups(created_at)`,
+			},
+		},
+		{
+			version: "2026-07-26-025-oauth-identity",
+			sqls: []string{
+				`CREATE TABLE IF NOT EXISTS oauth_identities (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+					provider TEXT NOT NULL,
+					provider_user_id TEXT NOT NULL,
+					email TEXT NOT NULL DEFAULT '',
+					created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					UNIQUE(provider, provider_user_id)
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_oauth_identities_user ON oauth_identities(user_id)`,
+				`CREATE INDEX IF NOT EXISTS idx_oauth_identities_provider_email ON oauth_identities(provider, email)`,
 			},
 		},
 	}

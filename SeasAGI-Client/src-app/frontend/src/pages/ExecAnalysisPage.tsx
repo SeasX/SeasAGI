@@ -43,16 +43,47 @@ export function ExecAnalysisPage() {
     } catch {}
   }, [setProviderHealth]);
 
+  // M4.4 意图预测实验室：只做路由决策预演，不发真实请求
+  const [labPrompt, setLabPrompt] = useState("");
+  const [labModel, setLabModel] = useState("");
+  const [labResult, setLabResult] = useState<any>(null);
+  const [labLoading, setLabLoading] = useState(false);
+  const [comboNames, setComboNames] = useState<string[]>([]);
+  // M4.5 意图场景分布
+  const [intentStats, setIntentStats] = useState<any[]>([]);
+
+  const loadIntentStats = useCallback(async () => {
+    try {
+      const data = await cmd.getIntentScenarioStats();
+      setIntentStats(data || []);
+    } catch {}
+  }, []);
+
+  const runSimulation = useCallback(async () => {
+    if (!labPrompt.trim() || labLoading) return;
+    setLabLoading(true);
+    try {
+      const r = await cmd.simulateIntentRouting(labPrompt, labModel);
+      setLabResult(r);
+    } catch (e: any) {
+      setLabResult({ error: e.message || t("execAnalysis.labFailed") });
+    }
+    setLabLoading(false);
+  }, [labPrompt, labModel, labLoading, t]);
+
   useEffect(() => {
     loadMetrics();
     loadProviderHealth();
-  }, [loadMetrics, loadProviderHealth]);
+    loadIntentStats();
+    cmd.listModelCombos().then((cs) => setComboNames((cs || []).map((c) => c.name))).catch(() => {});
+    cmd.getDefaultComboName().then((n) => setLabModel(n || "")).catch(() => {});
+  }, [loadMetrics, loadProviderHealth, loadIntentStats]);
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(() => { loadMetrics(); loadProviderHealth(); }, 5000);
+    const interval = setInterval(() => { loadMetrics(); loadProviderHealth(); loadIntentStats(); }, 5000);
     return () => clearInterval(interval);
-  }, [autoRefresh, loadMetrics, loadProviderHealth]);
+  }, [autoRefresh, loadMetrics, loadProviderHealth, loadIntentStats]);
 
   const formatPct = (v: number) => (v * 100).toFixed(1) + "%";
   const formatNum = (v: number) => v.toLocaleString();
@@ -227,26 +258,103 @@ export function ExecAnalysisPage() {
         </div>
       )}
 
-      {/* Provider Health Summary */}
-      {providerHealth.length > 0 && (
-        <div className="section section-card">
-          <h2 className="section-title">{t("execAnalysis.providerHealthOverview")}</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8 }}>
-            {providerHealth.map((p) => (
-              <div key={p.provider_id} style={{ padding: "10px 14px", borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                  <strong style={{ fontSize: 13 }}>{p.provider_id}</strong>
-                  <span style={{ fontSize: 11, color: p.circuit_open_count > 0 ? "var(--red)" : "var(--green)" }}>
-                    {p.circuit_open_count > 0 ? t("execAnalysis.circuitBreaker", { count: p.circuit_open_count }) : t("execAnalysis.normal")}
-                  </span>
+      {/* M4.4 Intent Prediction Lab */}
+      <div className="section section-card">
+        <h2 className="section-title">{t("execAnalysis.intentLab")}</h2>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          <input
+            value={labPrompt}
+            onChange={(e) => setLabPrompt(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runSimulation()}
+            placeholder={t("execAnalysis.labPlaceholder")}
+            style={{ flex: 1, minWidth: 240, fontSize: 13, padding: "6px 10px", borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)", border: "1px solid var(--border-color)", color: "var(--text-primary)" }}
+          />
+          <select value={labModel} onChange={(e) => setLabModel(e.target.value)} style={{ fontSize: 13, padding: "6px 8px", borderRadius: "var(--radius-sm)" }}>
+            {comboNames.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <button className="btn-sm" onClick={runSimulation} disabled={labLoading || !labPrompt.trim()}>
+            {labLoading ? t("execAnalysis.labRunning") : t("execAnalysis.labRun")}
+          </button>
+        </div>
+        {labResult && !labResult.error && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+            <div style={{ minWidth: 240 }}>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>{t("execAnalysis.detectedIntent")}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <span className="badge badge-blue">{labResult.intent.scenario}</span>
+                <span className="badge">{labResult.intent.task_type}</span>
+                <span className="badge">IQ {labResult.intent.required_iq}</span>
+                <span className="badge">{labResult.intent.security_level}</span>
+                <span className="badge">{t("execAnalysis.confidence")} {formatPct(labResult.intent.confidence)}</span>
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+                {t("execAnalysis.routingPlan")}: {labResult.plan_name} @ {labResult.model}
+              </div>
+              {(labResult.steps || []).map((s: any) => (
+                <div key={s.order} style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 10px", marginBottom: 4, borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)", fontSize: 13 }}>
+                  <span style={{ color: "var(--text-muted)", minWidth: 20 }}>#{s.order}</span>
+                  <strong>{s.channel_name || s.channel_id}</strong>
+                  <span className="text-muted">{s.upstream_model}</span>
+                  <span className="badge">{s.step_role}</span>
                 </div>
-                <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-muted)" }}>
-                  <span>{t("execAnalysis.successRate")} {formatPct(p.avg_success_rate)}</span>
-                  <span>{t("execAnalysis.latency")} {p.avg_latency_ms.toFixed(0)}ms</span>
-                  <span>{t("execAnalysis.penalty")} {p.avg_penalty_score.toFixed(2)}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        {labResult?.error && <div className="error-msg">{labResult.error}</div>}
+      </div>
+
+      {/* M4.5 Intent Scenario Distribution */}
+      {intentStats.length > 0 && (
+        <div className="section section-card">
+          <h2 className="section-title">{t("execAnalysis.intentDistribution")}</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {intentStats.map((s) => (
+              <div key={s.scenario} style={{ padding: "8px 14px", borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                  <strong>{s.scenario}</strong>
+                  <span style={{ color: "var(--text-muted)" }}>{formatNum(s.count)} · {formatPct(s.share)}</span>
+                </div>
+                <div style={{ height: 6, background: "var(--bg-primary)", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ width: `${s.share * 100}%`, height: "100%", background: "var(--primary)", borderRadius: 3, transition: "width 0.3s" }} />
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Provider Health Summary — M4.3 热力图矩阵 */}
+      {providerHealth.length > 0 && (
+        <div className="section section-card">
+          <h2 className="section-title">{t("execAnalysis.providerHealthOverview")}</h2>
+          <div className="heat-grid" style={{ gridTemplateColumns: "minmax(120px, 1.4fr) repeat(4, 1fr)" }}>
+            <div className="heat-head">{t("execAnalysis.provider")}</div>
+            <div className="heat-head">{t("execAnalysis.successRate")}</div>
+            <div className="heat-head">{t("execAnalysis.errorRate")}</div>
+            <div className="heat-head">{t("execAnalysis.latency")}</div>
+            <div className="heat-head">{t("execAnalysis.circuit")}</div>
+            {providerHealth.map((p) => {
+              const tier = (ok: boolean, warn: boolean) => (ok ? "var(--heat-ok)" : warn ? "var(--heat-warn)" : "var(--heat-bad)");
+              const okColor = tier(p.avg_success_rate >= 0.98, p.avg_success_rate >= 0.9);
+              const errRate = p.avg_error_rate ?? 1 - p.avg_success_rate;
+              const errColor = tier(errRate <= 0.02, errRate <= 0.1);
+              const latColor = tier(p.avg_latency_ms <= 800, p.avg_latency_ms <= 2000);
+              const cbColor = tier(p.circuit_open_count === 0, p.circuit_open_count <= 2);
+              return (
+                <div key={p.provider_id} style={{ display: "contents" }}>
+                  <div className="heat-row-label">{p.provider_id}</div>
+                  <div className="heat-cell" style={{ background: okColor }}>{formatPct(p.avg_success_rate)}</div>
+                  <div className="heat-cell" style={{ background: errColor }}>{formatPct(errRate)}</div>
+                  <div className="heat-cell" style={{ background: latColor }}>{p.avg_latency_ms.toFixed(0)}ms</div>
+                  <div className="heat-cell" style={{ background: cbColor }}>
+                    {p.circuit_open_count > 0 ? t("execAnalysis.circuitBreaker", { count: p.circuit_open_count }) : t("execAnalysis.normal")}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

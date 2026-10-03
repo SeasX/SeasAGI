@@ -4,6 +4,8 @@ import {logs} from '../models';
 
 export function ClearLogs():Promise<void>;
 
+export function GetIntentScenarioStats():Promise<Array<Record<string, any>>>;
+
 export function ListLogs(arg1:number,arg2:number):Promise<Array<logs.RequestLog>>;
 
 export function ListLogsFiltered(arg1:number,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string):Promise<Array<logs.RequestLog>>;

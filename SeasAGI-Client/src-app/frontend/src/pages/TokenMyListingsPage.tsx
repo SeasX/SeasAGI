@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getPlatformAPIBaseURL, getPlatformToken } from "../utils/commands";
+import { platformRequest } from "../utils/commands";
 import { useTranslation } from "../i18n";
 import { useMarketStore } from "../stores/marketStore";
 
@@ -18,22 +18,17 @@ export function TokenMyListingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-      const resp = await fetch(`${baseURL}/token-market/my-listings`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      const resp = await platformRequest("GET", "/token-market/my-listings");
+      if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
+      const data = resp.body;
       setMyListings(data.data || []);
 
       // 获取已售出上架的结算信息
       const soldListings = (data.data || []).filter((l: any) => l.status === "sold");
       if (soldListings.length > 0) {
-        const settlementsResp = await fetch(`${baseURL}/token-market/settlements`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
-        if (settlementsResp.ok) {
-          const settlementsData = await settlementsResp.json();
+        const settlementsResp = await platformRequest("GET", "/token-market/settlements");
+        if (settlementsResp.status < 400) {
+          const settlementsData = settlementsResp.body;
           const map: Record<string, { payout: number; commission: number }> = {};
           for (const s of (settlementsData.data || [])) {
             map[s.listing_id] = { payout: s.seller_payout, commission: s.platform_commission };
@@ -55,13 +50,9 @@ export function TokenMyListingsPage() {
   const handleCancel = async (listingId: string) => {
     setCancellingId(listingId);
     try {
-      const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-      const resp = await fetch(`${baseURL}/token-market/listings/${listingId}/cancel`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
+      const resp = await platformRequest("POST", `/token-market/listings/${listingId}/cancel`);
+      if (resp.status >= 400) {
+        const errData = resp.body || {};
         throw new Error(errData.error || `HTTP ${resp.status}`);
       }
       // 更新本地状态

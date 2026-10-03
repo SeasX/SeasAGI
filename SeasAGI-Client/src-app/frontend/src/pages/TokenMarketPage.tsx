@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getPlatformAPIBaseURL, getPlatformToken, fetchFreeChannels } from "../utils/commands";
+import { platformRequest, fetchFreeChannels, listChannels, saveCustomChannel } from "../utils/commands";
+import type { Channel } from "../utils/types";
 import { useTranslation } from "../i18n";
 import { useMarketStore } from "../stores/marketStore";
+import { useAppStore } from "../stores/appStore";
 
 interface FreeChannel {
   provider_id: string;
@@ -18,6 +20,14 @@ interface FreeChannel {
 type MarketViewMode = "card" | "list";
 type FreeFilterTab = "all" | "keyless" | "recurring-monthly" | "one-time-initial";
 
+// 过滤缺少 models 字段的脏数据（如错误对象），避免渲染时 ch.models.length 崩溃白屏。
+const normalizeFreeChannels = (data: unknown): FreeChannel[] => {
+  if (!Array.isArray(data)) return [];
+  return data.filter(
+    (ch): ch is FreeChannel => !!ch && Array.isArray((ch as FreeChannel).models),
+  );
+};
+
 export function TokenMarketPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -32,6 +42,11 @@ export function TokenMarketPage() {
   const [freeChannels, setFreeChannels] = useState<FreeChannel[]>([]);
   const [freeFilterTab, setFreeFilterTab] = useState<FreeFilterTab>("all");
   const [viewMode, setViewMode] = useState<MarketViewMode>("card");
+  const setChannels = useAppStore((s) => s.setChannels);
+  const isLoggedIn = useAppStore((s) => s.auth.is_logged_in);
+  // 免费通道导入状态
+  const [importingId, setImportingId] = useState<string | null>(null);
+  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // F7: Free channel cache from store
   const freeChannelsCache = useMarketStore((s) => s.freeChannelsCache);
   const freeChannelsCacheTime = useMarketStore((s) => s.freeChannelsCacheTime);
@@ -43,6 +58,23 @@ export function TokenMarketPage() {
   const [saleType, setSaleType] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [filterKey, setFilterKey] = useState(0);
+  // 我的市场余额（登录后展示；null 表示不可用/未登录）
+  const [myBalance, setMyBalance] = useState<number | null>(null);
+
+  const fetchAccount = async () => {
+    if (!isLoggedIn) {
+      setMyBalance(null);
+      return;
+    }
+    try {
+      const resp = await platformRequest("GET", "/token-market/account");
+      if (resp.status >= 400) return;
+      const data = resp.body;
+      if (typeof data.data?.balance === "number") setMyBalance(data.data.balance);
+    } catch {
+      // 静默失败：余额展示失败不影响市场浏览
+    }
+  };
 
   const fetchListings = async (pageNum: number, append: boolean) => {
     if (append) {
@@ -52,7 +84,6 @@ export function TokenMarketPage() {
     }
     setError(null);
     try {
-      const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
       const params = new URLSearchParams();
       params.set("page", String(pageNum));
       params.set("page_size", "20");
@@ -61,11 +92,9 @@ export function TokenMarketPage() {
       if (maxPrice) params.set("max_price", maxPrice);
       if (saleType) params.set("sale_type", saleType);
       params.set("sort", sortBy);
-      const resp = await fetch(`${baseURL}/token-market/listings?${params}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      const resp = await platformRequest("GET", `/token-market/listings?${params}`);
+      if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
+      const data = resp.body;
       const newItems = data.data || [];
       setTotal(data.total || 0);
       setTotalPages(data.total_pages || 1);
@@ -84,17 +113,22 @@ export function TokenMarketPage() {
 
   useEffect(() => {
     fetchListings(1, false);
-    // F7: Use cached free channels if within 5 minutes
+    fetchAccount();
+    // F7: Use cached free channels if within 5 minutes.
+    // 空列表不命中缓存：避免未登录时缓存空结果、登录后 5 分钟内仍显示为空。
     const now = Date.now();
     const cacheAge = now - (freeChannelsCacheTime ?? 0);
-    if (freeChannelsCache && cacheAge < 5 * 60 * 1000) {
-      setFreeChannels(freeChannelsCache as FreeChannel[]);
+    if (freeChannelsCache && freeChannelsCache.length > 0 && cacheAge < 5 * 60 * 1000) {
+      setFreeChannels(normalizeFreeChannels(freeChannelsCache));
     } else {
       (async () => {
         try {
           const data = await fetchFreeChannels();
-          setFreeChannels(data as FreeChannel[]);
-          setFreeChannelsCache(data as unknown[]);
+          const normalized = normalizeFreeChannels(data);
+          setFreeChannels(normalized);
+          if (normalized.length > 0) {
+            setFreeChannelsCache(data as unknown[]);
+          }
         } catch {
           setFreeChannels([]);
         }
@@ -137,16 +171,53 @@ export function TokenMarketPage() {
     return { keyless, recurring, oneTime, totalModels };
   }, [freeChannels]);
 
-  const handleImportFreeChannel = (ch: FreeChannel) => {
-    const params = new URLSearchParams({
-      provider_type: ch.provider_id,
-      display_name: ch.display_name,
-      base_url: ch.base_url,
-      channel_type: "custom",
-      auth_type: ch.auth_type,
-      preset_models: JSON.stringify(ch.models.map((m) => m.model_id)),
-    });
-    navigate(`/channels/new?${params}`);
+  // 免费通道导入：直接创建当前用户的自定义通道，保存后即可在"通道管理"中使用。
+  // noauth（免认证）通道导入即启用；apikey/web-cookie/oauth 通道导入后保持停用，
+  // 待用户在"通道管理"中补充凭据并启用。
+  const handleImportFreeChannel = async (ch: FreeChannel) => {
+    if (importingId) return;
+    setImportMsg(null);
+    setImportingId(ch.provider_id);
+    try {
+      const current = await listChannels();
+      const duplicated = current.find(
+        (c) => c.channel_type !== "platform" && c.provider_type === ch.provider_id && c.base_url === ch.base_url,
+      );
+      if (duplicated) {
+        setChannels(current);
+        setImportMsg({ ok: false, text: t("tokenMarket.alreadyImported") });
+        return;
+      }
+      const channel: Channel = {
+        channel_id: "",
+        channel_type: "custom",
+        provider_type: ch.provider_id,
+        display_name: ch.display_name,
+        base_url: ch.base_url,
+        enabled: ch.auth_type === "noauth",
+        health_status: "unknown",
+        provider_specific_config: { auth_type: ch.auth_type, free_type: ch.free_type },
+        models: ch.models.map((m) => m.model_id),
+        api_key: "",
+      };
+      await saveCustomChannel(channel);
+      const refreshed = await listChannels();
+      setChannels(refreshed);
+      setImportMsg({
+        ok: true,
+        text:
+          ch.auth_type === "noauth"
+            ? t("tokenMarket.importSuccess", { name: ch.display_name })
+            : t("tokenMarket.importNeedKey", { name: ch.display_name }),
+      });
+    } catch (e) {
+      setImportMsg({
+        ok: false,
+        text: `${t("tokenMarket.importFailed")}: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    } finally {
+      setImportingId(null);
+    }
   };
 
   return (
@@ -173,6 +244,12 @@ export function TokenMarketPage() {
           <p>{t("tokenMarket.marketDescription")}</p>
         </div>
         <div className="token-market-stats">
+          {myBalance !== null && (
+            <div className="token-market-stat-card token-market-balance-card">
+              <span className="token-market-stat-label">{t("tokenMarket.myBalance")}</span>
+              <strong>${myBalance.toFixed(2)}</strong>
+            </div>
+          )}
           <div className="token-market-stat-card">
             <span className="token-market-stat-label">{t("tokenMarket.marketActive")}</span>
             <strong>{marketStats.activeCount}</strong>
@@ -213,6 +290,9 @@ export function TokenMarketPage() {
               </button>
             ))}
           </div>
+          {importMsg && (
+            <div className={importMsg.ok ? "form-success" : "form-error"}>{importMsg.text}</div>
+          )}
           <div className="token-market-free-grid">
             {filteredFreeChannels.map((ch) => (
               <div key={ch.provider_id} className="token-market-free-card">
@@ -246,8 +326,9 @@ export function TokenMarketPage() {
                 <button
                   className="btn btn-sm btn-outline free-import-btn"
                   onClick={() => handleImportFreeChannel(ch)}
+                  disabled={importingId === ch.provider_id}
                 >
-                  {t("tokenMarket.importAsChannel")}
+                  {importingId === ch.provider_id ? t("tokenMarket.importing") : t("tokenMarket.importAsChannel")}
                 </button>
               </div>
             ))}

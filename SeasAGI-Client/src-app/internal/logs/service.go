@@ -4,24 +4,30 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
 type RequestLog struct {
-	RequestID        string      `json:"request_id"`
-	CreatedAt        string      `json:"created_at"`
-	LogicalModelName string      `json:"logical_model_name"`
-	ChannelID        string      `json:"channel_id"`
-	UpstreamModel    string      `json:"upstream_model"`
-	RouteTrace       string      `json:"route_trace"`
-	RouteSteps       []RouteStep `json:"route_steps,omitempty"`
-	Status           string      `json:"status"`
-	DurationMs       float64     `json:"duration_ms"`
-	ErrorCode        *string     `json:"error_code"`
-	ErrorMessage     *string     `json:"error_message"`
-	AppliedConstraints string   `json:"applied_constraints,omitempty"` // JSON of constraint conditions applied
+	RequestID          string      `json:"request_id"`
+	CreatedAt          string      `json:"created_at"`
+	LogicalModelName   string      `json:"logical_model_name"`
+	ChannelID          string      `json:"channel_id"`
+	UpstreamModel      string      `json:"upstream_model"`
+	RouteTrace         string      `json:"route_trace"`
+	RouteSteps         []RouteStep `json:"route_steps,omitempty"`
+	Status             string      `json:"status"`
+	DurationMs         float64     `json:"duration_ms"`
+	HTTPStatus         int         `json:"http_status"`   // 回写客户端的 HTTP 状态码
+	TTFTMs             int64       `json:"ttft_ms"`       // 首字节延迟（毫秒），0 表示未收到
+	InputTokens        int64       `json:"input_tokens"`  // 上游返回的输入 token 数
+	OutputTokens       int64       `json:"output_tokens"` // 上游返回的输出 token 数
+	ErrorCode          *string     `json:"error_code"`
+	ErrorMessage       *string     `json:"error_message"`
+	AppliedConstraints string      `json:"applied_constraints,omitempty"` // JSON of constraint conditions applied
+	IntentScenario     string      `json:"intent_scenario,omitempty"`     // M4.5: 场景化意图（code_logic/image_gen/...）
 }
 
 type RouteStep struct {
@@ -112,6 +118,36 @@ func (s *Service) RecordLog(log RequestLog) error {
 
 func (s *Service) ListLogs(limit, offset int) ([]RequestLog, error) {
 	return s.ListLogsFiltered(limit, offset, "", "", "", "", "")
+}
+
+// GetIntentScenarioStats 按场景聚合最近日志的意图分布（M4.5）。
+// ponytail: 500 条内存日志直接线性计数，无需索引/时间桶；需要趋势图时再加时间分桶。
+func (s *Service) GetIntentScenarioStats() []map[string]any {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	counts := make(map[string]int)
+	total := 0
+	for _, l := range s.logs {
+		if l.IntentScenario == "" {
+			continue
+		}
+		counts[l.IntentScenario]++
+		total++
+	}
+	stats := make([]map[string]any, 0, len(counts))
+	for scenario, count := range counts {
+		share := 0.0
+		if total > 0 {
+			share = float64(count) / float64(total)
+		}
+		stats = append(stats, map[string]any{
+			"scenario": scenario,
+			"count":    count,
+			"share":    share,
+		})
+	}
+	sort.Slice(stats, func(i, j int) bool { return stats[i]["count"].(int) > stats[j]["count"].(int) })
+	return stats
 }
 
 func (s *Service) ListLogsFiltered(limit, offset int, status, channelID, timeFrom, timeTo, keyword string) ([]RequestLog, error) {

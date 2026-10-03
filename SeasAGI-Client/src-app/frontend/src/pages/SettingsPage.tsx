@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import * as cmd from "../utils/commands";
 import { useTranslation } from "../i18n";
 import { SUPPORTED_LOCALES, type Locale } from "../i18n/index";
 import { getErrorMessage } from "../utils/errors";
-import type { OAuthConnection, OAuthProvider, MITMStatus } from "../utils/types";
+import type { MITMStatus } from "../utils/types";
 
 export function SettingsPage() {
   const auth = useAppStore((s) => s.auth);
@@ -19,10 +19,6 @@ export function SettingsPage() {
   const [stickyUses, setStickyUses] = useState(appConfig?.sticky_channel_use || 3);
   const [platformApiURL, setPlatformApiURL] = useState("");
   const [platformApiError, setPlatformApiError] = useState("");
-  const [oauthProviders, setOAuthProviders] = useState<OAuthProvider[]>([]);
-  const [oauthConnections, setOAuthConnections] = useState<OAuthConnection[]>([]);
-  const [oauthDrafts, setOAuthDrafts] = useState<Record<string, { clientId: string; clientSecret: string }>>({});
-  const [oauthError, setOAuthError] = useState("");
   const [mitmStatus, setMitmStatus] = useState<MITMStatus | null>(null);
   const [mitmRules, setMitmRules] = useState<string[]>([]);
   const [mitmNewRule, setMitmNewRule] = useState("");
@@ -34,19 +30,6 @@ export function SettingsPage() {
     try {
       await cmd.logout();
       setAuth({ is_logged_in: false, user_id: null, email: null });
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const loadOAuthState = async () => {
-    try {
-      const [providers, connections] = await Promise.all([
-        cmd.getOAuthProviders(),
-        cmd.getOAuthConnections(),
-      ]);
-      setOAuthProviders(providers);
-      setOAuthConnections(connections);
     } catch (e) {
       console.error(e);
     }
@@ -66,7 +49,6 @@ export function SettingsPage() {
   };
 
   useEffect(() => {
-    void loadOAuthState();
     void loadMITMState();
   }, []);
 
@@ -89,14 +71,6 @@ export function SettingsPage() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (!oauthConnections.some((item) => item.connecting)) return undefined;
-    const timer = window.setInterval(() => {
-      void loadOAuthState();
-    }, 2000);
-    return () => window.clearInterval(timer);
-  }, [oauthConnections]);
-
   const handleSaveRouting = async () => {
     try {
       await cmd.updateRoutingSettings(routingStrategy, stickyUses);
@@ -111,14 +85,37 @@ export function SettingsPage() {
   const rtkEnabled = appConfig?.rtk_enabled ?? true;
   const cavemanEnabled = appConfig?.caveman_enabled ?? false;
 
-  const toggleRtkEnabled = () => {
+  // 保存 RTK/Caveman 设置到后端（持久化 + 热更新网关），成功后再更新前端状态。
+  const saveRTKSettings = async (next: { rtk_enabled?: boolean; caveman_enabled?: boolean; caveman_style?: string }) => {
     if (!appConfig) return;
-    setAppConfig({ ...appConfig, rtk_enabled: !rtkEnabled });
+    const merged = {
+      rtk_enabled: appConfig.rtk_enabled,
+      caveman_enabled: appConfig.caveman_enabled,
+      caveman_style: appConfig.caveman_style,
+      ...next,
+    };
+    try {
+      await cmd.setRTKSettings(merged.rtk_enabled, appConfig.rtk_max_output_chars, merged.caveman_enabled, merged.caveman_style);
+      setAppConfig({ ...appConfig, ...merged });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const toggleRtkEnabled = () => {
+    void saveRTKSettings({ rtk_enabled: !rtkEnabled });
   };
 
   const toggleCavemanEnabled = () => {
-    if (!appConfig) return;
-    setAppConfig({ ...appConfig, caveman_enabled: !cavemanEnabled });
+    void saveRTKSettings({ caveman_enabled: !cavemanEnabled });
+  };
+
+  const handleQuitApp = async () => {
+    try {
+      await cmd.quitApp();
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleToggleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, toggle: () => void) => {
@@ -126,12 +123,6 @@ export function SettingsPage() {
     event.preventDefault();
     toggle();
   };
-
-  const connectionMap = useMemo(() => {
-    const result = new Map<string, OAuthConnection>();
-    oauthConnections.forEach((item) => result.set(item.name, item));
-    return result;
-  }, [oauthConnections]);
 
   return (
     <div className="page settings-page">
@@ -144,10 +135,6 @@ export function SettingsPage() {
           <div className="hero-metric-card">
             <span className="hero-metric-label">{t("settings.metricLoginStatus")}</span>
             <strong className="hero-metric-value">{auth.is_logged_in ? t("settings.loggedIn") : t("settings.notLoggedIn")}</strong>
-          </div>
-          <div className="hero-metric-card">
-            <span className="hero-metric-label">{t("settings.metricOauthProviders")}</span>
-            <strong className="hero-metric-value">{oauthProviders.length}</strong>
           </div>
         </div>
       </div>
@@ -218,105 +205,6 @@ export function SettingsPage() {
 
           <div className="tab-content section-card">
             <div className="section-heading">
-              <h2>{t("settings.oauthConnect")}</h2>
-              <p className="hint">{t("settings.oauthHint")}</p>
-              <p className="hint">{t("settings.oauthCallbackHint", { url: "http://127.0.0.1:43819/oauth/callback" })}</p>
-            </div>
-            {oauthError && <div className="error-msg" style={{ marginTop: 12 }}>{oauthError}</div>}
-            <div className="oauth-provider-list">
-              {oauthProviders.map((provider) => {
-                const connection = connectionMap.get(provider.name);
-                const draft = oauthDrafts[provider.name] || { clientId: "", clientSecret: "" };
-                return (
-                  <div key={provider.name} className="oauth-provider-card">
-                    <div className="oauth-provider-head">
-                      <div>
-                        <div className="oauth-provider-name">{provider.displayName}</div>
-                        <div className="oauth-provider-meta">
-                          {connection?.connected
-                            ? t("settings.oauthConnected")
-                            : connection?.connecting
-                              ? t("settings.oauthConnecting")
-                              : t("settings.oauthNotConnected")}
-                          {connection?.clientIDMask ? ` · ${connection.clientIDMask}` : ""}
-                        </div>
-                      </div>
-                      <span className={`badge ${connection?.connected ? "badge-green" : connection?.connecting ? "badge-yellow" : "badge-blue"}`}>
-                        {connection?.connected
-                          ? t("settings.oauthConnected")
-                          : connection?.connecting
-                            ? t("settings.oauthConnecting")
-                            : t("settings.oauthReady")}
-                      </span>
-                    </div>
-
-                    <div className="form-row">
-                      <div className="form-group">
-                        <label>{t("settings.oauthClientId")}</label>
-                        <input
-                          value={draft.clientId}
-                          onChange={(e) => setOAuthDrafts((current) => ({
-                            ...current,
-                            [provider.name]: { ...draft, clientId: e.target.value },
-                          }))}
-                          placeholder={t("settings.oauthClientIdPlaceholder")}
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label>{t("settings.oauthClientSecret")}</label>
-                        <input
-                          type="password"
-                          value={draft.clientSecret}
-                          onChange={(e) => setOAuthDrafts((current) => ({
-                            ...current,
-                            [provider.name]: { ...draft, clientSecret: e.target.value },
-                          }))}
-                          placeholder={t("settings.oauthClientSecretPlaceholder")}
-                        />
-                      </div>
-                    </div>
-
-                    {connection?.expiresAt && (
-                      <p className="hint">{t("settings.oauthExpiresAt", { value: new Date(connection.expiresAt).toLocaleString() })}</p>
-                    )}
-                    {connection?.error && <p className="error-msg" style={{ marginTop: 12 }}>{connection.error}</p>}
-
-                    <div className="oauth-provider-actions">
-                      <button
-                        onClick={async () => {
-                          try {
-                            setOAuthError("");
-                            const url = await cmd.startOAuthFlow(provider.name, draft.clientId, draft.clientSecret, "");
-                            await loadOAuthState();
-                            window.open(url, "_blank", "width=720,height=860");
-                          } catch (e) {
-                            setOAuthError(getErrorMessage(e, t("settings.oauthConnectFailed")));
-                          }
-                        }}
-                        className="btn-primary btn-sm"
-                      >
-                        {t("settings.oauthConnect")}
-                      </button>
-                      {connection?.connected && (
-                        <button
-                          onClick={async () => {
-                            await cmd.revokeOAuthToken(provider.name);
-                            await loadOAuthState();
-                          }}
-                          className="btn-danger btn-sm"
-                        >
-                          {t("settings.oauthRevoke")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="tab-content section-card">
-            <div className="section-heading">
               <h2>{t("settings.accountStatus")}</h2>
               <p className="hint">{t("settings.accountStatusHint")}</p>
             </div>
@@ -330,6 +218,17 @@ export function SettingsPage() {
                 {t("settings.notLoggedInDash")} <NavLink to="/auth" className="link-btn">{t("settings.goLoginRegister")}</NavLink>
               </p>
             )}
+          </div>
+
+          <div className="tab-content section-card">
+            <div className="section-heading">
+              <h2>{t("settings.quitApp")}</h2>
+              <p className="hint">{t("settings.quitAppHint")}</p>
+            </div>
+            <div className="settings-inline-actions">
+              <span className="hint" style={{ marginBottom: 0 }}>{t("settings.quitAppDescription")}</span>
+              <button onClick={handleQuitApp} className="btn-danger btn-sm">{t("settings.quitAppButton")}</button>
+            </div>
           </div>
         </div>
       )}
@@ -364,7 +263,7 @@ export function SettingsPage() {
                   checked={rtkEnabled}
                   onClick={(event) => event.stopPropagation()}
                   onChange={(e) => {
-                    if (appConfig) setAppConfig({ ...appConfig, rtk_enabled: e.target.checked });
+                    void saveRTKSettings({ rtk_enabled: e.target.checked });
                   }}
                 />
                 <label htmlFor="rtkEnabled" onClick={(event) => event.stopPropagation()}>{t("settings.enable")}</label>
@@ -405,7 +304,7 @@ export function SettingsPage() {
                     checked={cavemanEnabled}
                     onClick={(event) => event.stopPropagation()}
                     onChange={(e) => {
-                      if (appConfig) setAppConfig({ ...appConfig, caveman_enabled: e.target.checked });
+                      void saveRTKSettings({ caveman_enabled: e.target.checked });
                     }}
                   />
                   <label htmlFor="cavemanEnabled" onClick={(event) => event.stopPropagation()}>{t("settings.enable")}</label>
@@ -416,7 +315,7 @@ export function SettingsPage() {
                       value={appConfig?.caveman_style ?? "concise"}
                       onClick={(event) => event.stopPropagation()}
                       onChange={(e) => {
-                        if (appConfig) setAppConfig({ ...appConfig, caveman_style: e.target.value });
+                        void saveRTKSettings({ caveman_style: e.target.value });
                       }}
                     >
                       <option value="concise">{t("settings.cavemanStyleConcise")}</option>
@@ -686,6 +585,22 @@ export function SettingsPage() {
             </div>
             <MITMEnvHint running={mitmStatus?.state === "running"} />
           </div>
+
+          {/* 已知局限（不接管） */}
+          <div className="tab-content section-card">
+            <div className="section-heading">
+              <h2>已知局限（不接管）</h2>
+              <p className="hint">一键接管基于系统代理（HTTP/HTTPS over TCP）与本地 CA 实现，以下流量无法被监控或治理，属于客观盲区：</p>
+            </div>
+            <ul className="hint" style={{ margin: 0, paddingLeft: 20, lineHeight: 1.9 }}>
+              <li><strong>HTTP/3（QUIC / UDP 443）</strong>：系统代理仅接管 TCP，基于 UDP 的流量不会被拦截。</li>
+              <li><strong>h2 / gRPC 长连接</strong>：仅对标准 HTTP/HTTPS 请求做解析与治理，gRPC 等二进制长连接不被改写。</li>
+              <li><strong>证书固定（Certificate Pinning）客户端</strong>：内置证书校验的应用会拒绝本地 CA，从而绕过 MITM。</li>
+              <li><strong>不读取系统代理的进程</strong>：自行实现网络栈或显式指定代理的 CLI/工具需手动设置环境变量（见上）。</li>
+              <li><strong>未纳入接管域名清单的流量</strong>：仅清单内的域名会被转发到本地网关。</li>
+            </ul>
+            <p className="hint" style={{ marginTop: 8 }}>WebSocket（ws/wss）流量已复用同一网关主链路，可正常接管与记账。</p>
+          </div>
         </div>
       )}
 
@@ -837,6 +752,18 @@ function RateLimitPanel() {
             placeholder="15000"
           />
           <p className="hint">{t("rateLimit.maxWaitHint")}</p>
+        </div>
+        <div className="form-group" style={{ gridColumn: "span 2" }}>
+          <label className="form-label">{t("rateLimit.monthlyCostLimit")}</label>
+          <input
+            type="number"
+            step="0.01"
+            className="form-input"
+            value={config?.monthly_cost_limit_usd ?? 0}
+            onChange={(e) => update("monthly_cost_limit_usd", parseFloat(e.target.value) || 0)}
+            placeholder="0 = unlimited"
+          />
+          <p className="hint">{t("rateLimit.monthlyCostLimitHint")}</p>
         </div>
       </div>
 

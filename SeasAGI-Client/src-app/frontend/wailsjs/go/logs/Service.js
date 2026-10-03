@@ -6,6 +6,10 @@ export function ClearLogs() {
   return window['go']['logs']['Service']['ClearLogs']();
 }
 
+export function GetIntentScenarioStats() {
+  return window['go']['logs']['Service']['GetIntentScenarioStats']();
+}
+
 export function ListLogs(arg1, arg2) {
   return window['go']['logs']['Service']['ListLogs'](arg1, arg2);
 }

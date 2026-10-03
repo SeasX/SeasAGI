@@ -68,7 +68,6 @@ SeasAGI-Server/
 
 以下内容已移至企业版项目 `SeasAGI-Server-Enterprise/`：
 
-- Stripe 计费与 Checkout Session
 - 套餐驱动的商业功能门控
 - 多租户账单 / 订单 / 支付 / 发票
 - Combo 治理（可见性策略、部署审批）

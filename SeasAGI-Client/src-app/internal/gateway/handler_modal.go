@@ -17,6 +17,11 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusUnauthorized, "Invalid access token")
 		return
 	}
+	release, allowed := s.checkRateLimits(w)
+	if !allowed {
+		return
+	}
+	defer release()
 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -41,20 +46,32 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.checkChannelRateLimit(w, channel.ChannelID) {
+		return
+	}
 
 	providerCfg, err := s.providerConfigForChannel(*channel)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		writeJSONError(w, http.StatusInternalServerError, s.sanitizeClientError(err.Error()))
 		return
 	}
 
 	executor := providers.ResolveExecutor(providerCfg)
 	upstreamResp, err := executor.GenericPost(r.Context(), providerCfg, "/v1/embeddings", bodyBytes)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, err.Error())
+		writeJSONError(w, http.StatusBadGateway, s.sanitizeClientError(err.Error()))
 		return
 	}
 	defer upstreamResp.Body.Close()
+
+	capture := newUsageCapture(w, false)
+	w = capture
+	defer s.recordUsageAndTokens(capture, usageMeta{
+		ChannelID:   channel.ChannelID,
+		ChannelName: channel.DisplayName,
+		Model:       model,
+		Headers:     upstreamResp.Headers,
+	})
 
 	copyHeaders(w.Header(), upstreamResp.Headers)
 	w.WriteHeader(upstreamResp.Status)
@@ -66,6 +83,11 @@ func (s *Service) handleImageGenerations(w http.ResponseWriter, r *http.Request)
 		writeJSONError(w, http.StatusUnauthorized, "Invalid access token")
 		return
 	}
+	release, allowed := s.checkRateLimits(w)
+	if !allowed {
+		return
+	}
+	defer release()
 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -89,20 +111,32 @@ func (s *Service) handleImageGenerations(w http.ResponseWriter, r *http.Request)
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.checkChannelRateLimit(w, channel.ChannelID) {
+		return
+	}
 
 	providerCfg, err := s.providerConfigForChannel(*channel)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		writeJSONError(w, http.StatusInternalServerError, s.sanitizeClientError(err.Error()))
 		return
 	}
 
 	executor := providers.ResolveExecutor(providerCfg)
 	upstreamResp, err := executor.GenericPost(r.Context(), providerCfg, "/v1/images/generations", bodyBytes)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, err.Error())
+		writeJSONError(w, http.StatusBadGateway, s.sanitizeClientError(err.Error()))
 		return
 	}
 	defer upstreamResp.Body.Close()
+
+	capture := newUsageCapture(w, false)
+	w = capture
+	defer s.recordUsageAndTokens(capture, usageMeta{
+		ChannelID:   channel.ChannelID,
+		ChannelName: channel.DisplayName,
+		Model:       model,
+		Headers:     upstreamResp.Headers,
+	})
 
 	copyHeaders(w.Header(), upstreamResp.Headers)
 	w.WriteHeader(upstreamResp.Status)
@@ -114,6 +148,11 @@ func (s *Service) handleTTS(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusUnauthorized, "Invalid access token")
 		return
 	}
+	release, allowed := s.checkRateLimits(w)
+	if !allowed {
+		return
+	}
+	defer release()
 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -137,20 +176,32 @@ func (s *Service) handleTTS(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.checkChannelRateLimit(w, channel.ChannelID) {
+		return
+	}
 
 	providerCfg, err := s.providerConfigForChannel(*channel)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		writeJSONError(w, http.StatusInternalServerError, s.sanitizeClientError(err.Error()))
 		return
 	}
 
 	executor := providers.ResolveExecutor(providerCfg)
 	upstreamResp, err := executor.GenericPost(r.Context(), providerCfg, "/v1/audio/speech", bodyBytes)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, err.Error())
+		writeJSONError(w, http.StatusBadGateway, s.sanitizeClientError(err.Error()))
 		return
 	}
 	defer upstreamResp.Body.Close()
+
+	capture := newUsageCapture(w, false)
+	w = capture
+	defer s.recordUsageAndTokens(capture, usageMeta{
+		ChannelID:   channel.ChannelID,
+		ChannelName: channel.DisplayName,
+		Model:       model,
+		Headers:     upstreamResp.Headers,
+	})
 
 	copyHeaders(w.Header(), upstreamResp.Headers)
 	w.WriteHeader(upstreamResp.Status)
@@ -162,6 +213,11 @@ func (s *Service) handleSTT(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusUnauthorized, "Invalid access token")
 		return
 	}
+	release, allowed := s.checkRateLimits(w)
+	if !allowed {
+		return
+	}
+	defer release()
 
 	contentType := r.Header.Get("Content-Type")
 	var bodyBytes []byte
@@ -208,20 +264,36 @@ func (s *Service) handleSTT(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.checkChannelRateLimit(w, channel.ChannelID) {
+		return
+	}
 
 	providerCfg, err := s.providerConfigForChannel(*channel)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		writeJSONError(w, http.StatusInternalServerError, s.sanitizeClientError(err.Error()))
 		return
 	}
+
+	var upstreamHeader http.Header
+	capture := newUsageCapture(w, false)
+	w = capture
+	defer func() {
+		s.recordUsageAndTokens(capture, usageMeta{
+			ChannelID:   channel.ChannelID,
+			ChannelName: channel.DisplayName,
+			Model:       model,
+			Headers:     upstreamHeader,
+		})
+	}()
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		upstreamResp, err := s.forwardMultipartSTT(r, providerCfg, model, bodyBytes)
 		if err != nil {
-			writeJSONError(w, http.StatusBadGateway, err.Error())
+			writeJSONError(w, http.StatusBadGateway, s.sanitizeClientError(err.Error()))
 			return
 		}
 		defer upstreamResp.Body.Close()
+		upstreamHeader = upstreamResp.Header
 		copyHeaders(w.Header(), upstreamResp.Header)
 		w.WriteHeader(upstreamResp.StatusCode)
 		io.Copy(w, upstreamResp.Body)
@@ -231,11 +303,12 @@ func (s *Service) handleSTT(w http.ResponseWriter, r *http.Request) {
 	executor := providers.ResolveExecutor(providerCfg)
 	upstreamResp, err := executor.GenericPost(r.Context(), providerCfg, "/v1/audio/transcriptions", bodyBytes)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, err.Error())
+		writeJSONError(w, http.StatusBadGateway, s.sanitizeClientError(err.Error()))
 		return
 	}
 	defer upstreamResp.Body.Close()
 
+	upstreamHeader = upstreamResp.Headers
 	copyHeaders(w.Header(), upstreamResp.Headers)
 	w.WriteHeader(upstreamResp.Status)
 	io.Copy(w, upstreamResp.Body)

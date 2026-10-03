@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import { useTranslation } from "../i18n";
-import { getCloudBilling, getRuntimeStatus } from "../utils/commands";
+import { getAppConfig, getCloudBilling, getRuntimeStatus, fetchFreeChannels } from "../utils/commands";
 import { useConfigSync } from "../hooks/useConfigSync";
+import { useMarketStore } from "../stores/marketStore";
 import seasagiIcon from "../assets/seasagi-icon.png";
 
 type AppIconName =
@@ -21,6 +22,7 @@ type AppIconName =
   | "lock"
   | "layers"
   | "store"
+  | "trophy"
   | "diagnostics"
   | "plugin"
   | "chevron";
@@ -34,6 +36,7 @@ const navEntries: NavEntry[] = [
   { kind: "item", to: "/channels", label: "nav.channels", icon: "channels" },
   { kind: "item", to: "/combo-workbench", label: "nav.comboWorkbench", icon: "layers" },
   { kind: "item", to: "/playground", label: "nav.playground", icon: "playground" },
+  { kind: "item", to: "/model-index", label: "nav.modelIndex", icon: "trophy" },
   { kind: "group", id: "data-security", label: "nav.dataSecurity", icon: "key", children: [
     { to: "/access-token", label: "nav.accessToken", icon: "key" },
     { to: "/diagnostics", label: "nav.diagnostics", icon: "diagnostics" },
@@ -107,6 +110,8 @@ function AppIcon({ name, className = "" }: { name: AppIconName; className?: stri
       return <svg {...props}><polygon points="12 2 22 7 12 12 2 7 12 2" /><polyline points="2 12 12 17 22 12" /><polyline points="2 17 12 22 22 17" /></svg>;
     case "store":
       return <svg {...props}><path d="M3 9l1.5-5h15L21 9" /><path d="M3 9v11h18V9" /><path d="M9 20v-6h6v6" /></svg>;
+    case "trophy":
+      return <svg {...props}><path d="M8 4h8v5a4 4 0 01-8 0z" /><path d="M8 5H5.5a2.5 2.5 0 000 5H8" /><path d="M16 5h2.5a2.5 2.5 0 010 5H16" /><path d="M12 13v3" /><path d="M9 20h6" /><path d="M10 16h4a1 1 0 011 1v3H9v-3a1 1 0 011-1z" /></svg>;
     case "diagnostics":
       return <svg {...props}><path d="M12 2a10 10 0 100 20 10 10 0 000-20z" /><path d="M12 6v6l4 2" /></svg>;
     case "plugin":
@@ -123,6 +128,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const auth = useAppStore((s) => s.auth);
   const cloudBilling = useAppStore((s) => s.cloudBilling);
   const setRuntime = useAppStore((s) => s.setRuntime);
+  const setAppConfig = useAppStore((s) => s.setAppConfig);
   const setCloudBilling = useAppStore((s) => s.setCloudBilling);
   const location = useLocation();
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
@@ -168,6 +174,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  // 启动时加载本地应用配置到全局 store。此前 appConfig 恒为 null，
+  // 设置页 RTK/Caveman 开关的保存守卫 `if (!appConfig) return` 会静默
+  // 吞掉点击，导致两个启用按钮无法打开也无法关闭。
+  useEffect(() => {
+    (async () => {
+      try {
+        const config = await getAppConfig();
+        setAppConfig(config);
+      } catch {}
+    })();
+  }, [setAppConfig]);
+
   useEffect(() => {
     if (!auth.is_logged_in) {
       setCloudBilling(null);
@@ -182,6 +200,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
       }
     })();
   }, [auth.is_logged_in, setCloudBilling]);
+
+  // 登录后（含会话恢复）预加载 Token 市场免费通道，进入市场页即可直接展示
+  useEffect(() => {
+    if (!auth.is_logged_in) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchFreeChannels();
+        if (!cancelled && Array.isArray(data) && data.length > 0) {
+          useMarketStore.getState().setFreeChannelsCache(data);
+        }
+      } catch {
+        // silent fail - 打开 Token 市场页面时会重试
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [auth.is_logged_in]);
 
   useConfigSync();
 
@@ -212,7 +247,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <img src={seasagiIcon} alt="SeasAGI" className="sidebar-logo-img" />
                 <div className="sidebar-logo-info">
                   <span className="logo-text">SeasAGI</span>
-                  <span className="logo-version">v0.1.0</span>
+                  <span className="logo-version">v0.1.5</span>
                 </div>
               </div>
               <AppIcon name="chevron" className="title-chevron" />

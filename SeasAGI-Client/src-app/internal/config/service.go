@@ -15,40 +15,41 @@ import (
 )
 
 type AppConfig struct {
-	ListenPort            int                   `json:"listen_port"`
-	DefaultModel          string                `json:"default_model"`
-	DefaultChannelID      string                `json:"default_channel_id"`
-	RoutingStrategy       string                `json:"routing_strategy"`
-	StickyChannelUse      int                   `json:"sticky_channel_use"`
-	AutoLaunch            bool                  `json:"auto_launch"`
-	AutoUpdate            bool                  `json:"auto_update"`
-	LogRetentionDays      int                   `json:"log_retention_days"`
-	AnalyticsEnabled      bool                  `json:"analytics_enabled"`
-	Locale                string                `json:"locale"`
-	RTKEnabled            bool                  `json:"rtk_enabled"`
-	RTKMaxOutputChars     int                   `json:"rtk_max_output_chars"`
-	CavemanEnabled        bool                  `json:"caveman_enabled"`
-	CavemanStyle          string                `json:"caveman_style"`
-	ModelCombos           []ModelCombo          `json:"model_combos,omitempty"`
-	ComboTemplates        []ModelCombo          `json:"combo_templates,omitempty"`
-	OAuthProviders        []OAuthProviderConfig `json:"oauth_providers,omitempty"`
-	Optimizations         *OptimizationConfig   `json:"optimizations,omitempty"`
-	PlatformAPIBaseURL    string                `json:"platform_api_base_url,omitempty"`
-	DefaultComboName      string                `json:"default_combo_name,omitempty"`
-	RateLimit             *RateLimitConfig      `json:"rate_limit,omitempty"`
-	SelectedGrantID       string                `json:"selected_grant_id,omitempty"`
-	SelectedGrantRelayURL string                `json:"selected_grant_relay_url,omitempty"`
+	ListenPort            int                 `json:"listen_port"`
+	DefaultModel          string              `json:"default_model"`
+	DefaultChannelID      string              `json:"default_channel_id"`
+	RoutingStrategy       string              `json:"routing_strategy"`
+	StickyChannelUse      int                 `json:"sticky_channel_use"`
+	AutoLaunch            bool                `json:"auto_launch"`
+	AutoUpdate            bool                `json:"auto_update"`
+	LogRetentionDays      int                 `json:"log_retention_days"`
+	AnalyticsEnabled      bool                `json:"analytics_enabled"`
+	Locale                string              `json:"locale"`
+	RTKEnabled            bool                `json:"rtk_enabled"`
+	RTKMaxOutputChars     int                 `json:"rtk_max_output_chars"`
+	CavemanEnabled        bool                `json:"caveman_enabled"`
+	CavemanStyle          string              `json:"caveman_style"`
+	ModelCombos           []ModelCombo        `json:"model_combos,omitempty"`
+	ComboTemplates        []ModelCombo        `json:"combo_templates,omitempty"`
+	Optimizations         *OptimizationConfig `json:"optimizations,omitempty"`
+	PlatformAPIBaseURL    string              `json:"platform_api_base_url,omitempty"`
+	DefaultComboName      string              `json:"default_combo_name,omitempty"`
+	RateLimit             *RateLimitConfig    `json:"rate_limit,omitempty"`
+	Security              *SecurityConfig     `json:"security,omitempty"`
+	SelectedGrantID       string              `json:"selected_grant_id,omitempty"`
+	SelectedGrantRelayURL string              `json:"selected_grant_relay_url,omitempty"`
 }
 
 // RateLimitConfig 全局速率限制配置，借鉴 OmniRoute per-connection rateLimitOverrides。
 type RateLimitConfig struct {
-	Enabled          bool                         `json:"enabled"`
-	DefaultRPM       int                          `json:"default_rpm"`                 // 每分钟请求数，0=不限
-	DefaultTPM       int                          `json:"default_tpm"`                 // 每分钟 token 数，0=不限
-	MinIntervalMs    int                          `json:"min_interval_ms"`             // 请求间最小间隔（毫秒），0=不限
-	MaxConcurrent    int                          `json:"max_concurrent"`              // 最大并发数，0=不限
-	MaxWaitMs        int                          `json:"max_wait_ms"`                 // 队列最大等待（毫秒），默认 15000
-	ChannelOverrides map[string]*ChannelRateLimit `json:"channel_overrides,omitempty"` // per-channel 覆盖
+	Enabled             bool                         `json:"enabled"`
+	DefaultRPM          int                          `json:"default_rpm"`                 // 每分钟请求数，0=不限
+	DefaultTPM          int                          `json:"default_tpm"`                 // 每分钟 token 数，0=不限
+	MinIntervalMs       int                          `json:"min_interval_ms"`             // 请求间最小间隔（毫秒），0=不限
+	MaxConcurrent       int                          `json:"max_concurrent"`              // 最大并发数，0=不限
+	MaxWaitMs           int                          `json:"max_wait_ms"`                 // 队列最大等待（毫秒），默认 15000
+	MonthlyCostLimitUSD float64                      `json:"monthly_cost_limit_usd"`      // 月度成本硬上限（USD），0=不限
+	ChannelOverrides    map[string]*ChannelRateLimit `json:"channel_overrides,omitempty"` // per-channel 覆盖
 }
 
 // ChannelRateLimit 单个 Channel 的速率限制覆盖。
@@ -57,6 +58,20 @@ type ChannelRateLimit struct {
 	TPM           int `json:"tpm"`             // 0=使用全局默认
 	MinIntervalMs int `json:"min_interval_ms"` // 0=使用全局默认
 	MaxConcurrent int `json:"max_concurrent"`  // 0=使用全局默认
+}
+
+// 提示注入处置策略。
+const (
+	PromptInjectionOff   = "off"   // 不检测
+	PromptInjectionLog   = "log"   // 命中告警但不拦截（默认）
+	PromptInjectionBlock = "block" // 命中直接拦截
+)
+
+// SecurityConfig 网关内容治理策略（默认非破坏式：仅告警 + 错误脱敏）。
+type SecurityConfig struct {
+	PIIMaskingEnabled     bool   `json:"pii_masking_enabled"`     // 对请求 messages 做 PII/DLP 脱敏（默认关闭）
+	PromptInjectionAction string `json:"prompt_injection_action"` // off | log | block（默认 log）
+	ErrorSanitizeEnabled  bool   `json:"error_sanitize_enabled"`  // 对外错误信息脱敏（默认开启）
 }
 
 type OptimizationConfig struct {
@@ -110,12 +125,6 @@ type ModelCombo struct {
 	Version       int              `json:"version,omitempty"`
 }
 
-type OAuthProviderConfig struct {
-	ProviderName string `json:"provider_name"`
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret,omitempty"`
-}
-
 type RetryConfig struct {
 	MaxRetries    int    `json:"max_retries"`
 	InitialDelay  string `json:"initial_delay"`
@@ -160,13 +169,19 @@ type persistedState struct {
 }
 
 func NewService(cfg AppConfig) *Service {
+	return NewServiceWithPath(cfg, defaultConfigPath())
+}
+
+// NewServiceWithPath 与 NewService 相同，但配置持久化到指定路径（测试隔离用）。
+func NewServiceWithPath(cfg AppConfig, path string) *Service {
 	svc := &Service{
 		config:   cfg,
 		channels: []Channel{},
-		path:     defaultConfigPath(),
+		path:     path,
 	}
 	_ = svc.load()
 	svc.ensureOptimizationConfig()
+	svc.ensureSecurityConfig()
 	svc.ensureBuiltinTemplates()
 	svc.migrateModelCombos()
 	return svc
@@ -193,6 +208,27 @@ func (s *Service) ensureOptimizationConfig() {
 	if s.config.Optimizations == nil {
 		def := defaultOptimizationConfig()
 		s.config.Optimizations = &def
+		_ = s.saveLocked()
+	}
+}
+
+func defaultSecurityConfig() SecurityConfig {
+	return SecurityConfig{
+		PIIMaskingEnabled:     false,
+		PromptInjectionAction: PromptInjectionLog,
+		ErrorSanitizeEnabled:  true,
+	}
+}
+
+func (s *Service) ensureSecurityConfig() {
+	if s.config.Security == nil {
+		def := defaultSecurityConfig()
+		s.config.Security = &def
+		_ = s.saveLocked()
+		return
+	}
+	if s.config.Security.PromptInjectionAction == "" {
+		s.config.Security.PromptInjectionAction = PromptInjectionLog
 		_ = s.saveLocked()
 	}
 }
@@ -278,6 +314,12 @@ func LoadOrDefault() (AppConfig, error) {
 		LogRetentionDays:   30,
 		AnalyticsEnabled:   false,
 		PlatformAPIBaseURL: "https://seasagi.seasx.ai/api/v1",
+		// RTK/Caveman 默认值须与前端兜底一致（SettingsPage：rtk_enabled ?? true、
+		// caveman_style ?? "concise"），否则新鲜安装时后端关闭而 UI 显示开启，
+		// 启用开关第一次点击不生效。已有配置文件由 load() 覆盖，不受影响。
+		RTKEnabled:        true,
+		RTKMaxOutputChars: 8000,
+		CavemanStyle:      "concise",
 	})
 	if err := svc.load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return svc.config, err
@@ -395,6 +437,47 @@ func (s *Service) SetRateLimitConfig(cfg RateLimitConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.config.RateLimit = &cfg
+	return s.saveLocked()
+}
+
+func (s *Service) GetSecurityConfig() SecurityConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.config.Security == nil {
+		return defaultSecurityConfig()
+	}
+	return *s.config.Security
+}
+
+func (s *Service) SetSecurityConfig(cfg SecurityConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cfg.PromptInjectionAction == "" {
+		cfg.PromptInjectionAction = PromptInjectionLog
+	}
+	s.config.Security = &cfg
+	return s.saveLocked()
+}
+
+// SetRTKConfig 设置并持久化 RTK Token 压缩配置。
+func (s *Service) SetRTKConfig(enabled bool, maxOutputChars int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.RTKEnabled = enabled
+	if maxOutputChars > 0 {
+		s.config.RTKMaxOutputChars = maxOutputChars
+	}
+	return s.saveLocked()
+}
+
+// SetCavemanConfig 设置并持久化 Caveman 输出精简配置。
+func (s *Service) SetCavemanConfig(enabled bool, style string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.CavemanEnabled = enabled
+	if style != "" {
+		s.config.CavemanStyle = style
+	}
 	return s.saveLocked()
 }
 
@@ -976,53 +1059,6 @@ func (s *Service) ListComboTemplates() []ModelCombo {
 	result := make([]ModelCombo, 0, len(s.config.ComboTemplates))
 	for _, template := range s.config.ComboTemplates {
 		result = append(result, normalizeComboForRead(template))
-	}
-	return result
-}
-
-func (s *Service) SaveOAuthProviderConfig(cfg OAuthProviderConfig) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cfg.ProviderName = strings.TrimSpace(cfg.ProviderName)
-	cfg.ClientID = strings.TrimSpace(cfg.ClientID)
-	cfg.ClientSecret = strings.TrimSpace(cfg.ClientSecret)
-	if cfg.ProviderName == "" {
-		return errors.New("provider name is required")
-	}
-	if cfg.ClientID == "" {
-		return errors.New("client id is required")
-	}
-
-	for i := range s.config.OAuthProviders {
-		if s.config.OAuthProviders[i].ProviderName == cfg.ProviderName {
-			s.config.OAuthProviders[i] = cfg
-			return s.saveLocked()
-		}
-	}
-	s.config.OAuthProviders = append(s.config.OAuthProviders, cfg)
-	return s.saveLocked()
-}
-
-func (s *Service) GetOAuthProviderConfig(providerName string) (OAuthProviderConfig, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, cfg := range s.config.OAuthProviders {
-		if cfg.ProviderName == providerName {
-			return cfg, true
-		}
-	}
-	return OAuthProviderConfig{}, false
-}
-
-func (s *Service) ListOAuthProviderConfigs() []OAuthProviderConfig {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	result := make([]OAuthProviderConfig, 0, len(s.config.OAuthProviders))
-	for _, cfg := range s.config.OAuthProviders {
-		result = append(result, cfg)
 	}
 	return result
 }

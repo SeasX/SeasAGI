@@ -333,11 +333,71 @@ export namespace auth {
 		    return a;
 		}
 	}
+	export class OAuthProvider {
+	    name: string;
+	    client_id: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new OAuthProvider(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.client_id = source["client_id"];
+	    }
+	}
+	export class OverageUsage {
+	    overage_id: string;
+	    user_id: string;
+	    plan_id: string;
+	    billing_period: string;
+	    overage_requests: number;
+	    overage_cost: number;
+	    currency: string;
+	    billed: boolean;
+	    invoice_id: string;
+	    created_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new OverageUsage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.overage_id = source["overage_id"];
+	        this.user_id = source["user_id"];
+	        this.plan_id = source["plan_id"];
+	        this.billing_period = source["billing_period"];
+	        this.overage_requests = source["overage_requests"];
+	        this.overage_cost = source["overage_cost"];
+	        this.currency = source["currency"];
+	        this.billed = source["billed"];
+	        this.invoice_id = source["invoice_id"];
+	        this.created_at = source["created_at"];
+	    }
+	}
 
 }
 
 export namespace config {
 	
+	export class SecurityConfig {
+	    pii_masking_enabled: boolean;
+	    prompt_injection_action: string;
+	    error_sanitize_enabled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new SecurityConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.pii_masking_enabled = source["pii_masking_enabled"];
+	        this.prompt_injection_action = source["prompt_injection_action"];
+	        this.error_sanitize_enabled = source["error_sanitize_enabled"];
+	    }
+	}
 	export class ChannelRateLimit {
 	    rpm: number;
 	    tpm: number;
@@ -363,6 +423,7 @@ export namespace config {
 	    min_interval_ms: number;
 	    max_concurrent: number;
 	    max_wait_ms: number;
+	    monthly_cost_limit_usd: number;
 	    channel_overrides?: Record<string, ChannelRateLimit>;
 	
 	    static createFrom(source: any = {}) {
@@ -377,6 +438,7 @@ export namespace config {
 	        this.min_interval_ms = source["min_interval_ms"];
 	        this.max_concurrent = source["max_concurrent"];
 	        this.max_wait_ms = source["max_wait_ms"];
+	        this.monthly_cost_limit_usd = source["monthly_cost_limit_usd"];
 	        this.channel_overrides = this.convertValues(source["channel_overrides"], ChannelRateLimit, true);
 	    }
 	
@@ -430,22 +492,6 @@ export namespace config {
 	        this.sticky_ttl_sec = source["sticky_ttl_sec"];
 	        this.preset_enabled = source["preset_enabled"];
 	        this.default_preset = source["default_preset"];
-	    }
-	}
-	export class OAuthProviderConfig {
-	    provider_name: string;
-	    client_id: string;
-	    client_secret?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new OAuthProviderConfig(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.provider_name = source["provider_name"];
-	        this.client_id = source["client_id"];
-	        this.client_secret = source["client_secret"];
 	    }
 	}
 	export class CandidateProvider {
@@ -585,11 +631,11 @@ export namespace config {
 	    caveman_style: string;
 	    model_combos?: ModelCombo[];
 	    combo_templates?: ModelCombo[];
-	    oauth_providers?: OAuthProviderConfig[];
 	    optimizations?: OptimizationConfig;
 	    platform_api_base_url?: string;
 	    default_combo_name?: string;
 	    rate_limit?: RateLimitConfig;
+	    security?: SecurityConfig;
 	    selected_grant_id?: string;
 	    selected_grant_relay_url?: string;
 	
@@ -615,11 +661,11 @@ export namespace config {
 	        this.caveman_style = source["caveman_style"];
 	        this.model_combos = this.convertValues(source["model_combos"], ModelCombo);
 	        this.combo_templates = this.convertValues(source["combo_templates"], ModelCombo);
-	        this.oauth_providers = this.convertValues(source["oauth_providers"], OAuthProviderConfig);
 	        this.optimizations = this.convertValues(source["optimizations"], OptimizationConfig);
 	        this.platform_api_base_url = source["platform_api_base_url"];
 	        this.default_combo_name = source["default_combo_name"];
 	        this.rate_limit = this.convertValues(source["rate_limit"], RateLimitConfig);
+	        this.security = this.convertValues(source["security"], SecurityConfig);
 	        this.selected_grant_id = source["selected_grant_id"];
 	        this.selected_grant_relay_url = source["selected_grant_relay_url"];
 	    }
@@ -796,6 +842,23 @@ export namespace gateway {
 
 }
 
+export namespace logging {
+	
+	export class LogRotator {
+	
+	
+	    static createFrom(source: any = {}) {
+	        return new LogRotator(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	
+	    }
+	}
+
+}
+
 export namespace logs {
 	
 	export class RouteStep {
@@ -834,9 +897,14 @@ export namespace logs {
 	    route_steps?: RouteStep[];
 	    status: string;
 	    duration_ms: number;
+	    http_status: number;
+	    ttft_ms: number;
+	    input_tokens: number;
+	    output_tokens: number;
 	    error_code?: string;
 	    error_message?: string;
 	    applied_constraints?: string;
+	    intent_scenario?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RequestLog(source);
@@ -853,9 +921,14 @@ export namespace logs {
 	        this.route_steps = this.convertValues(source["route_steps"], RouteStep);
 	        this.status = source["status"];
 	        this.duration_ms = source["duration_ms"];
+	        this.http_status = source["http_status"];
+	        this.ttft_ms = source["ttft_ms"];
+	        this.input_tokens = source["input_tokens"];
+	        this.output_tokens = source["output_tokens"];
 	        this.error_code = source["error_code"];
 	        this.error_message = source["error_message"];
 	        this.applied_constraints = source["applied_constraints"];
+	        this.intent_scenario = source["intent_scenario"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1241,6 +1314,18 @@ export namespace usage {
 	        this.total_errors = source["total_errors"];
 	        this.avg_latency_ms = source["avg_latency_ms"];
 	        this.error_rate = source["error_rate"];
+	    }
+	}
+	export class Service {
+	
+	
+	    static createFrom(source: any = {}) {
+	        return new Service(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	
 	    }
 	}
 	export class UsageDetail {

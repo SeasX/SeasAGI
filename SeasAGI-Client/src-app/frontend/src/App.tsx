@@ -3,6 +3,7 @@ import { I18nProvider } from "./i18n/I18nProvider";
 import { HomePage } from "./pages/HomePage";
 import { ChannelPage } from "./pages/ChannelPage";
 import { LogPage } from "./pages/LogPage";
+import { ModelIndexPage } from "./pages/ModelIndexPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { UsagePage } from "./pages/UsagePage";
@@ -44,6 +45,7 @@ export default function App() {
             <Route path="/enterprise" element={<Navigate to="/" replace />} />
             <Route path="/playground" element={<PlaygroundPage />} />
             <Route path="/token-market" element={<TokenMarketPage />} />
+            <Route path="/model-index" element={<ModelIndexPage />} />
             <Route path="/token-market/create" element={<TokenListingCreatePage />} />
             <Route path="/token-market/my-listings" element={<TokenMyListingsPage />} />
             <Route path="/token-market/listing/:id" element={<TokenListingDetailPage />} />

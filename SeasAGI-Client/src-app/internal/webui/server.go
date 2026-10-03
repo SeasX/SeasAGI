@@ -47,7 +47,7 @@ func (s *Server) Start(ctx context.Context) error {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"name":    "SeasAGI Web UI",
-			"version": "0.1.0",
+			"version": "0.1.5",
 			"mode":    "web",
 		})
 	})
@@ -63,21 +63,22 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to listen on port %d: %w", s.port, err)
 	}
 
-	s.server = &http.Server{
+	server := &http.Server{
 		Handler: mux,
 		BaseContext: func(_ net.Listener) context.Context {
 			return ctx
 		},
 	}
+	s.server = server
 
 	go func() {
 		<-ctx.Done()
-		s.server.Close()
+		server.Close()
 	}()
 
 	go func() {
 		logging.Infof("SeasAGI Web UI listening on http://127.0.0.1:%d", s.port)
-		if err := s.server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			logging.Errorf("Web UI server error: %v", err)
 		}
 	}()

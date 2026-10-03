@@ -97,6 +97,8 @@ export function LogPage() {
   const successCount = filtered.filter((log) => log.status === "success").length;
   const failureCount = filtered.length - successCount;
   const avgDuration = filtered.length > 0 ? Math.round(filtered.reduce((sum, log) => sum + log.duration_ms, 0) / filtered.length) : 0;
+  const ttftSamples = filtered.filter((log) => (log.ttft_ms || 0) > 0);
+  const avgTtft = ttftSamples.length > 0 ? Math.round(ttftSamples.reduce((sum, log) => sum + log.ttft_ms, 0) / ttftSamples.length) : 0;
   const activeFilters = [
     search ? `${t("log.searchLabel")}：${search}` : "",
     statusFilter ? `${t("log.statusLabel")}：${statusFilter === "success" ? t("log.success") : t("log.failure")}` : "",
@@ -112,8 +114,8 @@ export function LogPage() {
   const formatDuration = (value: number) => (value >= 1000 ? `${(value / 1000).toFixed(2)}s` : `${value}ms`);
 
   const handleExportCSV = () => {
-    const headers = [t("log.csvHeaders.time"), t("log.csvHeaders.logicalModel"), t("log.csvHeaders.channel"), t("log.csvHeaders.upstreamModel"), t("log.csvHeaders.duration"), t("log.csvHeaders.status"), t("log.csvHeaders.errorCode"), t("log.csvHeaders.errorMessage"), t("log.csvHeaders.routeTrace"), t("log.csvHeaders.stepCount")];
-    const rows = filtered.map((l) => [l.created_at, l.logical_model_name, l.channel_id, l.upstream_model, String(l.duration_ms), l.status, l.error_code || "", l.error_message || "", l.route_trace, String(l.route_steps?.length || 0)]);
+    const headers = [t("log.csvHeaders.time"), t("log.csvHeaders.logicalModel"), t("log.csvHeaders.channel"), t("log.csvHeaders.upstreamModel"), t("log.csvHeaders.duration"), t("log.csvHeaders.httpStatus"), t("log.csvHeaders.ttft"), t("log.csvHeaders.tokens"), t("log.csvHeaders.status"), t("log.csvHeaders.errorCode"), t("log.csvHeaders.errorMessage"), t("log.csvHeaders.routeTrace"), t("log.csvHeaders.stepCount")];
+    const rows = filtered.map((l) => [l.created_at, l.logical_model_name, l.channel_id, l.upstream_model, String(l.duration_ms), String(l.http_status || ""), String(l.ttft_ms || ""), String((l.input_tokens || 0) + (l.output_tokens || 0)), l.status, l.error_code || "", l.error_message || "", l.route_trace, String(l.route_steps?.length || 0)]);
     const csv = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.map((c) => `"${c}"`).join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -326,6 +328,10 @@ export function LogPage() {
             <div className="stat-label">{t("log.avgDuration")}</div>
             <div className="stat-value">{formatDuration(avgDuration)}</div>
           </div>
+          <div className="stat-card">
+            <div className="stat-label">{t("log.avgTtft")}</div>
+            <div className="stat-value">{avgTtft > 0 ? formatDuration(avgTtft) : "-"}</div>
+          </div>
         </div>
       </div>
 
@@ -359,6 +365,9 @@ export function LogPage() {
                       </div>
                       <div className="log-list-meta">
                         <span>{formatDateTime(log.created_at)}</span>
+                        <span>HTTP {log.http_status || "-"}</span>
+                        <span>{t("log.ttft")} {log.ttft_ms ? formatDuration(log.ttft_ms) : "-"}</span>
+                        <span>{t("log.tokens")} {(log.input_tokens || 0) + (log.output_tokens || 0)}</span>
                         <span>{log.channel_id || "-"}</span>
                         <span>{log.upstream_model || "-"}</span>
                         <code>{log.route_trace || "-"}</code>

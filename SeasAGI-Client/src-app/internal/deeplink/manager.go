@@ -20,8 +20,8 @@ const (
 )
 
 type DeepLinkAction struct {
-	Type     ActionType            `json:"type"`
-	Params   map[string]string     `json:"params"`
+	Type   ActionType        `json:"type"`
+	Params map[string]string `json:"params"`
 }
 
 type Handler func(action DeepLinkAction) error

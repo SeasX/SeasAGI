@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "../i18n";
 import { useAppStore } from "../stores/appStore";
-import { createCheckoutSession, getPlans, openInBrowser } from "../utils/commands";
+import { createCheckoutSession, getPlans, getCloudBilling, openInBrowser } from "../utils/commands";
 
 interface PlanInfo {
   plan_id: string;
@@ -33,6 +33,7 @@ export function SubscriptionPage() {
   const { t } = useTranslation();
   const auth = useAppStore((s) => s.auth);
   const cloudBilling = useAppStore((s) => s.cloudBilling);
+  const setCloudBilling = useAppStore((s) => s.setCloudBilling);
   const [plans, setPlans] = useState<PlanInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState<string | null>(null);
@@ -65,6 +66,17 @@ export function SubscriptionPage() {
       setLoading(false);
     })();
   }, [auth.is_logged_in]);
+
+  // 付款回跳后切回客户端窗口时，自动刷新订阅状态（webhook 已在服务端激活订阅）
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && auth.is_logged_in) {
+        getCloudBilling().then(setCloudBilling).catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [auth.is_logged_in, setCloudBilling]);
 
   const handleSubscribe = async (planId: string, quantity?: number) => {
     if (!auth.is_logged_in) {

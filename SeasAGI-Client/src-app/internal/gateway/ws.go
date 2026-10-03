@@ -4,23 +4,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
+const (
+	wsReadTimeout = 120 * time.Second
+	wsPingPeriod  = 30 * time.Second
+	wsWriteWait   = 10 * time.Second
+)
+
 // WSBridge handles WebSocket connections for real-time chat.
-// It translates WebSocket messages into the same format as the HTTP API,
-// providing a persistent connection alternative to HTTP polling.
+// 所有经 WebSocket 进入的请求都会复用网关 HTTP 主链路（鉴权 / 限流 / DLP / 路由 /
+// 转发 / 记账），确保 WebSocket 不是治理盲区。
 type WSBridge struct {
 	upgrader websocket.Upgrader
+	svc      *Service
 	mu       sync.RWMutex
-	conns    map[*websocket.Conn]bool
+	conns    map[*websocket.Conn]string // conn -> 已校验的访问令牌
+	writeMu  sync.Mutex                 // gorilla 连接不支持并发写，统一串行化
 }
 
-// NewWSBridge creates a new WebSocket bridge.
-func NewWSBridge() *WSBridge {
+// NewWSBridge creates a new WebSocket bridge bound to the gateway service.
+func NewWSBridge(svc *Service) *WSBridge {
 	return &WSBridge{
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
@@ -30,7 +39,8 @@ func NewWSBridge() *WSBridge {
 				return true
 			},
 		},
-		conns: make(map[*websocket.Conn]bool),
+		svc:   svc,
+		conns: make(map[*websocket.Conn]string),
 	}
 }
 
@@ -53,6 +63,12 @@ type WSResponse struct {
 
 // HandleWS handles a WebSocket connection upgrade and message loop.
 func (wb *WSBridge) HandleWS(w http.ResponseWriter, r *http.Request) {
+	token, ok := wb.authorize(r)
+	if !ok {
+		http.Error(w, "Invalid access token", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := wb.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -60,7 +76,7 @@ func (wb *WSBridge) HandleWS(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	wb.mu.Lock()
-	wb.conns[conn] = true
+	wb.conns[conn] = token
 	wb.mu.Unlock()
 
 	defer func() {
@@ -70,19 +86,31 @@ func (wb *WSBridge) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Set read deadline for idle connections
-	conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+	conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+		conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
 		return nil
 	})
 
-	// Start ping ticker
+	// Start ping ticker to keep the connection alive and detect half-open peers.
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(wsPingPeriod)
 		defer ticker.Stop()
 		for {
-			ticker.Stop()
-			return
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				wb.writeMu.Lock()
+				conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+				err := conn.WriteMessage(websocket.PingMessage, nil)
+				wb.writeMu.Unlock()
+				if err != nil {
+					return
+				}
+			}
 		}
 	}()
 
@@ -106,7 +134,6 @@ func (wb *WSBridge) HandleWS(w http.ResponseWriter, r *http.Request) {
 				Status:    200,
 			})
 		case "chat":
-			// Forward to the gateway service's chat handler
 			wb.handleChatRequest(conn, msg)
 		case "models":
 			wb.handleModelsRequest(conn, msg)
@@ -116,57 +143,51 @@ func (wb *WSBridge) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleChatRequest processes a chat completion request received over WebSocket.
-// In the actual integration, this would forward to the gateway's chat handler.
-// For now, it echoes back a formatted response for testing.
+// authorize 校验 WebSocket 客户端的访问令牌：优先 Authorization: Bearer，
+// 其次 ?token= 查询参数（浏览器 WebSocket API 无法自定义请求头）。
+func (wb *WSBridge) authorize(r *http.Request) (string, bool) {
+	if wb.svc == nil {
+		return "", false
+	}
+	token := ""
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		token = strings.TrimSpace(auth[7:])
+	}
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+	return token, wb.svc.tokenMatches(token)
+}
+
+// handleChatRequest 将 WebSocket 上收到的 chat 请求复用 HTTP 主链路处理，
+// 返回真实上游响应（鉴权 / 限流 / DLP / 路由 / 记账全部生效）。
 func (wb *WSBridge) handleChatRequest(conn *websocket.Conn, msg WSMessage) {
-	// Parse the request to validate format
-	var req map[string]interface{}
-	if err := json.Unmarshal(msg.Request, &req); err != nil {
-		wb.sendError(conn, msg.RequestID, fmt.Sprintf("invalid request body: %v", err))
-		return
-	}
-
-	// Build a response — in production this would call the gateway's actual handler
-	response := map[string]interface{}{
-		"id":      fmt.Sprintf("chatcmpl-ws-%s", msg.RequestID),
-		"object":  "chat.completion",
-		"created": time.Now().Unix(),
-		"choices": []map[string]interface{}{
-			{
-				"index": 0,
-				"message": map[string]interface{}{
-					"role":    "assistant",
-					"content": "WebSocket response (bridge active)",
-				},
-				"finish_reason": "stop",
-			},
-		},
-	}
-
-	data, _ := json.Marshal(response)
+	token := wb.tokenFor(conn)
+	status, body := wb.svc.ServeGatewayRequest("/v1/chat/completions", msg.Request, token)
 	wb.sendMessage(conn, WSResponse{
 		Type:      "chat",
 		RequestID: msg.RequestID,
-		Status:    200,
-		Data:      data,
+		Status:    status,
+		Data:      body,
 	})
 }
 
 // handleModelsRequest processes a list models request over WebSocket.
 func (wb *WSBridge) handleModelsRequest(conn *websocket.Conn, msg WSMessage) {
-	response := map[string]interface{}{
-		"object": "list",
-		"data":   []map[string]interface{}{},
-	}
-
-	data, _ := json.Marshal(response)
+	status, body := wb.svc.ServeGatewayRequest("/v1/models", nil, wb.tokenFor(conn))
 	wb.sendMessage(conn, WSResponse{
 		Type:      "models",
 		RequestID: msg.RequestID,
-		Status:    200,
-		Data:      data,
+		Status:    status,
+		Data:      body,
 	})
+}
+
+// tokenFor 返回连接建立时校验通过的访问令牌。
+func (wb *WSBridge) tokenFor(conn *websocket.Conn) string {
+	wb.mu.RLock()
+	defer wb.mu.RUnlock()
+	return wb.conns[conn]
 }
 
 // sendMessage sends a WSResponse to a specific connection.
@@ -175,6 +196,8 @@ func (wb *WSBridge) sendMessage(conn *websocket.Conn, resp WSResponse) {
 	if err != nil {
 		return
 	}
+	wb.writeMu.Lock()
+	defer wb.writeMu.Unlock()
 	conn.WriteMessage(websocket.TextMessage, data)
 }
 

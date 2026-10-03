@@ -11,6 +11,7 @@ import {logs} from '../models';
 import {mcp} from '../models';
 import {prompts} from '../models';
 import {skills} from '../models';
+import {logging} from '../models';
 import {mitm} from '../models';
 
 export function AddMITMRule(arg1:string):Promise<void>;
@@ -57,8 +58,6 @@ export function DeleteSession(arg1:string,arg2:string):Promise<void>;
 
 export function DiscoverModels(arg1:string):Promise<Array<discovery.DiscoveredModel>>;
 
-export function ExchangeOAuthCode(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string):Promise<void>;
-
 export function ExportConfig():Promise<string>;
 
 export function FetchActiveGrants():Promise<Array<Record<string, any>>>;
@@ -72,6 +71,8 @@ export function FetchFreeChannels():Promise<Array<Record<string, any>>>;
 export function FetchMITMTargetsFromEnterprise():Promise<Record<string, any>>;
 
 export function FetchModelCatalog():Promise<Array<Record<string, any>>>;
+
+export function FetchModelIndex(arg1:string):Promise<Record<string, any>>;
 
 export function FetchModelStats():Promise<Array<Record<string, any>>>;
 
@@ -101,6 +102,8 @@ export function GetDefaultComboName():Promise<string>;
 
 export function GetEvalScorecard(arg1:string):Promise<Record<string, any>>;
 
+export function GetIntentScenarioStats():Promise<Array<Record<string, any>>>;
+
 export function GetLocalAccessToken():Promise<string>;
 
 export function GetLocale():Promise<string>;
@@ -121,17 +124,15 @@ export function GetMITMStatus():Promise<Record<string, any>>;
 
 export function GetMITMTargets():Promise<Array<Record<string, any>>>;
 
-export function GetOAuthConnections():Promise<Array<Record<string, any>>>;
-
-export function GetOAuthProviders():Promise<Array<Record<string, any>>>;
-
-export function GetOAuthToken(arg1:string):Promise<string>;
+export function GetOAuthProviders():Promise<Array<auth.OAuthProvider>>;
 
 export function GetOfficialComboTemplates():Promise<Array<Record<string, any>>>;
 
 export function GetOptimizationConfig():Promise<Record<string, any>>;
 
 export function GetOptimizationPlan(arg1:string,arg2:string):Promise<Record<string, any>>;
+
+export function GetOverageUsage():Promise<Record<string, any>>;
 
 export function GetPerfAuditReport():Promise<Record<string, any>>;
 
@@ -233,9 +234,13 @@ export function OpenInBrowser(arg1:string):Promise<void>;
 
 export function PerformUpdate():Promise<void>;
 
+export function PlatformRequest(arg1:string,arg2:string,arg3:string):Promise<Record<string, any>>;
+
 export function PreviewComboOptimization(arg1:string,arg2:string):Promise<Record<string, any>>;
 
 export function PushCloudCombo(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number,arg6:string,arg7:Record<string, any>,arg8:string):Promise<Record<string, any>>;
+
+export function QuitApp():Promise<void>;
 
 export function ReadCurrentPrompt(arg1:string):Promise<string>;
 
@@ -250,8 +255,6 @@ export function RenameComboTemplate(arg1:string,arg2:string):Promise<void>;
 export function ReorderChannels(arg1:Array<string>):Promise<void>;
 
 export function ResetLocalAccessToken():Promise<string>;
-
-export function RevokeOAuthToken(arg1:string):Promise<void>;
 
 export function RunDiagnostics():Promise<Record<string, any>>;
 
@@ -289,11 +292,15 @@ export function SetLocale(arg1:string):Promise<void>;
 
 export function SetLogRotationConfig(arg1:Record<string, any>):Promise<void>;
 
+export function SetLogRotator(arg1:logging.LogRotator):Promise<void>;
+
 export function SetMITMManager(arg1:mitm.Manager):Promise<void>;
 
 export function SetOptimizationConfig(arg1:Record<string, any>):Promise<void>;
 
 export function SetPlatformAPIBaseURL(arg1:string):Promise<void>;
+
+export function SetRTKSettings(arg1:boolean,arg2:number,arg3:boolean,arg4:string):Promise<void>;
 
 export function SetRateLimitConfig(arg1:Record<string, any>):Promise<void>;
 
@@ -301,11 +308,13 @@ export function SetSelectedGrant(arg1:string,arg2:string):Promise<void>;
 
 export function ShowMessage(arg1:string,arg2:string):Promise<void>;
 
+export function SimulateIntentRouting(arg1:string,arg2:string):Promise<Record<string, any>>;
+
 export function StartLocalGateway():Promise<void>;
 
 export function StartMITM():Promise<void>;
 
-export function StartOAuthFlow(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
+export function StartOAuthLogin(arg1:string):Promise<void>;
 
 export function StartTunnel(arg1:string):Promise<void>;
 

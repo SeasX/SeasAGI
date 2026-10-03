@@ -95,7 +95,7 @@
         {"@type":"Question","name":"可以自部署服务端吗？","acceptedAnswer":{"@type":"Answer","text":"可以。SeasAGI-Server 社区版基于 Go + Gin + SQLite，提供一键构建脚本与 systemd/nginx 部署方案，采用 AGPL 3.0 许可证。"}},
         {"@type":"Question","name":"支持哪些 Provider？","acceptedAnswer":{"@type":"Answer","text":"OpenAI、Azure、Anthropic、Gemini、Ollama、DeepSeek、Grok，以及通用 Relay。通过转换器自动适配 OpenAI Chat、Responses、Anthropic、Gemini、Vertex 等协议。"}},
         {"@type":"Question","name":"会话粘滞是什么？为什么需要？","acceptedAnswer":{"@type":"Answer","text":"会话粘滞基于首条用户消息的 SHA1 哈希，将同一对话的后续请求自动路由到同一模型，防止多轮对话中途切换模型导致上下文断裂或幻觉。30 分钟 TTL 自动过期。"}},
-        {"@type":"Question","name":"和竞品相比有什么优势？","acceptedAnswer":{"@type":"Answer","text":"SeasAGI 是唯一提供桌面原生客户端 + 本地网关代理的方案，直连 Provider 无服务端瓶颈；唯一具备完整多租户 + Stripe 支付体系；唯一支持 6 种协议翻译 + OAuth PKCE。同时增加了 MITM 接管、Token 压缩、Fusion 路由、TLS 指纹、Eval、Plugin/MCP 等高级特性。"}},
+        {"@type":"Question","name":"和竞品相比有什么优势？","acceptedAnswer":{"@type":"Answer","text":"SeasAGI 是唯一提供桌面原生客户端 + 本地网关代理的方案，直连 Provider 无服务端瓶颈；唯一具备完整多租户 + 支付体系；唯一支持 6 种协议翻译 + OAuth PKCE。同时增加了 MITM 接管、Token 压缩、Fusion 路由、TLS 指纹、Eval、Plugin/MCP 等高级特性。"}},
         {"@type":"Question","name":"怎样开始使用？","acceptedAnswer":{"@type":"Answer","text":"1. 从 GitHub Releases 下载对应平台客户端；2. 安装后添加 Provider 通道；3. 将任何 API Client 的 Base URL 改为 http://127.0.0.1:4318/v1；4. 享受智能路由。"}},
         {"@type":"Question","name":"开源版有什么限制？","acceptedAnswer":{"@type":"Answer","text":"开源客户端（GPL 3.0）无功能限制，所有特性完全免费。云端社区版（AGPL 3.0）提供基础控制面与基础中继，支持自托管。企业版（闭源）提供远程加速通道、用量同步、治理审批、管理后台等增值服务。客户端本身永久免费。"}},
         {"@type":"Question","name":"配额用完后怎么办？","acceptedAnswer":{"@type":"Answer","text":"各套餐均包含月度请求配额。超出部分按量计费，费用透明。建议使用 BYOK（自备 Key）避免超额费用，或升级到 Teams/Enterprise 获得更高配额。也可以在 Token 市场购买其他用户闲置的 API Key。"}},
@@ -353,6 +353,20 @@ body.lang-ko .lang-ko-i{display:inline;}
 .cht-tbl tr:hover td{background:rgba(34,197,94,.04);}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;}
 .dot.on{background:var(--accent);box-shadow:0 0 6px rgba(34,197,94,.4);}
+
+/* model index */
+.mi-stats{display:flex;flex-wrap:wrap;gap:10px 28px;margin-bottom:24px;font-size:14px;color:var(--text-secondary);}
+.mi-stats strong{color:var(--text-primary);font-family:var(--font-mono);}
+.mi-rank{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border-radius:50%;font-family:var(--font-mono);font-size:12px;font-weight:700;color:#0b1220;}
+.mi-rank.top1{background:#f5c542;}
+.mi-rank.top2{background:#c0c8d4;}
+.mi-rank.top3{background:#cd8b5c;}
+.mi-rank.plain{color:var(--text-muted);background:transparent;}
+.mi-model{font-weight:600;color:var(--text-primary);}
+.mi-provider{color:var(--text-muted);font-size:12px;}
+.mi-logo{width:20px;height:20px;border-radius:5px;margin-right:8px;vertical-align:-5px;}
+.mi-score{font-family:var(--font-mono);font-weight:700;color:var(--accent);}
+.mi-note{margin-top:18px;font-size:12px;color:var(--text-muted);line-height:1.8;}
 
 /* open source banner */
 .os-banner{margin-top:36px;padding:36px;background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-md);text-align:center;}
@@ -616,7 +630,7 @@ body.lang-ko .lang-ko-i{display:inline;}
         </div>
         <div class="card bento-card">
           <h3 class="card-title"><span class="lang-zh-i">自动结算</span><span class="lang-en-i">Auto Settlement</span><span class="lang-ja-i">自動決済</span><span class="lang-ko-i">자동 정산</span></h3>
-          <p class="card-desc"><span class="lang-zh-i">按 Token 用量实时计费，平台 10% 佣金，自动分账，支持 Stripe 支付与提现。</span><span class="lang-en-i">Real-time billing by token usage, 10% platform commission, auto-split, Stripe payments and withdrawals.</span><span class="lang-ja-i">Token 使用量に基づくリアルタイム課金、プラットフォーム 10% 手数料、自動分割、Stripe 決済と出金に対応。</span><span class="lang-ko-i">Token 사용량 기반 실시간 과금, 플랫폼 10% 수수료, 자동 분할, Stripe 결제 및 출금 지원.</span></p>
+          <p class="card-desc"><span class="lang-zh-i">按 Token 用量实时计费，平台 10% 佣金，自动分账，支持支付与提现。</span><span class="lang-en-i">Real-time billing by token usage, 10% platform commission, auto-split, payments and withdrawals.</span><span class="lang-ja-i">Token 使用量に基づくリアルタイム課金、プラットフォーム 10% 手数料、自動分割、決済と出金に対応。</span><span class="lang-ko-i">Token 사용량 기반 실시간 과금, 플랫폼 10% 수수료, 자동 분할, 결제 및 출금 지원.</span></p>
         </div>
         <div class="card bento-card">
           <h3 class="card-title"><span class="lang-zh-i">免费通道导入</span><span class="lang-en-i">Free Channel Import</span><span class="lang-ja-i">無料チャネルインポート</span><span class="lang-ko-i">무료 채널 가져오기</span></h3>
@@ -648,6 +662,40 @@ body.lang-ko .lang-ko-i{display:inline;}
         <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>DeepSeek V4 Pro</h3><p class="model-meta">DeepSeek · 1M ctx</p><p class="model-caps">chat · reasoning</p></div>
         <div class="card model-card"><span class="model-tag flagship">Flagship</span><h3>Grok 4</h3><p class="model-meta">xAI · 256K ctx</p><p class="model-caps">chat · vision · tools</p></div>
       </div>
+    </div>
+  </section>
+
+  <!-- AI Model Index -->
+  <section class="section section-surface" id="model-index" hidden>
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">AI INDEX</span>
+        <h2 class="section-title"><span class="lang-zh-i">AI 模型共识指数</span><span class="lang-en-i">AI Model Consensus Index</span><span class="lang-ja-i">AI モデル コンセンサス指数</span><span class="lang-ko-i">AI 모델 컨센서스 지수</span></h2>
+        <p class="section-desc"><span class="lang-zh-i">聚合多家权威评测榜单，按共识加权汇总，以下为综合榜 TOP 15；五大分类完整榜单请见客户端「AI 模型指数」。</span><span class="lang-en-i">Aggregated from multiple authoritative leaderboards with consensus weighting — Overall TOP 15 below; see the full 5-category ranking in the SeasAGI client.</span><span class="lang-ja-i">複数の権威あるランキングをコンセンサス加重で集計し、総合 TOP 15 を表示。全 5 カテゴリの完全なランキングは SeasAGI クライアントで。</span><span class="lang-ko-i">여러 권위 있는 리더보드를 컨센서스 가중치로 집계하여 종합 TOP 15를 표시합니다. 전체 5개 카테고리는 SeasAGI 클라이언트에서 확인하세요.</span></p>
+      </div>
+      <div class="mi-stats">
+        <span><strong id="miStatModels">–</strong> <span class="lang-zh-i">个在榜模型</span><span class="lang-en-i">ranked models</span><span class="lang-ja-i">ランクインモデル</span><span class="lang-ko-i">랭킹 모델</span></span>
+        <span><strong id="miStatProviders">–</strong> <span class="lang-zh-i">家厂商</span><span class="lang-en-i">providers</span><span class="lang-ja-i">社のベンダー</span><span class="lang-ko-i">개 공급사</span></span>
+        <span><span class="lang-zh-i">数据更新</span><span class="lang-en-i">Updated</span><span class="lang-ja-i">データ更新</span><span class="lang-ko-i">데이터 기준</span> <strong id="miStatUpdated">–</strong></span>
+      </div>
+      <div class="cmp-table-wrap">
+        <table class="cht-tbl" id="miTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th><span class="lang-zh-i">模型</span><span class="lang-en-i">Model</span><span class="lang-ja-i">モデル</span><span class="lang-ko-i">모델</span></th>
+              <th><span class="lang-zh-i">厂商</span><span class="lang-en-i">Provider</span><span class="lang-ja-i">ベンダー</span><span class="lang-ko-i">공급사</span></th>
+              <th><span class="lang-zh-i">上线</span><span class="lang-en-i">Released</span><span class="lang-ja-i">リリース</span><span class="lang-ko-i">출시</span></th>
+              <th><span class="lang-zh-i">评测证据</span><span class="lang-en-i">Evidence</span><span class="lang-ja-i">エビデンス</span><span class="lang-ko-i">평가 근거</span></th>
+              <th><span class="lang-zh-i">输入价</span><span class="lang-en-i">Input ¥/M</span><span class="lang-ja-i">入力 ¥/M</span><span class="lang-ko-i">입력 ¥/M</span></th>
+              <th><span class="lang-zh-i">输出价</span><span class="lang-en-i">Output ¥/M</span><span class="lang-ja-i">出力 ¥/M</span><span class="lang-ko-i">출력 ¥/M</span></th>
+              <th><span class="lang-zh-i">共识指数</span><span class="lang-en-i">Score</span><span class="lang-ja-i">指数</span><span class="lang-ko-i">지수</span></th>
+            </tr>
+          </thead>
+          <tbody id="miBody"></tbody>
+        </table>
+      </div>
+      <p class="mi-note"><span class="lang-zh-i">共识指数：多家评测榜单结果的共识加权汇总，分数越高代表跨榜单表现越稳定。价格口径：API 官方定价（¥ / 百万 Token），“–” 表示暂无公开定价。</span><span class="lang-en-i">Consensus score: weighted aggregation across multiple leaderboards; higher means more consistent cross-benchmark performance. Pricing: official API rates (¥ / million tokens); “–” means no public pricing yet.</span><span class="lang-ja-i">コンセンサス指数：複数のランキング結果をコンセンサス加重で集計。高いほど横断的評価で安定した性能を示します。価格：公式 API 定価（¥ / 100万トークン）。「–」は公開価格なし。</span><span class="lang-ko-i">컨센서스 지수: 여러 리더보드 결과의 컨센서스 가중 집계. 높을수록 벤치마크 전반에서 안정적인 성능을 보입니다. 가격: 공식 API 정가(¥ / 백만 토큰), “–”는 공개 가격 없음.</span></p>
     </div>
   </section>
 
@@ -716,7 +764,7 @@ body.lang-ko .lang-ko-i{display:inline;}
             <li><span class="adv-mark">✓</span> <span class="lang-zh-i">客户端本地代理，直连 Provider，无服务端瓶颈</span><span class="lang-en-i">Client-side proxy, direct to providers, no server bottleneck</span><span class="lang-ja-i">クライアントサイドプロキシ、Provider 直結、サーバーボトルネックなし</span><span class="lang-ko-i">클라이언트 사이드 프록시, Provider 직접 연결, 서버 병목 없음</span></li>
             <li><span class="adv-mark">✓</span> <span class="lang-zh-i">会话粘滞路由（SHA1 + 30min TTL）</span><span class="lang-en-i">Session sticky routing (SHA1 + 30min TTL)</span><span class="lang-ja-i">セッション粘着ルーティング（SHA1 + 30分 TTL）</span><span class="lang-ko-i">세션 스티키 라우팅 (SHA1 + 30분 TTL)</span></li>
             <li><span class="adv-mark">✓</span> <span class="lang-zh-i">动态 429 惩罚降级 + 排序预设</span><span class="lang-en-i">Dynamic 429 penalty + sort presets</span><span class="lang-ja-i">動的 429 ペナルティ + ソートプリセット</span><span class="lang-ko-i">동적 429 페널티 + 정렬 프리셋</span></li>
-            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">完整多租户 + Stripe 支付 + 套餐门控</span><span class="lang-en-i">Full multi-tenant + Stripe + plan gating</span><span class="lang-ja-i">完全なマルチテナント + Stripe + プランゲーティング</span><span class="lang-ko-i">완전한 멀티테넌트 + Stripe + 플랜 게이팅</span></li>
+            <li><span class="adv-mark">✓</span> <span class="lang-zh-i">完整多租户 + 支付 + 套餐门控</span><span class="lang-en-i">Full multi-tenant + payment + plan gating</span><span class="lang-ja-i">完全なマルチテナント + 決済 + プランゲーティング</span><span class="lang-ko-i">완전한 멀티테넌트 + 결제 + 플랜 게이팅</span></li>
             <li><span class="adv-mark">✓</span> <span class="lang-zh-i">17 执行器 + 6 协议翻译 + 多模态扁平化</span><span class="lang-en-i">17 executors + 6 translators + content flattening</span><span class="lang-ja-i">17 実行器 + 6 変換器 + コンテンツフラット化</span><span class="lang-ko-i">17 실행기 + 6 변환기 + 콘텐츠 평탄화</span></li>
             <li><span class="adv-mark">✓</span> <span class="lang-zh-i">MITM 一键接管 AI API 流量</span><span class="lang-en-i">One-click MITM proxy for AI API traffic</span><span class="lang-ja-i">AI API トラフィックのワンクリック MITM プロキシ</span><span class="lang-ko-i">AI API 트래픽 원클릭 MITM 프록시</span></li>
             <li><span class="adv-mark">✓</span> <span class="lang-zh-i">RTK / Caveman Token 压缩 + 语义缓存</span><span class="lang-en-i">RTK/Caveman token compression + semantic cache</span><span class="lang-ja-i">RTK/Caveman Token 圧縮 + セマンティックキャッシュ</span><span class="lang-ko-i">RTK/Caveman Token 압축 + 시맨틱 캐시</span></li>
@@ -776,7 +824,7 @@ body.lang-ko .lang-ko-i{display:inline;}
             <tr><td><span class="lang-zh-i">动态 429 惩罚</span><span class="lang-en-i">Dynamic 429 Penalty</span><span class="lang-ja-i">動的 429 ペナルティ</span><span class="lang-ko-i">동적 429 페널티</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓</td></tr>
             <tr><td><span class="lang-zh-i">Key 健康检查</span><span class="lang-en-i">Key Health Check</span><span class="lang-ja-i">Key ヘルスチェック</span><span class="lang-ko-i">Key 헬스 체크</span></td><td class="cmp-yes">✓ 5min</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓</td></tr>
             <tr><td><span class="lang-zh-i">per-key Cooldown</span><span class="lang-en-i">Per-key Cooldown</span><span class="lang-ja-i">Per-key Cooldown</span><span class="lang-ko-i">Per-key Cooldown</span></td><td class="cmp-yes">✓ 120s</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-yes">✓</td></tr>
-            <tr><td><span class="lang-zh-i">多租户 + 支付</span><span class="lang-en-i">Multi-tenant + Payment</span><span class="lang-ja-i">マルチテナント + 決済</span><span class="lang-ko-i">멀티테넌트 + 결제</span></td><td class="cmp-yes">✓ Stripe</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
+            <tr><td><span class="lang-zh-i">多租户 + 支付</span><span class="lang-en-i">Multi-tenant + Payment</span><span class="lang-ja-i">マルチテナント + 決済</span><span class="lang-ko-i">멀티테넌트 + 결제</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
             <tr><td><span class="lang-zh-i">协议翻译</span><span class="lang-en-i">Protocol Translation</span><span class="lang-ja-i">プロトコル変換</span><span class="lang-ko-i">프로토콜 변환</span></td><td class="cmp-yes">✓ 6 <span class="lang-zh-i">种</span><span class="lang-en-i">types</span><span class="lang-ja-i">種</span><span class="lang-ko-i">종류</span></td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
             <tr><td><span class="lang-zh-i">OAuth PKCE</span><span class="lang-en-i">OAuth PKCE</span><span class="lang-ja-i">OAuth PKCE</span><span class="lang-ko-i">OAuth PKCE</span></td><td class="cmp-yes">✓ 4 Provider</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
             <tr><td><span class="lang-zh-i">Keychain 安全存储</span><span class="lang-en-i">Keychain Storage</span><span class="lang-ja-i">Keychain ストレージ</span><span class="lang-ko-i">Keychain 스토리지</span></td><td class="cmp-yes">✓</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td><td class="cmp-no">✗</td></tr>
@@ -983,7 +1031,7 @@ body.lang-ko .lang-ko-i{display:inline;}
         </details>
         <details class="faq-item">
           <summary><span><span class="lang-zh-i">和竞品相比有什么优势？</span><span class="lang-en-i">Advantages over competitors?</span><span class="lang-ja-i">競合との比較でどのような利点がありますか？</span><span class="lang-ko-i">경쟁 제품 대비 장점은?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
-          <p><span class="lang-zh-i">SeasAGI 是唯一提供桌面原生客户端 + 本地网关代理的方案，直连 Provider 无服务端瓶颈；唯一具备完整多租户 + Stripe 支付体系；唯一支持 6 种协议翻译 + OAuth PKCE。同时增加了 MITM 接管、Token 压缩、Fusion 路由、TLS 指纹、Eval、Plugin/MCP 等高级特性。</span><span class="lang-en-i">SeasAGI is the only solution with a native desktop client + local gateway proxy (direct to providers); the only one with full multi-tenant + Stripe; the only one with 6 protocol translators + OAuth PKCE. Plus MITM, token compression, Fusion routing, TLS fingerprint, Eval, Plugin/MCP.</span><span class="lang-ja-i">SeasAGI は、ネイティブデスクトップクライアント + ローカルゲートウェイプロキシ（Provider 直通）を実現した唯一のソリューションです。完全なマルチテナント + Stripe 決済、6 種類のプロトコルトランスレータ + OAuth PKCE にも対応しています。さらに MITM、Token 圧縮、Fusion ルーティング、TLS フィンガープリント、Eval、Plugin/MCP などの高度な機能も備えています。</span><span class="lang-ko-i">SeasAGI는 네이티브 데스크톱 클라이언트 + 로컬 게이트웨이 프록시(Provider 직접 연결)를 제공하는 유일한 솔루션입니다. 완전한 멀티테넌트 + Stripe 결제, 6종 프로토콜 트랜스레이터 + OAuth PKCE도 유일하게 지원합니다. 추가로 MITM, Token 압축, Fusion 라우팅, TLS 핑거프린트, Eval, Plugin/MCP 등의 고급 기능을 제공합니다.</span></p>
+          <p><span class="lang-zh-i">SeasAGI 是唯一提供桌面原生客户端 + 本地网关代理的方案，直连 Provider 无服务端瓶颈；唯一具备完整多租户 + 支付体系；唯一支持 6 种协议翻译 + OAuth PKCE。同时增加了 MITM 接管、Token 压缩、Fusion 路由、TLS 指纹、Eval、Plugin/MCP 等高级特性。</span><span class="lang-en-i">SeasAGI is the only solution with a native desktop client + local gateway proxy (direct to providers); the only one with full multi-tenant + payment; the only one with 6 protocol translators + OAuth PKCE. Plus MITM, token compression, Fusion routing, TLS fingerprint, Eval, Plugin/MCP.</span><span class="lang-ja-i">SeasAGI は、ネイティブデスクトップクライアント + ローカルゲートウェイプロキシ（Provider 直通）を実現した唯一のソリューションです。完全なマルチテナント + 決済、6 種類のプロトコルトランスレータ + OAuth PKCE にも対応しています。さらに MITM、Token 圧縮、Fusion ルーティング、TLS フィンガープリント、Eval、Plugin/MCP などの高度な機能も備えています。</span><span class="lang-ko-i">SeasAGI는 네이티브 데스크톱 클라이언트 + 로컬 게이트웨이 프록시(Provider 직접 연결)를 제공하는 유일한 솔루션입니다. 완전한 멀티테넌트 + 결제, 6종 프로토콜 트랜스레이터 + OAuth PKCE도 유일하게 지원합니다. 추가로 MITM, Token 압축, Fusion 라우팅, TLS 핑거프린트, Eval, Plugin/MCP 등의 고급 기능을 제공합니다.</span></p>
         </details>
         <details class="faq-item">
           <summary><span><span class="lang-zh-i">怎样开始使用？</span><span class="lang-en-i">How do I get started?</span><span class="lang-ja-i">どのように始めればよいですか？</span><span class="lang-ko-i">어떻게 시작하나요?</span></span><span class="faq-icon" aria-hidden="true"></span></summary>
@@ -1079,7 +1127,51 @@ function toggleLang(){var b=document.body;var cur="en";for(var i=0;i<_langCycle.
 function showEntForm(){document.getElementById("entModal").classList.add("open")}
 function hideEntForm(){document.getElementById("entModal").classList.remove("open")}
 function submitEntForm(){var form=document.getElementById("entForm");var data={company_name:form.cname.value,contact_name:form.contact.value,email:form.email.value,team_size:form.tsize.value,use_case:form.ucase.value,message:form.msg.value};fetch('/api/v1/checkout/enterprise-lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json()}).then(function(r){alert(r.message||r.message_zh||'Submitted');hideEntForm();form.reset()}).catch(function(){alert('Submission failed. Please email us directly.')})}
-document.getElementById("entModal").addEventListener("click",function(e){if(e.target===this)hideEntForm()})
+document.getElementById("entModal").addEventListener("click",function(e){if(e.target===this)hideEntForm()});
+
+// AI model index — same-origin API, render Overall TOP 15; hide section on failure (graceful degrade)
+(function(){
+  var sec=document.getElementById("model-index");
+  if(!sec)return;
+  function el(tag,cls,text){var n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n}
+  function langs(m){var f=document.createDocumentFragment();var o=["en","zh","ja","ko"];for(var i=0;i<o.length;i++){f.appendChild(el("span","lang-"+o[i]+"-i",m[o[i]]))}return f}
+  var EV={sufficient:{en:"Sufficient",zh:"较充分",ja:"十分",ko:"충분"},accumulating:{en:"Accumulating",zh:"持续积累",ja:"蓄積中",ko:"축적 중"},sensitive:{en:"Sensitive",zh:"证据敏感",ja:"センシティブ",ko:"민감"}};
+  function price(v){return v>0?("¥"+v):"–"}
+  fetch('/api/v1/model-index?category=overall').then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}).then(function(d){
+    var data=d&&d.data?d.data:{};
+    var entries=data.entries||[];
+    if(!entries.length){sec.style.display="none";return}
+    var provs={};for(var i=0;i<entries.length;i++){if(entries[i].provider)provs[entries[i].provider]=1}
+    document.getElementById("miStatModels").textContent=entries.length;
+    document.getElementById("miStatProviders").textContent=Object.keys(provs).length;
+    document.getElementById("miStatUpdated").textContent=(String(data.updated_at||"").slice(0,10))||"–";
+    var body=document.getElementById("miBody");
+    body.innerHTML="";
+    entries.slice(0,15).forEach(function(e){
+      var tr=document.createElement("tr");
+      var tdr=document.createElement("td");
+      tdr.appendChild(el("span","mi-rank"+(e.rank<=3?" top"+e.rank:" plain"),String(e.rank||"–")));
+      tr.appendChild(tdr);
+      var tdm=document.createElement("td");
+      if(e.provider_logo){var img=document.createElement("img");img.className="mi-logo";img.alt="";img.src=e.provider_logo;img.onerror=function(){if(img.parentNode)img.parentNode.removeChild(img)};tdm.appendChild(img)}
+      tdm.appendChild(el("span","mi-model",e.model_name||"–"));
+      tr.appendChild(tdm);
+      tr.appendChild(el("td","mi-provider",e.provider||"–"));
+      tr.appendChild(el("td",null,String(e.release_date||"").slice(0,10)||"–"));
+      var tde=document.createElement("td");
+      var raw=e.evidence_status?String(e.evidence_status):"";
+      var ev=EV[raw]||{en:raw||"–",zh:raw||"–",ja:raw||"–",ko:raw||"–"};
+      tde.appendChild(langs(ev));
+      if(e.eval_count>0){tde.appendChild(document.createTextNode(" · "+e.eval_count))}
+      tr.appendChild(tde);
+      tr.appendChild(el("td",null,price(e.input_price)));
+      tr.appendChild(el("td",null,price(e.output_price)));
+      tr.appendChild(el("td","mi-score",e.consensus_score>0?Number(e.consensus_score).toFixed(1):"–"));
+      body.appendChild(tr);
+    });
+    sec.hidden=false;
+  }).catch(function(){sec.style.display="none"});
+})();
 </script>
 </body>
 </html>

@@ -68,7 +68,6 @@ SeasAGI-Server/
 
 The following features have been moved to the enterprise project `SeasAGI-Server-Enterprise/`:
 
-- Stripe billing & Checkout Session
 - Plan-driven commercial feature gating
 - Multi-tenant billing / orders / payments / invoices
 - Combo governance (visibility policies, deployment approval)

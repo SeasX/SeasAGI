@@ -39,6 +39,7 @@ func (m *mockTrustInstaller) IsInstalled() (bool, error) {
 type mockSystemProxySetter struct {
 	mu         sync.Mutex
 	active     bool
+	addr       string
 	setErr     error
 	clearErr   error
 	setCount   int
@@ -51,6 +52,7 @@ func (m *mockSystemProxySetter) Set(addr string) error {
 	}
 	m.mu.Lock()
 	m.active = true
+	m.addr = addr
 	m.setCount++
 	m.mu.Unlock()
 	return nil
@@ -62,6 +64,7 @@ func (m *mockSystemProxySetter) Clear() error {
 	}
 	m.mu.Lock()
 	m.active = false
+	m.addr = ""
 	m.clearCount++
 	m.mu.Unlock()
 	return nil
@@ -71,6 +74,15 @@ func (m *mockSystemProxySetter) IsActive() (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.active, nil
+}
+
+func (m *mockSystemProxySetter) CurrentAddr() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.active {
+		return "", nil
+	}
+	return m.addr, nil
 }
 
 func setupTestManager(t *testing.T) *Manager {
@@ -156,8 +168,8 @@ func TestGetStatus(t *testing.T) {
 	if status.ProxyPort != 8080 {
 		t.Errorf("proxy_port: got %d, want 8080", status.ProxyPort)
 	}
-	if status.RulesCount != 6 {
-		t.Errorf("rules_count: got %d, want 6", status.RulesCount)
+	if status.RulesCount != len(defaultRuleDomains) {
+		t.Errorf("rules_count: got %d, want %d", status.RulesCount, len(defaultRuleDomains))
 	}
 
 	_ = mgr.Stop()
@@ -200,8 +212,8 @@ func TestStartProxyFailureRollback(t *testing.T) {
 	rules := NewDefaultRules()
 	mgr2 := NewManager(ca, rules, "http://127.0.0.1:9999")
 
-	if err := mgr2.Start(ctx); err != nil {
-		t.Fatalf("Start should not return error (records in status): %v", err)
+	if err := mgr2.Start(ctx); err == nil {
+		t.Fatal("Start should return error when proxy fails to bind")
 	}
 
 	status := mgr2.GetStatus()
@@ -241,8 +253,14 @@ func TestManagerStartWithTrustAndProxy(t *testing.T) {
 	if !status.CAInstalled {
 		t.Error("CAInstalled should be true")
 	}
+	if !status.CATrusted {
+		t.Error("CATrusted should be true after trust installer succeeds")
+	}
 	if !status.SystemProxy {
 		t.Error("SystemProxy should be true")
+	}
+	if !status.SystemProxyOwned {
+		t.Error("SystemProxyOwned should be true")
 	}
 	if !trust.installed {
 		t.Error("trust should be installed")
@@ -298,23 +316,72 @@ func TestStartCleansResidualSystemProxy(t *testing.T) {
 	mgr := NewManager(ca, rules, "http://127.0.0.1:9999")
 
 	proxy := &mockSystemProxySetter{}
-	// 模拟残留：proxy 已 active
+	// 模拟遗留自本客户端的系统代理（地址指向本地 MITM 端口）
 	proxy.active = true
+	proxy.addr = "127.0.0.1:8080"
 	mgr.SetSystemProxySetter(proxy)
 
 	ctx := context.Background()
 	_ = mgr.Start(ctx)
 	time.Sleep(50 * time.Millisecond)
 
-	// 残留代理应被清除（clearCount >= 1 来自清理，然后 Set 再 active）
+	// 残留代理（指向本客户端）应先被清除，随后再重新设置
 	proxy.mu.Lock()
+	clearCount := proxy.clearCount
 	setCount := proxy.setCount
 	proxy.mu.Unlock()
+	if clearCount < 1 {
+		t.Error("residual SeasAGI system proxy should have been cleared before start")
+	}
 	if setCount < 1 {
 		t.Error("system proxy should have been set after residual cleanup")
 	}
 
 	_ = mgr.Stop()
+}
+
+func TestStartKeepsForeignSystemProxy(t *testing.T) {
+	dir := t.TempDir()
+	ca, err := NewCA(dir)
+	if err != nil {
+		t.Fatalf("NewCA: %v", err)
+	}
+	rules := NewDefaultRules()
+	mgr := NewManager(ca, rules, "http://127.0.0.1:9999")
+
+	proxy := &mockSystemProxySetter{}
+	// 模拟用户自有代理（非本客户端地址）
+	proxy.active = true
+	proxy.addr = "10.0.0.1:3128"
+	mgr.SetSystemProxySetter(proxy)
+
+	ctx := context.Background()
+	_ = mgr.Start(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	// 用户自有代理不应在 Start 阶段被清除
+	proxy.mu.Lock()
+	clearCountBeforeStop := proxy.clearCount
+	proxy.mu.Unlock()
+	if clearCountBeforeStop != 0 {
+		t.Errorf("foreign system proxy must not be cleared on start, clearCount=%d", clearCountBeforeStop)
+	}
+
+	// 但启动会写入本客户端的代理配置（覆盖）
+	proxy.mu.Lock()
+	proxy.active = true
+	proxy.addr = "10.0.0.1:3128" // 模拟用户在运行期间改回自有代理
+	proxy.mu.Unlock()
+
+	_ = mgr.Stop()
+
+	// 用户在运行期间改成自有代理后，Stop 也不应清除
+	proxy.mu.Lock()
+	clearCountAfterStop := proxy.clearCount
+	proxy.mu.Unlock()
+	if clearCountAfterStop != clearCountBeforeStop {
+		t.Errorf("foreign system proxy must not be cleared on stop, got %d", clearCountAfterStop)
+	}
 }
 
 func TestStartIdempotentAlreadyRunning(t *testing.T) {
@@ -356,8 +423,8 @@ func TestStartProxyNotHealthyGate(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// mgr2 启动会因端口占用失败，proxy 不健康，不应设置系统代理
-	if err := mgr.Start(ctx); err != nil {
-		t.Fatalf("Start should not return error: %v", err)
+	if err := mgr.Start(ctx); err == nil {
+		t.Fatal("Start should return error when proxy is unhealthy")
 	}
 
 	status := mgr.GetStatus()

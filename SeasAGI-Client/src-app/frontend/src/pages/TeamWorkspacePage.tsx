@@ -2,21 +2,18 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import { useTeamStore, type Strategy, type ComboTemplate, type WebhookItem } from "../stores/teamStore";
-import { getPlatformAPIBaseURL, getPlatformToken } from "../utils/commands";
+import { platformRequest } from "../utils/commands";
 import { useTranslation } from "../i18n";
 
 type TabId = "overview" | "members" | "usage" | "strategy" | "billing" | "webhook";
 
-const apiFetch = async (path: string, options?: RequestInit) => {
-  const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(baseURL + path, { ...options, headers: { ...headers, ...((options?.headers as Record<string,string>) || {}) } });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => "");
-    throw new Error(`API error ${res.status}: ${errBody || res.statusText}`);
+const apiFetch = async (path: string, options?: { method?: string; body?: unknown }) => {
+  const res = await platformRequest(options?.method ?? "GET", path, options?.body);
+  if (res.status >= 400) {
+    const errBody = typeof res.body === "string" ? res.body : res.body ? JSON.stringify(res.body) : "";
+    throw new Error(`API error ${res.status}: ${errBody}`);
   }
-  return res.json();
+  return res.body;
 };
 
 export function TeamWorkspacePage() {

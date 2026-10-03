@@ -39,7 +39,7 @@ func Init(baseLogDir string) error {
 
 	logger = seaslog.NewSeasLog(
 		seaslog.WithBasePath(baseLogDir),
-		seaslog.WithLogger("client"),
+		seaslog.WithLogger(clientLoggerName),
 		seaslog.WithTemplate("%T | %L | %P | %Q | %t | %F | %M"),
 		seaslog.WithLevel(seaslog.LevelAll),
 		seaslog.WithTrimWrap(),
@@ -69,6 +69,22 @@ func LogPath() string {
 	mu.Lock()
 	defer mu.Unlock()
 	return baseDir
+}
+
+// clientLoggerName 是 Init 中使用的 SeasLog logger 名，其按日日志文件位于
+// <baseLogDir>/<clientLoggerName>/YYYYMMDD.log。
+const clientLoggerName = "client"
+
+// LogDir returns the directory holding the current logger's daily log files.
+// 供日志保留/清理策略使用；未初始化时返回空串。
+func LogDir() string {
+	ensureInit()
+	mu.Lock()
+	defer mu.Unlock()
+	if baseDir == "" {
+		return ""
+	}
+	return filepath.Join(baseDir, clientLoggerName)
 }
 
 func ensureInit() {

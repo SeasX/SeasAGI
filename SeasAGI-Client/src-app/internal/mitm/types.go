@@ -17,12 +17,21 @@ const (
 
 // Status 对外暴露的运行时状态快照，可被 JSON 序列化后传递给前端。
 type Status struct {
-	State       State  `json:"state"`
-	ProxyPort   int    `json:"proxy_port"`
-	CAInstalled bool   `json:"ca_installed"`
-	RulesCount  int    `json:"rules_count"`
-	SystemProxy bool   `json:"system_proxy"`
-	LastError   string `json:"last_error,omitempty"`
+	State State `json:"state"`
+	// ProxyPort 本地 MITM 代理监听端口。
+	ProxyPort int `json:"proxy_port"`
+	// CAInstalled 表示本地 CA（ca.pem / ca-key.pem）已生成或加载成功。
+	// 注意：它不代表 CA 已被操作系统信任，后者见 CATrusted。
+	CAInstalled bool `json:"ca_installed"`
+	// CATrusted 表示 CA 已成功安装到系统信任库并通过信任校验。
+	CATrusted bool `json:"ca_trusted"`
+	// RulesCount 当前生效的拦截域名数量。
+	RulesCount int `json:"rules_count"`
+	// SystemProxy 表示 SeasAGI 已成功设置系统代理指向本地 MITM。
+	SystemProxy bool `json:"system_proxy"`
+	// SystemProxyOwned 表示当前生效的系统代理是否指向本客户端（用于区分用户自有代理）。
+	SystemProxyOwned bool   `json:"system_proxy_owned"`
+	LastError        string `json:"last_error,omitempty"`
 }
 
 // InterceptEntry 拦截日志单条记录。
@@ -52,6 +61,10 @@ type SystemProxySetter interface {
 	Set(addr string) error
 	Clear() error
 	IsActive() (bool, error)
+	// CurrentAddr 返回当前生效的系统代理地址（host:port）。
+	// 未启用或不可读取时返回空字符串，便于调用方区分「本客户端的代理」与
+	// 「用户自有的代理」，避免误清用户配置。
+	CurrentAddr() (string, error)
 }
 
 // InterceptLogger 拦截日志抽象。Phase A4 提供环形缓冲实现。

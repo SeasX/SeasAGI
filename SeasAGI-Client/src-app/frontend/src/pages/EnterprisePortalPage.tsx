@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
-import { getPlatformAPIBaseURL, getPlatformToken, openInBrowser } from "../utils/commands";
+import { platformRequest, getPlatformAPIBaseURL, openInBrowser } from "../utils/commands";
 import { useTranslation } from "../i18n";
 
 interface AuditLogEntry {
@@ -216,31 +216,21 @@ export function EnterprisePortalPage() {
 
   const isEnterprise = cloudBilling?.plan_id === "enterprise";
 
-  const api = useCallback(async () => {
-    const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
-    return { baseURL, token, headers };
-  }, []);
-
   const getJSON = async (path: string) => {
-    const { baseURL, headers } = await api();
-    const r = await fetch(baseURL + path, { headers });
-    return r.ok ? r.json() : null;
+    const r = await platformRequest("GET", path);
+    return r.status < 400 ? r.body : null;
   };
 
   const doPost = async (path: string, body: any) => {
-    const { baseURL, headers } = await api();
-    return fetch(baseURL + path, { method: "POST", headers, body: JSON.stringify(body) });
+    return platformRequest("POST", path, body);
   };
 
   const doPut = async (path: string, body: any) => {
-    const { baseURL, headers } = await api();
-    return fetch(baseURL + path, { method: "PUT", headers, body: JSON.stringify(body) });
+    return platformRequest("PUT", path, body);
   };
 
   const doDelete = async (path: string) => {
-    const { baseURL, headers } = await api();
-    return fetch(baseURL + path, { method: "DELETE", headers });
+    return platformRequest("DELETE", path);
   };
 
   const loadAll = useCallback(async () => {
@@ -505,7 +495,7 @@ export function EnterprisePortalPage() {
       <div className="section-heading">
         <h2>{t("enterprise.auditLogs")}</h2>
         <button className="btn-secondary btn-sm" onClick={async () => {
-          const {baseURL} = await api();
+          const baseURL = await getPlatformAPIBaseURL();
           openInBrowser(baseURL + "/enterprise/audit/export?format=csv");
         }}>{t("enterprise.exportCSV")}</button>
       </div>
@@ -572,7 +562,7 @@ export function EnterprisePortalPage() {
         </div>
         <div className="enterprise-mini-toolbar">
           <button className="btn-secondary btn-sm" onClick={async () => {
-          const { baseURL } = await api();
+          const baseURL = await getPlatformAPIBaseURL();
           openInBrowser(baseURL + "/enterprise/sso/metadata");
           }}>{t("enterprise.viewSPMetadata")}</button>
         </div>
@@ -596,7 +586,7 @@ export function EnterprisePortalPage() {
             <div className="enterprise-mini-toolbar">
               <button className="btn-secondary btn-sm" onClick={async () => {
                 const r = await doPost("/enterprise/scim/token", {});
-                if (r.ok) loadAll();
+                if (r.status < 400) loadAll();
               }}>{t("enterprise.refreshToken")}</button>
             </div>
           </div>
@@ -720,7 +710,7 @@ export function EnterprisePortalPage() {
                 <div style={{ display: "flex", gap: 4 }}>
                   {r.status === "completed" && (
                     <button className="btn-secondary btn-sm" onClick={async () => {
-                    const { baseURL } = await api();
+                    const baseURL = await getPlatformAPIBaseURL();
                     openInBrowser(baseURL + "/enterprise/compliance/reports/" + r.report_id + "/export");
                     }}>{t("enterprise.download")}</button>
                   )}

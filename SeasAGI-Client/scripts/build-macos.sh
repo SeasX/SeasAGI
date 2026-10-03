@@ -12,7 +12,7 @@ VERSION_FILE="$SCRIPT_DIR/version.txt"
 if [ -f "$VERSION_FILE" ]; then
     VERSION="${SEASAGI_VERSION:-$(cat "$VERSION_FILE")}"
 else
-    VERSION="${SEASAGI_VERSION:-0.1.0}"
+    VERSION="${SEASAGI_VERSION:-0.1.5}"
 fi
 
 # Platform override: $1 > $WAILS_PLATFORM > uname detection

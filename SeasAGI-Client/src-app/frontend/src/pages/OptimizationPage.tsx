@@ -60,6 +60,8 @@ function isHighCost(model: string): boolean {
 function ModeIcon({ mode }: { mode: string }) {
   const props = {
     viewBox: "0 0 24 24",
+    width: 16,
+    height: 16,
     fill: "none",
     stroke: "currentColor",
     strokeWidth: 1.8,
@@ -75,6 +77,25 @@ function ModeIcon({ mode }: { mode: string }) {
     return <svg {...props}><path d="M12 3v18" /><path d="M16.5 7.5c0-1.7-1.8-3-4.5-3s-4.5 1.3-4.5 3 1.8 3 4.5 3 4.5 1.3 4.5 3-1.8 3-4.5 3-4.5-1.3-4.5-3" /></svg>;
   }
   return <svg {...props}><rect x="4" y="4" width="16" height="16" rx="4" /><path d="M9 9h6v6H9z" /><path d="M9 2.5v3" /><path d="M15 2.5v3" /><path d="M9 18.5v3" /><path d="M15 18.5v3" /></svg>;
+}
+
+function BulbIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9 18h6" />
+      <path d="M10 22h4" />
+      <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" />
+    </svg>
+  );
+}
+
+function CheckCircleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={34} height={34} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12.2 2.4 2.4 4.6-4.9" />
+    </svg>
+  );
 }
 
 export function OptimizationPage({ embedded, taskType = "general_chat" }: { embedded?: boolean; taskType?: TaskProfile["task_type"] }) {
@@ -221,7 +242,7 @@ export function OptimizationPage({ embedded, taskType = "general_chat" }: { embe
   const content = (
     <>
       <div className="plan-context-banner">
-        <span className="plan-context-icon">💡</span>
+        <span className="plan-context-icon"><BulbIcon /></span>
         <span className="plan-context-text">
           {t("optimization.currentScenario", { title: currentTaskMeta.title, hint: currentTaskMeta.hint })}
           <br />
@@ -242,7 +263,7 @@ export function OptimizationPage({ embedded, taskType = "general_chat" }: { embe
               key={section.key}
               style={{
                 border: section.active ? "1px solid var(--accent)" : "1px solid var(--border)",
-                background: section.active ? "var(--bg-tertiary)" : "var(--bg-card)",
+                background: section.active ? "var(--primary-soft)" : "var(--bg-elevated)",
                 borderRadius: 12,
                 padding: 14,
               }}
@@ -474,7 +495,7 @@ export function OptimizationPage({ embedded, taskType = "general_chat" }: { embe
 
       {plan && plan.recommendations.length === 0 && (
         <div className="empty-state">
-          <div className="empty-icon empty-icon-check">OK</div>
+          <div className="empty-icon empty-icon-check"><CheckCircleIcon /></div>
           <p>{t("optimization.noRecommendations", { task: currentTaskMeta.title })}</p>
         </div>
       )}

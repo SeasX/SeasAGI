@@ -36,22 +36,25 @@ func DetectOutputType(content string) OutputType {
 	if isGrepResult(lines) {
 		return TypeGrep
 	}
-	if isFindResult(lines) {
-		return TypeFind
-	}
-	if isLsResult(lines) {
-		return TypeLs
-	}
+	// read-numbered 需在 ls 之前判定：ls 对任意 ≥3 行非空内容都会命中，
+	// 若 ls 先行，编号读取输出将永远被误判为 ls。
 	if isReadNumbered(lines) {
 		return TypeReadNumbered
+	}
+	if isFindResult(lines) {
+		return TypeFind
 	}
 	if isSearchList(lines) {
 		return TypeSearchList
 	}
 
 	totalLines := len(strings.Split(content, "\n"))
+	// dedup-log/smart-truncate 是大内容兜底，需在 ls 之前判定，理由同上。
 	if totalLines > 200 && hasConsecutiveDupes(content) {
 		return TypeDedupLog
+	}
+	if isLsResult(lines) {
+		return TypeLs
 	}
 	if totalLines > 300 {
 		return TypeSmartTruncate

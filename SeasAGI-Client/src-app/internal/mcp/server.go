@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 )
 
 // TransportType MCP 传输类型。
@@ -214,11 +215,7 @@ func (s *GatewayServer) handleJSONRPC(request map[string]interface{}) map[string
 	}
 }
 
-// nowFormatted 返回时间戳（由 audit.go 提供，这里用简单实现）。
-var timestampFunc = func() string {
-	return "2026-07-31T00:00:00Z"
-}
-
+// nowFormatted 返回 RFC3339 格式的当前 UTC 时间戳。
 func nowFormatted() string {
-	return timestampFunc()
+	return time.Now().UTC().Format(time.RFC3339)
 }

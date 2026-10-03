@@ -29,14 +29,19 @@ func DefaultRotationConfig() RotationConfig {
 }
 
 // LogRotator 日志轮转器。
+//
+// 支持两种模式：
+//   - 单文件模式：logPath 指向一个日志文件（如 app.log），超过 MaxFileSize 时重命名轮转。
+//   - 目录模式：logPath 指向日志目录（如 ~/.seasagi/logs/client），
+//     写入方按日自行滚动文件（YYYYMMDD.log），本器只负责保留策略。
 type LogRotator struct {
-	mu       sync.Mutex
-	config   RotationConfig
-	logPath  string
-	stopCh   chan struct{}
+	mu      sync.Mutex
+	config  RotationConfig
+	logPath string
+	stopCh  chan struct{}
 }
 
-// NewLogRotator 创建日志轮转器。
+// NewLogRotator 创建日志轮转器。logPath 可以是日志文件或日志目录。
 func NewLogRotator(logPath string, config RotationConfig) *LogRotator {
 	return &LogRotator{
 		config:  config,
@@ -45,7 +50,69 @@ func NewLogRotator(logPath string, config RotationConfig) *LogRotator {
 	}
 }
 
+// Config 返回当前配置副本。
+func (r *LogRotator) Config() RotationConfig {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.config
+}
+
+// UpdateConfig 更新配置。若正在 Start() 定时运行，新的 CheckInterval 将在下次循环生效。
+func (r *LogRotator) UpdateConfig(config RotationConfig) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if config.MaxFileSize <= 0 {
+		config.MaxFileSize = r.config.MaxFileSize
+	}
+	if config.RetentionDays <= 0 {
+		config.RetentionDays = r.config.RetentionDays
+	}
+	if config.MaxFiles <= 0 {
+		config.MaxFiles = r.config.MaxFiles
+	}
+	if config.CheckInterval <= 0 {
+		config.CheckInterval = r.config.CheckInterval
+	}
+	r.config = config
+}
+
+// LogPath 返回被管理的日志文件或目录路径。
+func (r *LogRotator) LogPath() string {
+	return r.logPath
+}
+
+// TotalSize 返回被管理日志的当前总字节数。目录模式下统计目录内所有 *.log。
+func (r *LogRotator) TotalSize() (int64, error) {
+	info, err := os.Stat(r.logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if !info.IsDir() {
+		return info.Size(), nil
+	}
+	var total int64
+	entries, err := os.ReadDir(r.logPath)
+	if err != nil {
+		return 0, err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".log") {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		total += fi.Size()
+	}
+	return total, nil
+}
+
 // CheckAndRotate 检查当前日志文件大小，必要时轮转。
+// 目录模式下日志由写入方按日滚动，本方法只执行保留清理。
 func (r *LogRotator) CheckAndRotate() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -56,6 +123,10 @@ func (r *LogRotator) CheckAndRotate() error {
 			return nil
 		}
 		return fmt.Errorf("stat log file: %w", err)
+	}
+
+	if info.IsDir() {
+		return r.cleanRetentionLocked()
 	}
 
 	if info.Size() < r.config.MaxFileSize {
@@ -80,11 +151,21 @@ func (r *LogRotator) CheckAndRotate() error {
 func (r *LogRotator) CleanRetention() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.cleanRetentionLocked()
+}
 
+// cleanRetentionLocked 执行保留清理。调用方需持锁。
+func (r *LogRotator) cleanRetentionLocked() error {
 	dir := filepath.Dir(r.logPath)
 	ext := filepath.Ext(r.logPath)
-	base := strings.TrimSuffix(filepath.Base(r.logPath), ext)
-	prefix := base + "."
+	prefix := strings.TrimSuffix(filepath.Base(r.logPath), ext) + "."
+
+	// 目录模式：目录内所有 *.log 均为候选（日志按日滚动，无统一前缀）。
+	if info, err := os.Stat(r.logPath); err == nil && info.IsDir() {
+		dir = r.logPath
+		ext = ".log"
+		prefix = ""
+	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -132,8 +213,12 @@ func (r *LogRotator) CleanRetention() error {
 
 // Start 启动定时检查。
 func (r *LogRotator) Start() {
+	interval := r.Config().CheckInterval
+	if interval <= 0 {
+		interval = DefaultRotationConfig().CheckInterval
+	}
 	go func() {
-		ticker := time.NewTicker(r.config.CheckInterval)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -147,7 +232,13 @@ func (r *LogRotator) Start() {
 	}()
 }
 
-// Stop 停止定时检查。
+// Stop 停止定时检查。幂等。
 func (r *LogRotator) Stop() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.stopCh == nil {
+		return
+	}
 	close(r.stopCh)
+	r.stopCh = nil
 }

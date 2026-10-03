@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -883,52 +885,6 @@ func TestSetOptimizationConfig_EmptyModeDefaults(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// OAuth provider tests
-// ---------------------------------------------------------------------------
-
-func TestSaveAndGetOAuthProviderConfig(t *testing.T) {
-	svc := newTestService(t)
-	cfg := OAuthProviderConfig{
-		ProviderName: "github",
-		ClientID:     "gh-client-id",
-		ClientSecret: "gh-secret",
-	}
-	if err := svc.SaveOAuthProviderConfig(cfg); err != nil {
-		t.Fatalf("SaveOAuthProviderConfig: %v", err)
-	}
-
-	got, ok := svc.GetOAuthProviderConfig("github")
-	if !ok {
-		t.Fatal("OAuth provider not found")
-	}
-	if got.ClientID != "gh-client-id" {
-		t.Errorf("ClientID = %q, want %q", got.ClientID, "gh-client-id")
-	}
-}
-
-func TestSaveOAuthProviderConfig_EmptyName(t *testing.T) {
-	svc := newTestService(t)
-	err := svc.SaveOAuthProviderConfig(OAuthProviderConfig{
-		ProviderName: "",
-		ClientID:     "id",
-	})
-	if err == nil {
-		t.Error("expected error for empty provider name")
-	}
-}
-
-func TestSaveOAuthProviderConfig_EmptyClientID(t *testing.T) {
-	svc := newTestService(t)
-	err := svc.SaveOAuthProviderConfig(OAuthProviderConfig{
-		ProviderName: "test",
-		ClientID:     "",
-	})
-	if err == nil {
-		t.Error("expected error for empty client ID")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Platform channel tests
 // ---------------------------------------------------------------------------
 
@@ -1125,4 +1081,188 @@ func TestFindComboByModel_NotFound(t *testing.T) {
 	if found != nil {
 		t.Error("expected nil for nonexistent model")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// SecurityConfig tests
+// ---------------------------------------------------------------------------
+
+func TestEnsureSecurityConfigDefaults(t *testing.T) {
+	svc := &Service{
+		config:   AppConfig{},
+		channels: []Channel{},
+		path:     filepath.Join(t.TempDir(), "config.json"),
+	}
+	svc.ensureSecurityConfig()
+
+	if svc.config.Security == nil {
+		t.Fatal("security config not initialized")
+	}
+	got := svc.GetSecurityConfig()
+	if got.PromptInjectionAction != PromptInjectionLog {
+		t.Errorf("PromptInjectionAction = %q, want %q", got.PromptInjectionAction, PromptInjectionLog)
+	}
+	if !got.ErrorSanitizeEnabled {
+		t.Error("ErrorSanitizeEnabled should default to true")
+	}
+	if got.PIIMaskingEnabled {
+		t.Error("PIIMaskingEnabled should default to false")
+	}
+}
+
+func TestEnsureSecurityConfigFillsMissingAction(t *testing.T) {
+	svc := &Service{
+		config:   AppConfig{Security: &SecurityConfig{PIIMaskingEnabled: true}},
+		channels: []Channel{},
+		path:     filepath.Join(t.TempDir(), "config.json"),
+	}
+	svc.ensureSecurityConfig()
+
+	if got := svc.GetSecurityConfig(); got.PromptInjectionAction != PromptInjectionLog {
+		t.Errorf("PromptInjectionAction = %q, want %q", got.PromptInjectionAction, PromptInjectionLog)
+	}
+}
+
+func TestGetSecurityConfigNilReturnsDefault(t *testing.T) {
+	svc := &Service{config: AppConfig{}}
+	if got := svc.GetSecurityConfig(); got != defaultSecurityConfig() {
+		t.Errorf("nil security config should return defaults, got %+v", got)
+	}
+}
+
+func TestSetSecurityConfigPersists(t *testing.T) {
+	svc := &Service{
+		config:   AppConfig{},
+		channels: []Channel{},
+		path:     filepath.Join(t.TempDir(), "config.json"),
+	}
+	if err := svc.SetSecurityConfig(SecurityConfig{PIIMaskingEnabled: true}); err != nil {
+		t.Fatalf("SetSecurityConfig: %v", err)
+	}
+	got := svc.GetSecurityConfig()
+	if !got.PIIMaskingEnabled {
+		t.Error("PIIMaskingEnabled not persisted")
+	}
+	if got.PromptInjectionAction != PromptInjectionLog {
+		t.Errorf("PromptInjectionAction = %q, want default %q", got.PromptInjectionAction, PromptInjectionLog)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RTK/Caveman 启用链路：默认值、持久化、开关守卫
+// ---------------------------------------------------------------------------
+
+// TestLoadOrDefaultFreshInstallDefaultsRTK 保证新鲜安装（无配置文件）时后端
+// RTK 默认开启，与前端 SettingsPage 的 `rtk_enabled ?? true` 兜底一致；
+// 否则 UI 显示开启而网关实际关闭，启用开关第一次点击不生效。
+func TestLoadOrDefaultFreshInstallDefaultsRTK(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cfg, err := LoadOrDefault()
+	if err != nil {
+		t.Fatalf("LoadOrDefault: %v", err)
+	}
+	if !cfg.RTKEnabled {
+		t.Error("fresh install should default RTKEnabled to true (must match frontend `?? true`)")
+	}
+	if cfg.RTKMaxOutputChars != 8000 {
+		t.Errorf("fresh install RTKMaxOutputChars = %d, want 8000", cfg.RTKMaxOutputChars)
+	}
+	if cfg.CavemanEnabled {
+		t.Error("fresh install should default CavemanEnabled to false (must match frontend `?? false`)")
+	}
+	if cfg.CavemanStyle != "concise" {
+		t.Errorf("fresh install CavemanStyle = %q, want concise", cfg.CavemanStyle)
+	}
+
+	// 默认配置应已落盘，重启后一致。
+	var state persistedState
+	if err := json.Unmarshal(mustReadFile(t, defaultConfigPath()), &state); err != nil {
+		t.Fatalf("unmarshal persisted config: %v", err)
+	}
+	if !state.Config.RTKEnabled {
+		t.Error("persisted config should contain rtk_enabled=true")
+	}
+}
+
+// TestLoadOrDefaultRespectsExistingRTKConfig 保证已有配置文件不被默认值覆盖：
+// 显式关闭 RTK 的老用户升级后保持关闭。
+func TestLoadOrDefaultRespectsExistingRTKConfig(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	path := defaultConfigPath()
+	existing := []byte(`{"config":{"rtk_enabled":false,"rtk_max_output_chars":123,"caveman_enabled":true,"caveman_style":"terse"}}`)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, existing, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadOrDefault()
+	if err != nil {
+		t.Fatalf("LoadOrDefault: %v", err)
+	}
+	if cfg.RTKEnabled {
+		t.Error("existing rtk_enabled=false must not be overwritten by defaults")
+	}
+	if cfg.RTKMaxOutputChars != 123 {
+		t.Errorf("RTKMaxOutputChars = %d, want persisted 123", cfg.RTKMaxOutputChars)
+	}
+	if !cfg.CavemanEnabled || cfg.CavemanStyle != "terse" {
+		t.Errorf("Caveman config = (%v, %q), want persisted (true, terse)", cfg.CavemanEnabled, cfg.CavemanStyle)
+	}
+}
+
+// TestSetRTKAndCavemanConfigTogglePersist 覆盖绑定层 SetRTKSettings 落到
+// config 服务的语义：maxChars=0 / 空风格不覆盖既有值，且重启后读回一致。
+func TestSetRTKAndCavemanConfigTogglePersist(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	svc := NewServiceWithPath(AppConfig{}, path)
+
+	// maxOutputChars<=0 应被忽略，不覆盖既有值。
+	if err := svc.SetRTKConfig(true, 0); err != nil {
+		t.Fatalf("SetRTKConfig(true, 0): %v", err)
+	}
+	if got := svc.GetConfig().RTKMaxOutputChars; got != 0 {
+		t.Errorf("RTKMaxOutputChars = %d after zero pass, want unchanged 0", got)
+	}
+	if err := svc.SetRTKConfig(true, 2500); err != nil {
+		t.Fatalf("SetRTKConfig(true, 2500): %v", err)
+	}
+
+	// 空风格应被忽略；随后切换开关不丢风格。
+	if err := svc.SetCavemanConfig(true, ""); err != nil {
+		t.Fatalf("SetCavemanConfig(true, \"\"): %v", err)
+	}
+	if got := svc.GetConfig().CavemanStyle; got != "" {
+		t.Errorf("CavemanStyle = %q after empty pass, want unchanged \"\"", got)
+	}
+	if err := svc.SetCavemanConfig(true, "terse"); err != nil {
+		t.Fatalf("SetCavemanConfig(true, terse): %v", err)
+	}
+	// 关闭 Caveman 不应清空已选风格（重新开启时无需重选）。
+	if err := svc.SetCavemanConfig(false, ""); err != nil {
+		t.Fatalf("SetCavemanConfig(false, \"\"): %v", err)
+	}
+
+	// 模拟重启：从磁盘重建，验证持久化往返。
+	reloaded := NewServiceWithPath(AppConfig{}, path)
+	got := reloaded.GetConfig()
+	if !got.RTKEnabled || got.RTKMaxOutputChars != 2500 {
+		t.Errorf("reloaded RTK = (%v, %d), want (true, 2500)", got.RTKEnabled, got.RTKMaxOutputChars)
+	}
+	if got.CavemanEnabled || got.CavemanStyle != "terse" {
+		t.Errorf("reloaded Caveman = (%v, %q), want (false, terse)", got.CavemanEnabled, got.CavemanStyle)
+	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return data
 }

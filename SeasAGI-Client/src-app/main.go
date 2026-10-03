@@ -112,16 +112,25 @@ func runDesktop() {
 		logging.Warningf("MITM CA init failed: %v", mitmCAErr)
 	}
 	mitmRules := mitm.NewDefaultRules()
+	// 用户对拦截域名的增删持久化到本地，重启后仍然生效。
+	mitmRules.SetStorePath(filepath.Join(mustHomeDir(), ".seasagi", "mitm_rules.json"))
 	mitmGatewayURL := fmt.Sprintf("http://127.0.0.1:%d", cfg.ListenPort)
 	mitmMgr := mitm.NewManager(mitmCA, mitmRules, mitmGatewayURL)
 	if mitmCA != nil {
 		mitmMgr.SetTrustInstaller(mitm.NewTrustInstaller())
 		mitmMgr.SetSystemProxySetter(network.NewSystemProxySetter())
 	}
+	// 日志保留策略：SeasLog 按日滚动文件，这里负责按大小/天数/文件数清理。
+	logRotator := logging.NewLogRotator(logging.LogDir(), logging.DefaultRotationConfig())
+	if logRotator.LogPath() != "" {
+		logRotator.Start()
+	}
 	mcpSvc := mcp.NewService()
 	promptsSvc := prompts.NewService()
 	skillsSvc := skills.NewService()
 	usageSvc := usage.NewService()
+	// 网关主链路的每次模型调用都写入用量记账（token/成本/TTFT/限流快照）。
+	gatewaySvc.SetUsageService(usageSvc)
 	deeplinkMgr := deeplink.NewManager()
 	presetsSvc := presets.NewService()
 	syncMgr := sync.NewManager(sync.SyncConfig{})
@@ -130,6 +139,7 @@ func runDesktop() {
 	optimizerSvc := optimizer.NewService(configSvc, usageSvc)
 	app := NewApp(authSvc, configSvc, gatewaySvc, logSvc, discoverySvc, mcpSvc, promptsSvc, skillsSvc, usageSvc, optimizerSvc, deeplinkMgr, presetsSvc, syncMgr, sessionsSvc, configioSvc, localTokenStore)
 	app.SetMITMManager(mitmMgr)
+	app.SetLogRotator(logRotator)
 
 	trayMgr := tray.NewManager(
 		func(channelID string) {
@@ -150,8 +160,8 @@ func runDesktop() {
 			trayMgr.Stop()
 			_ = app.StopTunnel()
 			_ = app.StopMITM()
-			app.oauthRefresh.Stop()
 			gatewaySvc.Stop()
+			logRotator.Stop()
 		})
 	}
 	defer shutdownDeps()
@@ -163,6 +173,14 @@ func runDesktop() {
 	go func() {
 		<-desktopSigCh
 		atomic.StoreInt32(&quitting, 1)
+		if app.ctx != nil {
+			// 走 Wails 正常退出路径（OnBeforeClose → OnShutdown → shutdownDeps）。
+			// 直接 shutdownDeps()+os.Exit 会在 ObjC 主循环（cgo）运行中拆掉
+			// 托盘等原生资源并硬退进程，导致退出时 SIGBUS 崩溃。
+			runtime.Quit(app.ctx)
+			return
+		}
+		// 窗口尚未启动的极早期信号：直接退出即可
 		shutdownDeps()
 		os.Exit(0)
 	}()
@@ -212,13 +230,22 @@ func runDesktop() {
 		OnShutdown: func(_ context.Context) {
 			shutdownDeps()
 		},
+		// 关窗仅隐藏窗口：app 连同托盘驻留后台（标准 macOS 托盘应用行为）。
+		// 真正的退出统一走 quitting 标志门控（托盘退出 / 应用菜单 Cmd+Q / 信号）。
 		OnBeforeClose: func(ctx context.Context) bool {
 			if atomic.LoadInt32(&quitting) == 1 {
 				return false
 			}
-			atomic.StoreInt32(&quitting, 1)
-			go runtime.Quit(ctx)
+			runtime.WindowHide(ctx)
 			return true
+		},
+		// 单实例锁：重复启动时唤出常驻实例的窗口
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId: "com.seasagi.desktop",
+			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
+				runtime.WindowUnminimise(app.ctx)
+				runtime.WindowShow(app.ctx)
+			},
 		},
 		Bind: []interface{}{
 			app,
@@ -241,15 +268,12 @@ func runDesktop() {
 			},
 			About: &mac.AboutInfo{
 				Title:   "SeasAGI",
-				Message: "本地大模型通道切换客户端\nVersion 0.1.0",
+				Message: "本地大模型通道切换客户端\nVersion 0.1.5",
 			},
 			WebviewIsTransparent: false,
 		},
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
-		},
-		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId: "com.seasagi.desktop",
 		},
 	})
 
@@ -266,7 +290,7 @@ func buildAppMenu(app *App, gw *gateway.Service) *menu.Menu {
 		runtime.MessageDialog(app.ctx, runtime.MessageDialogOptions{
 			Type:    runtime.InfoDialog,
 			Title:   "关于 SeasAGI",
-			Message: "SeasAGI v0.1.0\n本地大模型通道切换客户端\n\n本地网关: http://127.0.0.1:4318/v1",
+			Message: "SeasAGI v0.1.5\n本地大模型通道切换客户端\n\n本地网关: http://127.0.0.1:4318/v1",
 		})
 	})
 	fileMenu.AddSeparator()

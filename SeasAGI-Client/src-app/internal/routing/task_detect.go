@@ -4,6 +4,35 @@ import (
 	"strings"
 )
 
+// messageScanText 汇总消息文本并标记多模态/工具调用信号，供任务类型与意图检测共用。
+func messageScanText(messages []map[string]interface{}) (text string, hasImage, hasToolCalls bool) {
+	var b strings.Builder
+	for _, msg := range messages {
+		if content, ok := msg["content"].(string); ok {
+			b.WriteString(content)
+			b.WriteString(" ")
+		} else if arr, ok := msg["content"].([]interface{}); ok {
+			for _, item := range arr {
+				if m, ok := item.(map[string]interface{}); ok {
+					if t, ok := m["text"].(string); ok {
+						b.WriteString(t)
+						b.WriteString(" ")
+					}
+					if typ, ok := m["type"].(string); ok && typ == "image_url" {
+						hasImage = true
+					}
+				}
+			}
+		}
+		if role, ok := msg["role"].(string); ok && role == "assistant" {
+			if toolCalls, ok := msg["tool_calls"].([]interface{}); ok && len(toolCalls) > 0 {
+				hasToolCalls = true
+			}
+		}
+	}
+	return b.String(), hasImage, hasToolCalls
+}
+
 // DetectTaskType analyzes request messages to auto-detect the task type.
 // This uses lightweight heuristic rules (no model inference needed for the heuristic path).
 func DetectTaskType(messages []map[string]interface{}) string {
@@ -11,33 +40,16 @@ func DetectTaskType(messages []map[string]interface{}) string {
 		return "chat"
 	}
 
-	// Collect all text content
-	var textContent strings.Builder
-	for _, msg := range messages {
-		if content, ok := msg["content"].(string); ok {
-			textContent.WriteString(content)
-			textContent.WriteString(" ")
-		} else if arr, ok := msg["content"].([]interface{}); ok {
-			for _, item := range arr {
-				if m, ok := item.(map[string]interface{}); ok {
-					if t, ok := m["text"].(string); ok {
-						textContent.WriteString(t)
-						textContent.WriteString(" ")
-					}
-					if typ, ok := m["type"].(string); ok && typ == "image_url" {
-						return "vision" // Contains images
-					}
-				}
-			}
-		}
-		if role, ok := msg["role"].(string); ok && role == "assistant" {
-			if toolCalls, ok := msg["tool_calls"].([]interface{}); ok && len(toolCalls) > 0 {
-				return "tools"
-			}
-		}
+	textContent, hasImage, hasToolCalls := messageScanText(messages)
+	if hasImage {
+		return "vision" // Contains images
 	}
 
-	content := strings.ToLower(textContent.String())
+	content := strings.ToLower(textContent)
+
+	if hasToolCalls {
+		return "tools"
+	}
 
 	// Check for tool/function requests
 	if strings.Contains(content, "\"tools\"") || strings.Contains(content, "\"functions\"") {

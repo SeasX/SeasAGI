@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
-import { getPlatformAPIBaseURL, getPlatformToken } from "../utils/commands";
+import { platformRequest } from "../utils/commands";
 
 export function useConfigSync() {
   const cloudBilling = useAppStore((s) => s.cloudBilling);
@@ -16,12 +16,9 @@ export function useConfigSync() {
     if (!isTeamsOrAbove) return;
     setSyncState({ status: "syncing" });
     try {
-      const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-      if (!token) { setSyncState({ status: "idle" }); return; }
-      const headers: Record<string, string> = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-      const syncR = await fetch(baseURL + "/tenant-admin/config/sync", { headers });
-      if (!syncR.ok) { setSyncState({ status: "error" }); return; }
-      const syncData = await syncR.json();
+      const syncR = await platformRequest("GET", "/tenant-admin/config/sync");
+      if (syncR.status >= 400) { setSyncState({ status: "error" }); return; }
+      const syncData = syncR.body;
       const remoteVersion = syncData.config_version || 0;
 
       const conflicts: { field: string; local_value: string; remote_value: string; severity: "info" | "warning" | "error" }[] = [];
@@ -41,9 +38,9 @@ export function useConfigSync() {
 
       if (isEnterprise) {
         try {
-          const pushR = await fetch(baseURL + "/enterprise/config/push", { headers });
-          if (pushR.ok) {
-            const pushData = await pushR.json();
+          const pushR = await platformRequest("GET", "/enterprise/config/push");
+          if (pushR.status < 400) {
+            const pushData = pushR.body;
             if (pushData.model_policy?.allowed_models) {
               const allowed = pushData.model_policy.allowed_models;
               if (appConfig && !JSON.stringify(appConfig.model_combos).includes(allowed.replace(/^\[|\]$/g, ""))) {

@@ -7,6 +7,7 @@ func NewSystemProxySetter() interface {
 	Set(addr string) error
 	Clear() error
 	IsActive() (bool, error)
+	CurrentAddr() (string, error)
 } {
 	return &noopProxySetter{}
 }

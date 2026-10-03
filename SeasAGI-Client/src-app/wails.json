@@ -13,7 +13,7 @@
   "info": {
     "companyName": "SeasAGI",
     "productName": "SeasAGI",
-    "productVersion": "0.1.0",
+    "productVersion": "0.1.5",
     "copyright": "Copyright © 2025 SeasAGI. All rights reserved.",
     "comments": "SeasAGI - 本地大模型通道切换客户端"
   }

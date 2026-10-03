@@ -15,6 +15,7 @@ func NewSystemProxySetter() interface {
 	Set(addr string) error
 	Clear() error
 	IsActive() (bool, error)
+	CurrentAddr() (string, error)
 } {
 	return &windowsProxySetter{}
 }
@@ -48,4 +49,23 @@ func (w *windowsProxySetter) IsActive() (bool, error) {
 		return false, nil
 	}
 	return strings.Contains(string(output), "0x1"), nil
+}
+
+// CurrentAddr 返回当前生效的代理地址（host:port）。
+// 未配置或无法解析时返回空字符串，便于调用方区分「本客户端的代理」与
+// 「用户自有的代理」。
+func (w *windowsProxySetter) CurrentAddr() (string, error) {
+	cmd := exec.Command("reg", "query", `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings`, "/v", "ProxyServer")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", nil
+	}
+	// 输出形如: "    ProxyServer    REG_SZ    127.0.0.1:8080"
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && strings.EqualFold(fields[0], "ProxyServer") {
+			return fields[len(fields)-1], nil
+		}
+	}
+	return "", nil
 }

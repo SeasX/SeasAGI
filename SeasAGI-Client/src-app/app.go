@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,7 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	stdsync "sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -28,16 +29,18 @@ import (
 	"github.com/SeasAGI/SeasAGI-Client/internal/integration"
 	"github.com/SeasAGI/SeasAGI-Client/internal/keychain"
 	"github.com/SeasAGI/SeasAGI-Client/internal/localtoken"
+	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
 	"github.com/SeasAGI/SeasAGI-Client/internal/logs"
 	"github.com/SeasAGI/SeasAGI-Client/internal/mcp"
 	"github.com/SeasAGI/SeasAGI-Client/internal/mitm"
 	"github.com/SeasAGI/SeasAGI-Client/internal/network"
-	"github.com/SeasAGI/SeasAGI-Client/internal/oauth"
 	"github.com/SeasAGI/SeasAGI-Client/internal/optimizer"
 	"github.com/SeasAGI/SeasAGI-Client/internal/perf"
 	"github.com/SeasAGI/SeasAGI-Client/internal/plugin"
 	"github.com/SeasAGI/SeasAGI-Client/internal/presets"
 	"github.com/SeasAGI/SeasAGI-Client/internal/prompts"
+	"github.com/SeasAGI/SeasAGI-Client/internal/routing"
+	"github.com/SeasAGI/SeasAGI-Client/internal/rtk"
 	"github.com/SeasAGI/SeasAGI-Client/internal/sessions"
 	"github.com/SeasAGI/SeasAGI-Client/internal/skills"
 	"github.com/SeasAGI/SeasAGI-Client/internal/sync"
@@ -62,8 +65,6 @@ type App struct {
 	logSvc          *logs.Service
 	discoverySvc    *discovery.Service
 	tunnelMgr       *tunnel.Manager
-	oauthStore      *oauth.TokenStore
-	oauthRefresh    *oauth.AutoRefresher
 	mcpSvc          *mcp.Service
 	promptsSvc      *prompts.Service
 	skillsSvc       *skills.Service
@@ -76,8 +77,9 @@ type App struct {
 	configioSvc     *configio.Service
 	localTokenStore *localtoken.Store
 	mitmMgr         *mitm.Manager
-	oauthFlowMu     stdsync.Mutex
-	oauthFlows      map[string]*pendingOAuthFlow
+	logRotator      *logging.LogRotator
+	mcpServer       *mcp.GatewayServer
+	perfAuditor     *perf.Auditor
 }
 
 func NewApp(
@@ -98,11 +100,6 @@ func NewApp(
 	configioSvc *configio.Service,
 	localTokenStore *localtoken.Store,
 ) *App {
-	oauthDir := filepath.Join(mustHomeDir(), ".seasagi", "oauth")
-	tokenStore := oauth.NewTokenStore(oauthDir)
-	tokenStore.Load()
-	autoRefresh := oauth.NewAutoRefresher(tokenStore)
-
 	return &App{
 		authSvc:         authSvc,
 		configSvc:       configSvc,
@@ -110,8 +107,6 @@ func NewApp(
 		logSvc:          logSvc,
 		discoverySvc:    discoverySvc,
 		tunnelMgr:       tunnel.NewManager(4318),
-		oauthStore:      tokenStore,
-		oauthRefresh:    autoRefresh,
 		mcpSvc:          mcpSvc,
 		promptsSvc:      promptsSvc,
 		skillsSvc:       skillsSvc,
@@ -123,21 +118,20 @@ func NewApp(
 		sessionsSvc:     sessionsSvc,
 		configioSvc:     configioSvc,
 		localTokenStore: localTokenStore,
-		oauthFlows:      make(map[string]*pendingOAuthFlow),
+		mcpServer:       mcp.NewGatewayServer(),
+		perfAuditor:     perf.NewAuditor(),
 	}
 }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	a.restoreOAuthProviderConfigs()
-	a.oauthRefresh.Start()
 	auth.SetPlatformAPIBaseURL(a.configSvc.GetPlatformAPIBaseURL())
 }
 
 func (a *App) GetAppInfo() map[string]any {
 	return map[string]any{
 		"name":    "SeasAGI",
-		"version": "0.1.0",
+		"version": "0.1.5",
 	}
 }
 
@@ -286,6 +280,50 @@ func (a *App) GetRuntimeStatus() map[string]any {
 		"default_model":      emptyStringToNil(cfg.DefaultModel),
 		"default_channel_id": emptyStringToNil(cfg.DefaultChannelID),
 	}
+}
+
+// SimulateIntentRouting 意图预测实验室（M4.4）：对给定 Prompt 跑意图检测 + 路由解析，
+// 只返回决策结果，不发起任何上游请求。model 为空时与网关同语义（默认 Combo）。
+func (a *App) SimulateIntentRouting(prompt string, model string) map[string]any {
+	intent := routing.DetectIntent([]map[string]interface{}{{"role": "user", "content": prompt}})
+	result := map[string]any{
+		"intent": map[string]any{
+			"task_type":      intent.TaskType,
+			"scenario":       intent.Scenario,
+			"required_iq":    intent.RequiredIQ,
+			"security_level": intent.SecurityLevel,
+			"tags":           intent.Tags,
+			"confidence":     intent.Confidence,
+		},
+	}
+	if model == "" {
+		model = a.configSvc.GetDefaultComboName()
+	}
+	resolver := routing.NewResolver(a.configSvc)
+	planName, steps, err := resolver.ResolveChatPlan(model, intent.TaskType, intent)
+	if err != nil {
+		result["error"] = err.Error()
+		return result
+	}
+	stepList := make([]map[string]any, 0, len(steps))
+	for i, step := range steps {
+		stepList = append(stepList, map[string]any{
+			"order":          i + 1,
+			"channel_id":     step.Channel.ChannelID,
+			"channel_name":   step.Channel.DisplayName,
+			"upstream_model": step.UpstreamModel,
+			"step_role":      step.StepRole,
+		})
+	}
+	result["model"] = model
+	result["plan_name"] = planName
+	result["steps"] = stepList
+	return result
+}
+
+// GetIntentScenarioStats 意图场景分布统计（M4.5）。
+func (a *App) GetIntentScenarioStats() []map[string]any {
+	return a.logSvc.GetIntentScenarioStats()
 }
 
 // GetComboRouteMetrics returns combo-level route metrics from the gateway
@@ -562,11 +600,9 @@ func (a *App) SearchObsidian(apiKey, baseURL, query string) []map[string]any {
 
 // === UI-Batch 6: 性能审计 + MCP Gateway ===
 
-// GetPerfAuditReport 获取性能审计报告。
+// GetPerfAuditReport 获取性能审计报告（复用 App 生命周期内长期存活的审计器，避免每次调用被重置）。
 func (a *App) GetPerfAuditReport() map[string]any {
-	auditor := perf.NewAuditor()
-	defer auditor.Reset()
-	report := auditor.GenerateReport()
+	report := a.perfAuditor.GenerateReport()
 	return map[string]any{
 		"total_findings":   report.TotalFindings,
 		"slow_queries":     report.SlowQueries,
@@ -578,8 +614,7 @@ func (a *App) GetPerfAuditReport() map[string]any {
 
 // GetMCPGatewayTools 列出 MCP Gateway Server 的所有 tool。
 func (a *App) GetMCPGatewayTools() []map[string]any {
-	server := mcp.NewGatewayServer()
-	tools := server.ListTools()
+	tools := a.mcpServer.ListTools()
 	result := make([]map[string]any, 0, len(tools))
 	for _, tool := range tools {
 		result = append(result, map[string]any{
@@ -590,37 +625,162 @@ func (a *App) GetMCPGatewayTools() []map[string]any {
 	return result
 }
 
-// GetMCPAuditLog 获取 MCP tool 调用审计日志。
+// GetMCPAuditLog 获取 MCP tool 调用审计日志（来自长期存活的 Gateway Server 实例）。
 func (a *App) GetMCPAuditLog() []map[string]any {
-	return []map[string]any{}
+	entries := a.mcpServer.GetAuditLog()
+	result := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, map[string]any{
+			"tool_name": e.ToolName,
+			"args":      e.Args,
+			"success":   e.Success,
+			"error":     e.Error,
+			"timestamp": e.Timestamp,
+		})
+	}
+	return result
 }
 
 // === UI-Batch 7: 设置页增强 ===
 
 // GetLogRotationConfig 获取日志轮转配置。
 func (a *App) GetLogRotationConfig() map[string]any {
+	if a.logRotator == nil {
+		return map[string]any{
+			"max_file_size_mb": 0,
+			"retention_days":   0,
+			"max_files":        0,
+			"current_size_mb":  0,
+		}
+	}
+	cfg := a.logRotator.Config()
+	size, _ := a.logRotator.TotalSize()
 	return map[string]any{
-		"max_file_size_mb": 10,
-		"retention_days":   7,
-		"max_files":        5,
-		"current_size_mb":  0,
+		"max_file_size_mb": cfg.MaxFileSize / (1024 * 1024),
+		"retention_days":   cfg.RetentionDays,
+		"max_files":        cfg.MaxFiles,
+		"current_size_mb":  size / (1024 * 1024),
 	}
 }
 
-// SetLogRotationConfig 设置日志轮转配置。
+// SetLogRotationConfig 设置日志轮转配置（单位与 GetLogRotationConfig 一致）。
 func (a *App) SetLogRotationConfig(cfg map[string]any) error {
+	if a.logRotator == nil {
+		return fmt.Errorf("log rotator not initialized")
+	}
+	cur := a.logRotator.Config()
+	next := cur
+	if v, ok := numberToInt(cfg["max_file_size_mb"]); ok && v > 0 {
+		next.MaxFileSize = int64(v) * 1024 * 1024
+	}
+	if v, ok := numberToInt(cfg["retention_days"]); ok && v > 0 {
+		next.RetentionDays = v
+	}
+	if v, ok := numberToInt(cfg["max_files"]); ok && v > 0 {
+		next.MaxFiles = v
+	}
+	a.logRotator.UpdateConfig(next)
 	return nil
 }
 
-// GetCloudSyncStatus 获取云同步状态。
-func (a *App) GetCloudSyncStatus() map[string]any {
-	return map[string]any{
-		"hmac_enabled":   true,
-		"version_hash":   "",
-		"last_sync":      "",
-		"conflicts":      []map[string]any{},
-		"conflict_count": 0,
+// SetLogRotator 注入日志轮转器。
+func (a *App) SetLogRotator(r *logging.LogRotator) {
+	a.logRotator = r
+}
+
+// numberToInt 将 JSON 反序列化后的数值（float64/int/json.Number）安全转为 int。
+func numberToInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(i), true
 	}
+	return 0, false
+}
+
+// GetCloudSyncStatus 获取云同步状态（版本哈希与冲突均基于真实本地配置计算）。
+func (a *App) GetCloudSyncStatus() map[string]any {
+	homeDir, _ := os.UserHomeDir()
+	localDir := filepath.Join(homeDir, ".seasagi")
+
+	conflicts := a.detectSyncConflicts()
+	conflictItems := make([]map[string]any, 0, len(conflicts))
+	for _, c := range conflicts {
+		conflictItems = append(conflictItems, map[string]any{
+			"type":   c.Type,
+			"detail": strings.Join(c.Conflicts, ", "),
+		})
+	}
+
+	st := a.syncMgr.GetStatus()
+	return map[string]any{
+		// sync.Manager 的 Push/Pull 目前未对同步负载做 HMAC 签名，如实上报 false。
+		"hmac_enabled":   false,
+		"version_hash":   syncPayloadVersionHash(localDir),
+		"last_sync":      st.LastSyncTime,
+		"status":         st.Status,
+		"error":          st.Error,
+		"conflicts":      conflictItems,
+		"conflict_count": len(conflictItems),
+	}
+}
+
+// syncPayloadVersionHash 对同步负载（sync.Manager 管理的本地配置文件）计算确定性版本哈希；无文件时返回空串。
+func syncPayloadVersionHash(localDir string) string {
+	files := []string{"mcp_servers.json", "prompt_presets.json", "skills.json", "usage_records.json"}
+	var buf []byte
+	for _, name := range files {
+		data, err := os.ReadFile(filepath.Join(localDir, name))
+		if err != nil {
+			continue
+		}
+		buf = append(buf, []byte(name)...)
+		buf = append(buf, data...)
+	}
+	if len(buf) == 0 {
+		return ""
+	}
+	return sync.ComputeVersionHash(buf)
+}
+
+// detectSyncConflicts 基于当前 channel / combo 配置做引用完整性冲突检测。
+func (a *App) detectSyncConflicts() []sync.ConflictResult {
+	channels, _ := a.configSvc.ListChannels()
+	providerConns := make([]map[string]interface{}, 0, len(channels))
+	for _, ch := range channels {
+		models := make([]interface{}, 0, len(ch.Models))
+		for _, m := range ch.Models {
+			models = append(models, m)
+		}
+		providerConns = append(providerConns, map[string]interface{}{
+			"channel_id": ch.ChannelID,
+			"models":     models,
+		})
+	}
+
+	combos := a.configSvc.ListModelCombos()
+	comboItems := make([]map[string]interface{}, 0, len(combos))
+	for _, c := range combos {
+		steps := make([]interface{}, 0, len(c.Steps))
+		for _, s := range c.Steps {
+			steps = append(steps, map[string]interface{}{"channel_id": s.ChannelID})
+		}
+		comboItems = append(comboItems, map[string]interface{}{"steps": steps})
+	}
+
+	return sync.DetectConflicts(&sync.ConfigBundle{
+		ProviderConns: providerConns,
+		Combos:        comboItems,
+	})
 }
 
 func (a *App) GetProviderHealthMetrics(providerId string) []map[string]any {
@@ -642,6 +802,30 @@ func (a *App) SetByokPolicy(policy map[string]any) map[string]any {
 
 func (a *App) GetAppConfig() config.AppConfig {
 	return a.configSvc.GetConfig()
+}
+
+// SetRTKSettings 保存 RTK Token 压缩与 Caveman 输出精简设置，并热更新网关管线。
+func (a *App) SetRTKSettings(rtkEnabled bool, rtkMaxOutputChars int, cavemanEnabled bool, cavemanStyle string) error {
+	// 空串允许（保持既有值/默认）；非空必须是四风格之一，避免注入时静默降级
+	if cavemanStyle != "" && !rtk.IsValidCavemanStyle(cavemanStyle) {
+		return fmt.Errorf("invalid caveman style: %q (supported: concise, brief, minimal, terse)", cavemanStyle)
+	}
+	if err := a.configSvc.SetRTKConfig(rtkEnabled, rtkMaxOutputChars); err != nil {
+		return err
+	}
+	if err := a.configSvc.SetCavemanConfig(cavemanEnabled, cavemanStyle); err != nil {
+		return err
+	}
+	if a.gatewaySvc != nil {
+		a.gatewaySvc.SetRTKConfig(rtkEnabled, rtkMaxOutputChars)
+	}
+	return nil
+}
+
+// QuitApp 设置页"退出"按钮：置退出标志并真正退出应用（停止网关与驻留）。
+func (a *App) QuitApp() {
+	atomic.StoreInt32(&quitting, 1)
+	runtime.Quit(a.ctx)
 }
 
 func (a *App) GetPlatformAPIBaseURL() string {
@@ -681,7 +865,12 @@ func (a *App) FetchFreeChannels() []map[string]any {
 	}
 	seeds, err := a.authSvc.FetchFreeChannels(a.ctx)
 	if err != nil {
-		return []map[string]any{{"error": err.Error()}}
+		// 返回空列表而不是包含 error 字段的对象：前端 Token 市场直接访问 ch.models.length，
+		// 缺少 models 字段的数据会导致页面崩溃白屏。
+		return []map[string]any{}
+	}
+	if seeds == nil {
+		return []map[string]any{}
 	}
 	return seeds
 }
@@ -715,6 +904,19 @@ func (a *App) FetchModelCatalog() []map[string]any {
 		return []map[string]any{}
 	}
 	return models
+}
+
+// FetchModelIndex 拉取 AI 模型指数榜单（公开资讯，无需登录；企业服务端优先，降级平台 API）。
+// 返回 {category, updated_at, entries:[...]}，异常时返回 {"error": ...}。
+func (a *App) FetchModelIndex(category string) map[string]any {
+	data, err := a.authSvc.FetchModelIndex(a.ctx, category)
+	if err != nil {
+		return map[string]any{"error": err.Error()}
+	}
+	if data == nil {
+		return map[string]any{}
+	}
+	return data
 }
 
 func (a *App) CreateCheckoutSession(planID string, quantity ...int) (map[string]any, error) {
@@ -757,7 +959,7 @@ func (a *App) CreateCheckoutSession(planID string, quantity ...int) (map[string]
 				errMsg = e
 			}
 		}
-		return nil, fmt.Errorf(errMsg)
+		return nil, errors.New(errMsg)
 	}
 	return result, nil
 }
@@ -766,7 +968,11 @@ func (a *App) Login(email, password string) error {
 	if err := a.authSvc.Login(email, password); err != nil {
 		return err
 	}
+	return a.afterPlatformLogin()
+}
 
+// afterPlatformLogin 登录成功后的公共处理：拉平台通道、云同步、启动网关。
+func (a *App) afterPlatformLogin() error {
 	platformChannels, err := a.authSvc.FetchPlatformChannels(a.ctx)
 	if err != nil {
 		return err
@@ -783,6 +989,21 @@ func (a *App) Login(email, password string) error {
 		go a.gatewaySvc.Start(a.ctx)
 	}
 	return nil
+}
+
+// GetOAuthProviders 获取服务端已配置的第三方登录方式。
+func (a *App) GetOAuthProviders() ([]auth.OAuthProvider, error) {
+	return a.authSvc.FetchOAuthProviders()
+}
+
+// StartOAuthLogin 发起第三方 OAuth 登录：
+// 请求服务端创建授权会话 -> 打开浏览器访问服务端授权跳转页（服务端 302 到 Google/GitHub）
+// -> 轮询服务端取回登录态。
+func (a *App) StartOAuthLogin(provider string) error {
+	if err := a.authSvc.StartOAuthLogin(provider); err != nil {
+		return err
+	}
+	return a.afterPlatformLogin()
 }
 
 func (a *App) Logout() error {
@@ -1513,122 +1734,6 @@ func (a *App) GetTunnelURL() string {
 	return a.tunnelMgr.GetURL()
 }
 
-func (a *App) GetOAuthProviders() []map[string]any {
-	providers := oauth.ListOAuthProviders()
-	result := make([]map[string]any, 0, len(providers))
-	for _, p := range providers {
-		result = append(result, map[string]any{
-			"name":        p.Name,
-			"displayName": p.DisplayName,
-			"authURL":     p.AuthURL,
-			"iconURL":     p.IconURL,
-		})
-	}
-	return result
-}
-
-func (a *App) GetOAuthConnections() []map[string]any {
-	providers := oauth.ListOAuthProviders()
-	result := make([]map[string]any, 0, len(providers))
-
-	a.oauthFlowMu.Lock()
-	defer a.oauthFlowMu.Unlock()
-
-	for _, p := range providers {
-		item := map[string]any{
-			"name":         p.Name,
-			"displayName":  p.DisplayName,
-			"iconURL":      p.IconURL,
-			"connected":    false,
-			"connecting":   false,
-			"configured":   false,
-			"clientIDMask": "",
-			"expiresAt":    nil,
-			"error":        "",
-		}
-		if saved, ok := a.configSvc.GetOAuthProviderConfig(p.Name); ok {
-			item["configured"] = true
-			item["clientIDMask"] = maskClientID(saved.ClientID)
-		}
-		if info, err := a.oauthStore.Get(p.Name); err == nil && info != nil {
-			item["connected"] = true
-			item["expiresAt"] = info.ExpiresAt.Format(time.RFC3339)
-		}
-		if flow, ok := a.oauthFlows[p.Name]; ok {
-			item["connecting"] = flow.Status == "pending"
-			if flow.Error != "" {
-				item["error"] = flow.Error
-			}
-		}
-		result = append(result, item)
-	}
-	return result
-}
-
-func (a *App) StartOAuthFlow(providerName, clientID, clientSecret, redirectURI string) (string, error) {
-	cfg, err := a.resolveOAuthProviderConfig(providerName, clientID, clientSecret, redirectURI)
-	if err != nil {
-		return "", err
-	}
-	pkce, err := oauth.GeneratePKCE()
-	if err != nil {
-		return "", err
-	}
-	state := fmt.Sprintf("%s-%d", providerName, time.Now().UnixNano())
-	flow := &pendingOAuthFlow{
-		ProviderName: providerName,
-		State:        state,
-		PKCE:         pkce,
-		Config:       cfg,
-		Status:       "pending",
-		StartedAt:    time.Now(),
-	}
-
-	a.oauthFlowMu.Lock()
-	if previous, ok := a.oauthFlows[providerName]; ok && previous.Server != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		_ = previous.Server.Shutdown(ctx)
-		cancel()
-	}
-	a.oauthFlowMu.Unlock()
-
-	if strings.TrimSpace(redirectURI) == "" {
-		if err := a.createOAuthCallbackServer(flow); err != nil {
-			return "", err
-		}
-	}
-
-	a.oauthFlowMu.Lock()
-	a.oauthFlows[providerName] = flow
-	a.oauthFlowMu.Unlock()
-
-	return oauth.BuildAuthURL(cfg, state, pkce), nil
-}
-
-func (a *App) ExchangeOAuthCode(providerName, code, clientID, clientSecret, redirectURI, codeVerifier string) error {
-	cfg, err := a.resolveOAuthProviderConfig(providerName, clientID, clientSecret, redirectURI)
-	if err != nil {
-		return err
-	}
-	pkce := &oauth.PKCEFlow{Verifier: strings.TrimSpace(codeVerifier)}
-	resp, err := oauth.ExchangeCode(cfg, code, pkce)
-	if err != nil {
-		return err
-	}
-
-	info := oauth.TokenResponseToInfo(resp)
-	a.oauthRefresh.RegisterProvider(providerName, cfg)
-	return a.oauthStore.Save(providerName, info)
-}
-
-func (a *App) GetOAuthToken(providerName string) (string, error) {
-	return a.oauthRefresh.GetValidToken(providerName)
-}
-
-func (a *App) RevokeOAuthToken(providerName string) error {
-	return a.oauthStore.Delete(providerName)
-}
-
 func convertPlatformChannels(items []map[string]interface{}) []config.Channel {
 	result := make([]config.Channel, 0, len(items))
 	for _, item := range items {
@@ -1835,7 +1940,8 @@ func (a *App) RunDiagnostics() map[string]any {
 				systemProxyActive = active
 			}
 		}
-		result["mitm_ca_trust"] = status.CAInstalled
+		result["mitm_ca_trust"] = status.CATrusted
+		result["mitm_ca_installed"] = status.CAInstalled
 		result["system_proxy"] = map[string]any{
 			"active":       systemProxyActive,
 			"residual":     systemProxyActive && status.State != mitm.StateRunning,
@@ -1973,6 +2079,53 @@ func (a *App) GetCloudBilling() (map[string]any, error) {
 	}, nil
 }
 
+// GetOverageUsage 获取当前用户超额用量（由 Go 后端代理平台请求，避免前端直接持有并外发平台 Token）。
+func (a *App) GetOverageUsage() (map[string]any, error) {
+	rec, err := a.authSvc.FetchOverageUsage()
+	if err != nil {
+		return nil, err
+	}
+	if rec == nil {
+		return nil, nil
+	}
+	return map[string]any{
+		"overage_id":       rec.OverageID,
+		"user_id":          rec.UserID,
+		"plan_id":          rec.PlanID,
+		"billing_period":   rec.BillingPeriod,
+		"overage_requests": rec.OverageRequests,
+		"overage_cost":     rec.OverageCost,
+		"currency":         rec.Currency,
+		"billed":           rec.Billed,
+		"invoice_id":       rec.InvoiceID,
+		"created_at":       rec.CreatedAt,
+	}, nil
+}
+
+// PlatformRequest 是平台 API 的统一代理入口：由 Go 后端附加访问令牌后转发，
+// 前端无需持有平台 Token，也不再直连平台地址（避免绕过 Wails 层）。
+// 返回 { status, body }，status 为平台 HTTP 状态码，body 为解析后的响应体（非 JSON 时退回字符串）。
+func (a *App) PlatformRequest(method, path, body string) (map[string]any, error) {
+	var payload []byte
+	if strings.TrimSpace(body) != "" {
+		payload = []byte(body)
+	}
+	status, respBody, err := a.authSvc.DoPlatformRequest(method, path, payload)
+	if err != nil {
+		return nil, err
+	}
+	var parsed any
+	if len(respBody) > 0 {
+		if json.Unmarshal(respBody, &parsed) != nil {
+			parsed = string(respBody)
+		}
+	}
+	return map[string]any{
+		"status": status,
+		"body":   parsed,
+	}, nil
+}
+
 func (a *App) FetchActiveGrants() ([]map[string]any, error) {
 	grants, err := a.authSvc.FetchActiveGrants()
 	if err != nil {
@@ -2043,6 +2196,8 @@ func (a *App) ChatCompletion(messages []map[string]any, model string) (map[strin
 	body := map[string]any{
 		"model":    model,
 		"messages": messages,
+		// 本地网关识别该标记后，在非流式响应中附加 _combo_steps/_intent 诊断字段
+		"_seasagi_debug": true,
 	}
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
@@ -2590,6 +2745,53 @@ func (a *App) GetOptimizationPlan(mode string, taskType string) map[string]any {
 func (a *App) GetQuickStrategies() []map[string]any {
 	return []map[string]any{
 		{
+			"alias":        "quality_first",
+			"display_name": "质量优先",
+			"description":  "优先分配高智商模型（Claude/GPT-4 系），适合复杂推理与代码任务",
+			"task_profile": map[string]any{
+				"task_type":          optimizer.TaskGeneralChat,
+				"priority_providers": []string{"anthropic", "openai", "google"},
+				"fallback_order":     []string{"anthropic", "openai", "google"},
+				"min_success_rate":   0.95,
+			},
+			"combo_constraints": map[string]any{
+				"min_steps":          2,
+				"max_steps":          3,
+				"allowed_strategies": []string{"fallback"},
+			},
+		},
+		{
+			"alias":        "cost_first",
+			"display_name": "性价比优先",
+			"description":  "优先选择成本更低的模型与提供商组合",
+			"task_profile": map[string]any{
+				"task_type":            optimizer.TaskGeneralChat,
+				"priority_providers":   []string{"openrouter", "google", "openai"},
+				"fallback_order":       []string{"openrouter", "google", "openai"},
+				"max_cost_per_request": 0.02,
+			},
+			"combo_constraints": map[string]any{
+				"min_steps":          1,
+				"max_steps":          3,
+				"allowed_strategies": []string{"fallback", "round_robin"},
+			},
+		},
+		{
+			"alias":        "balanced",
+			"display_name": "均衡推荐",
+			"description":  "质量与成本并重，按意图场景在中高端与轻量模型间动态取舍",
+			"task_profile": map[string]any{
+				"task_type":          optimizer.TaskGeneralChat,
+				"priority_providers": []string{"openai", "anthropic", "google", "openrouter"},
+				"fallback_order":     []string{"openai", "anthropic", "google", "openrouter"},
+			},
+			"combo_constraints": map[string]any{
+				"min_steps":          1,
+				"max_steps":          3,
+				"allowed_strategies": []string{"fallback", "round_robin"},
+			},
+		},
+		{
 			"alias":        "stable_first",
 			"display_name": "稳定优先",
 			"description":  "优先选择稳定性高、回退链清晰的模型组合",
@@ -2603,22 +2805,6 @@ func (a *App) GetQuickStrategies() []map[string]any {
 				"min_steps":          2,
 				"max_steps":          3,
 				"allowed_strategies": []string{"fallback"},
-			},
-		},
-		{
-			"alias":        "cost_first",
-			"display_name": "成本优先",
-			"description":  "优先选择成本更低的模型与提供商组合",
-			"task_profile": map[string]any{
-				"task_type":            optimizer.TaskGeneralChat,
-				"priority_providers":   []string{"openrouter", "google", "openai"},
-				"fallback_order":       []string{"openrouter", "google", "openai"},
-				"max_cost_per_request": 0.02,
-			},
-			"combo_constraints": map[string]any{
-				"min_steps":          1,
-				"max_steps":          3,
-				"allowed_strategies": []string{"fallback", "round_robin"},
 			},
 		},
 		{
@@ -2765,13 +2951,14 @@ func (a *App) SetOptimizationConfig(cfg map[string]any) error {
 func (a *App) GetRateLimitConfig() map[string]any {
 	cfg := a.configSvc.GetRateLimitConfig()
 	return map[string]any{
-		"enabled":           cfg.Enabled,
-		"default_rpm":       cfg.DefaultRPM,
-		"default_tpm":       cfg.DefaultTPM,
-		"min_interval_ms":   cfg.MinIntervalMs,
-		"max_concurrent":    cfg.MaxConcurrent,
-		"max_wait_ms":       cfg.MaxWaitMs,
-		"channel_overrides": cfg.ChannelOverrides,
+		"enabled":                cfg.Enabled,
+		"default_rpm":            cfg.DefaultRPM,
+		"default_tpm":            cfg.DefaultTPM,
+		"min_interval_ms":        cfg.MinIntervalMs,
+		"max_concurrent":         cfg.MaxConcurrent,
+		"max_wait_ms":            cfg.MaxWaitMs,
+		"monthly_cost_limit_usd": cfg.MonthlyCostLimitUSD,
+		"channel_overrides":      cfg.ChannelOverrides,
 	}
 }
 
@@ -2782,19 +2969,22 @@ func (a *App) SetRateLimitConfig(cfg map[string]any) error {
 		parsed.Enabled, _ = v.(bool)
 	}
 	if v, ok := cfg["default_rpm"]; ok {
-		parsed.DefaultRPM, _ = v.(int)
+		parsed.DefaultRPM, _ = toInt(v)
 	}
 	if v, ok := cfg["default_tpm"]; ok {
-		parsed.DefaultTPM, _ = v.(int)
+		parsed.DefaultTPM, _ = toInt(v)
 	}
 	if v, ok := cfg["min_interval_ms"]; ok {
-		parsed.MinIntervalMs, _ = v.(int)
+		parsed.MinIntervalMs, _ = toInt(v)
 	}
 	if v, ok := cfg["max_concurrent"]; ok {
-		parsed.MaxConcurrent, _ = v.(int)
+		parsed.MaxConcurrent, _ = toInt(v)
 	}
 	if v, ok := cfg["max_wait_ms"]; ok {
-		parsed.MaxWaitMs, _ = v.(int)
+		parsed.MaxWaitMs, _ = toInt(v)
+	}
+	if v, ok := cfg["monthly_cost_limit_usd"]; ok {
+		parsed.MonthlyCostLimitUSD, _ = v.(float64)
 	}
 	if v, ok := cfg["channel_overrides"]; ok {
 		if overrides, ok := v.(map[string]any); ok {
@@ -2803,16 +2993,16 @@ func (a *App) SetRateLimitConfig(cfg map[string]any) error {
 				if m, ok := raw.(map[string]any); ok {
 					ov := &config.ChannelRateLimit{}
 					if rv, ok := m["rpm"]; ok {
-						ov.RPM, _ = rv.(int)
+						ov.RPM, _ = toInt(rv)
 					}
 					if rv, ok := m["tpm"]; ok {
-						ov.TPM, _ = rv.(int)
+						ov.TPM, _ = toInt(rv)
 					}
 					if rv, ok := m["min_interval_ms"]; ok {
-						ov.MinIntervalMs, _ = rv.(int)
+						ov.MinIntervalMs, _ = toInt(rv)
 					}
 					if rv, ok := m["max_concurrent"]; ok {
-						ov.MaxConcurrent, _ = rv.(int)
+						ov.MaxConcurrent, _ = toInt(rv)
 					}
 					parsed.ChannelOverrides[chID] = ov
 				}
@@ -2873,8 +3063,10 @@ func (a *App) GetMITMStatus() map[string]any {
 		"state":                 string(s.State),
 		"proxy_port":            s.ProxyPort,
 		"ca_installed":          s.CAInstalled,
+		"ca_trusted":            s.CATrusted,
 		"rules_count":           s.RulesCount,
 		"system_proxy":          s.SystemProxy,
+		"system_proxy_owned":    s.SystemProxyOwned,
 		"system_proxy_active":   systemProxyActive,
 		"residual_system_proxy": systemProxyActive && s.State != mitm.StateRunning,
 		"last_error":            s.LastError,

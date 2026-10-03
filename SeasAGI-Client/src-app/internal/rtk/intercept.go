@@ -1,232 +1,26 @@
 package rtk
 
-import (
-	"bufio"
-	"bytes"
-	"encoding/json"
-	"io"
-	"strings"
-)
-
-type SSEEvent struct {
-	Data string
-}
-
-func ProcessSSEStream(src io.Reader, dst io.Writer, pipeline *Pipeline) error {
+// ApplyPipelineToMessages 压缩请求消息中的工具结果（role=tool/function），
+// 在转发给上游模型前截断/去重大段命令输出，降低 token 消耗。
+// 未识别的输出格式原样保留（applyFilter 对 TypeUnknown 不做处理）。
+//
+// 注意：只压缩请求方向（工具输出 → 模型）。响应方向（模型 → 客户端）必须
+// 原样透传：模型生成的 tool_calls arguments 是工具入参、message.content 是
+// 最终回答，对其截断/去重会直接损坏工具输入与用户可见答案，且无上游 token 收益。
+func ApplyPipelineToMessages(messages []map[string]any, pipeline *Pipeline) []map[string]any {
 	if pipeline == nil || !pipeline.Enabled {
-		_, err := io.Copy(dst, src)
-		return err
+		return messages
 	}
-
-	scanner := bufio.NewScanner(src)
-	var buffer bytes.Buffer
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		buffer.WriteString(line)
-		buffer.WriteByte('\n')
-
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				dst.Write(buffer.Bytes())
-				buffer.Reset()
-				continue
-			}
-
-			processed := processSSEData(data, pipeline)
-			if processed != data {
-				buffer.Reset()
-				dst.Write([]byte("data: " + processed + "\n"))
-			} else {
-				dst.Write(buffer.Bytes())
-				buffer.Reset()
-			}
-		} else if line == "" {
-			dst.Write(buffer.Bytes())
-			buffer.Reset()
-		}
-	}
-
-	if buffer.Len() > 0 {
-		dst.Write(buffer.Bytes())
-	}
-
-	return scanner.Err()
-}
-
-func processSSEData(data string, pipeline *Pipeline) string {
-	var chunk map[string]any
-	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-		return data
-	}
-
-	choices, ok := chunk["choices"].([]any)
-	if !ok || len(choices) == 0 {
-		return data
-	}
-
-	modified := false
-	newChoices := make([]any, len(choices))
-
-	for i, choice := range choices {
-		choiceMap, ok := choice.(map[string]any)
-		if !ok {
-			newChoices[i] = choice
+	for _, msg := range messages {
+		role, _ := msg["role"].(string)
+		if role != "tool" && role != "function" {
 			continue
 		}
-
-		delta, ok := choiceMap["delta"].(map[string]any)
-		if !ok {
-			newChoices[i] = choice
-			continue
-		}
-
-		toolCalls, ok := delta["tool_calls"].([]any)
-		if !ok || len(toolCalls) == 0 {
-			newChoices[i] = choice
-			continue
-		}
-
-		newToolCalls := make([]any, len(toolCalls))
-		tcModified := false
-		for j, tc := range toolCalls {
-			tcMap, ok := tc.(map[string]any)
-			if !ok {
-				newToolCalls[j] = tc
-				continue
-			}
-
-			funcObj, ok := tcMap["function"].(map[string]any)
-			if !ok {
-				newToolCalls[j] = tcMap
-				continue
-			}
-
-			args, _ := funcObj["arguments"].(string)
-			if args == "" {
-				newToolCalls[j] = tcMap
-				continue
-			}
-
-			var argsMap map[string]any
-			if err := json.Unmarshal([]byte(args), &argsMap); err != nil {
-				newToolCalls[j] = tcMap
-				continue
-			}
-
-			content, _ := argsMap["content"].(string)
-			if content != "" && len(content) > 200 {
-				compressed := pipeline.ProcessToolResult(content)
-				if compressed != content {
-					argsMap["content"] = compressed
-					newArgs, err := json.Marshal(argsMap)
-					if err == nil {
-						funcObj["arguments"] = string(newArgs)
-						tcModified = true
-					}
-				}
-			}
-			newToolCalls[j] = tcMap
-		}
-
-		if tcModified {
-			choiceMap["delta"] = delta
-			delta["tool_calls"] = newToolCalls
-			modified = true
-		}
-		newChoices[i] = choiceMap
-	}
-
-	if !modified {
-		return data
-	}
-
-	chunk["choices"] = newChoices
-	result, err := json.Marshal(chunk)
-	if err != nil {
-		return data
-	}
-	return string(result)
-}
-
-func ProcessNonStreamResponse(body []byte, pipeline *Pipeline) []byte {
-	if pipeline == nil || !pipeline.Enabled {
-		return body
-	}
-
-	var resp map[string]any
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return body
-	}
-
-	choices, ok := resp["choices"].([]any)
-	if !ok || len(choices) == 0 {
-		return body
-	}
-
-	modified := false
-	for _, choice := range choices {
-		choiceMap, ok := choice.(map[string]any)
+		content, ok := msg["content"].(string)
 		if !ok {
 			continue
 		}
-		message, ok := choiceMap["message"].(map[string]any)
-		if !ok {
-			continue
-		}
-
-		content, _ := message["content"].(string)
-		if content != "" && len(content) > 200 {
-			compressed := pipeline.ProcessToolResult(content)
-			if compressed != content {
-				message["content"] = compressed
-				modified = true
-			}
-		}
-
-		toolCalls, ok := message["tool_calls"].([]any)
-		if ok {
-			for _, tc := range toolCalls {
-				tcMap, ok := tc.(map[string]any)
-				if !ok {
-					continue
-				}
-				funcObj, ok := tcMap["function"].(map[string]any)
-				if !ok {
-					continue
-				}
-				args, _ := funcObj["arguments"].(string)
-				if args == "" {
-					continue
-				}
-				var argsMap map[string]any
-				if err := json.Unmarshal([]byte(args), &argsMap); err != nil {
-					continue
-				}
-				argContent, _ := argsMap["content"].(string)
-				if argContent != "" && len(argContent) > 200 {
-					compressed := pipeline.ProcessToolResult(argContent)
-					if compressed != argContent {
-						argsMap["content"] = compressed
-						newArgs, err := json.Marshal(argsMap)
-						if err == nil {
-							funcObj["arguments"] = string(newArgs)
-							modified = true
-						}
-					}
-				}
-			}
-		}
+		msg["content"] = pipeline.ProcessToolResult(content)
 	}
-
-	if !modified {
-		return body
-	}
-
-	result, err := json.Marshal(resp)
-	if err != nil {
-		return body
-	}
-	return result
+	return messages
 }

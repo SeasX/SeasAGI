@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -158,21 +159,26 @@ func (r *Resolver) ReorderBySession(candidates []PlanStep, sessionKey string) []
 
 // ResolveChatPlan resolves a model (or combo) into an ordered list of PlanSteps.
 // taskType indicates the type of request: "chat", "tools", "json", "long_context".
-func (r *Resolver) ResolveChatPlan(model string, taskType string) (string, []PlanStep, error) {
+// intent carries the scenario-aware intent (v0.2.0); nil disables intent routing.
+func (r *Resolver) ResolveChatPlan(model string, taskType string, intent *IntentContext) (string, []PlanStep, error) {
 	if combo, ok := r.configSvc.GetModelCombo(model); ok {
 		steps := r.resolveComboSteps(combo)
 		if len(steps) == 0 {
 			return combo.Name, nil, &RoutingError{Type: "routing_error", Message: fmt.Sprintf("combo %q has no available routes", combo.Name)}
 		}
 
-		// Apply task-type-specific sorting
-		steps = r.sortByTaskType(steps, taskType)
-		steps = degradeSlowChannels(steps)
-
 		strategy := combo.Strategy
 		if strategy == "" {
 			strategy = r.configSvc.GetConfig().RoutingStrategy
 		}
+
+		// Apply task-type-specific sorting
+		steps = r.sortByTaskType(steps, taskType)
+		steps, intentErr := r.applyIntentRouting(steps, intent, combo.QuickStrategy)
+		if intentErr != nil {
+			return combo.Name, nil, intentErr
+		}
+		steps = degradeSlowChannels(steps)
 
 		// Apply routing strategy
 		switch strategy {
@@ -219,6 +225,10 @@ func (r *Resolver) ResolveChatPlan(model string, taskType string) (string, []Pla
 
 	// Apply task-type-specific sorting for non-combo paths
 	steps = r.sortByTaskType(steps, taskType)
+	steps, intentErr := r.applyIntentRouting(steps, intent, "")
+	if intentErr != nil {
+		return normalizedModel, nil, intentErr
+	}
 	steps = degradeSlowChannels(steps)
 
 	cfg := r.configSvc.GetConfig()
@@ -735,4 +745,134 @@ func (r *Resolver) sortByTaskType(steps []PlanStep, taskType string) []PlanStep 
 	default:
 		return steps
 	}
+}
+
+// NormalizeStrategyPref 归一化快速策略别名。UI（GetQuickStrategies/ComboPage）与
+// 云端 Combo 使用下划线拼写（stable_first / cost_first / quality_first / balanced），
+// 而路由打分使用连字符标准形（stability-first / cost-first / speed-first / quality-first）；
+// 不归一化会导致策略-场景映射矩阵（Combo.0830.md §3.3）对真实数据整体失效。
+// 无法识别的值规范化后原样返回（视为均衡，不加分）。
+func NormalizeStrategyPref(pref string) string {
+	p := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(pref, "_", "-")))
+	if p == "stable-first" {
+		p = "stability-first"
+	}
+	return p
+}
+
+// applyIntentRouting 按意图对候选步骤做安全过滤与适配度重排（v0.2.0 M3.1-M3.3）。
+// pref 为快速策略倾向（stability-first / cost-first / speed-first / quality-first，
+// 兼容下划线拼写与 balanced），空串视为均衡。
+func (r *Resolver) applyIntentRouting(steps []PlanStep, intent *IntentContext, pref string) ([]PlanStep, error) {
+	if intent == nil || len(steps) == 0 {
+		return steps, nil
+	}
+	pref = NormalizeStrategyPref(pref)
+
+	// M3.3 安全截断：敏感意图强制 local_only；无本地渠道时直接报错，避免敏感数据出云
+	if intent.SecurityLevel == "sensitive" {
+		filtered := r.FilterCandidatesByConstraints(steps, map[string]any{"data_policy": "local_only"})
+		if len(filtered) == 0 {
+			return nil, &RoutingError{Type: "routing_error", Message: "sensitive intent requires a local-only (custom) channel"}
+		}
+		steps = filtered
+	}
+
+	if len(steps) <= 1 {
+		return steps, nil
+	}
+
+	// 基于场景 + 策略组合重排序，得分高者为首选（Primary）
+	ordered := make([]PlanStep, len(steps))
+	copy(ordered, steps)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return r.calculateIntentFitScore(ordered[i], intent, pref) >
+			r.calculateIntentFitScore(ordered[j], intent, pref)
+	})
+	return ordered, nil
+}
+
+// calculateIntentFitScore 计算“步骤 × 意图 × 策略”适配度得分（v0.2.0 M3.1/M3.2）。
+// 策略-场景映射矩阵（§3.3）以加成形式实现：stability/quality 侧重大模型（W_iq=0.8），
+// cost 侧重轻量与高性价比模型（W_cost=0.7），speed 侧重低延迟模型。
+// ponytail: 规则基于模型名关键词启发式；需精确打分时改读 model-catalog 定价与 P95 延迟。
+func (r *Resolver) calculateIntentFitScore(step PlanStep, intent *IntentContext, pref string) float64 {
+	score := 100.0
+	model := strings.ToLower(step.UpstreamModel)
+
+	switch intent.Scenario {
+	case "code_logic":
+		if intent.RequiredIQ == "high" {
+			// 高智商需求：优先 Claude Sonnet / GPT-4 系 / DeepSeek
+			if strings.Contains(model, "sonnet") || strings.Contains(model, "gpt-4") || strings.Contains(model, "deepseek") {
+				score += 50
+			}
+			// 小模型 / Flash 版减分
+			if strings.Contains(model, "flash") || strings.Contains(model, "mini") || strings.Contains(model, "haiku") {
+				score -= 40
+			}
+		}
+		if pref == "cost-first" {
+			if strings.Contains(model, "deepseek") || strings.Contains(model, "qwen") {
+				score += 35
+			}
+		}
+	case "image_gen":
+		// 图像生成模型优先，文本模型大幅减分
+		if strings.Contains(model, "dall-e") || strings.Contains(model, "midjourney") || strings.Contains(model, "stable-diffusion") || strings.Contains(model, "flux") {
+			score += 60
+		}
+		if strings.Contains(model, "gpt-4") || strings.Contains(model, "claude") || strings.Contains(model, "sonnet") {
+			score -= 50
+		}
+		if pref == "stability-first" || pref == "quality-first" {
+			if strings.Contains(model, "dall-e-3") || strings.Contains(model, "midjourney") {
+				score += 30
+			}
+		}
+	case "creative", "casual":
+		// 创意/闲聊优先低成本、低延迟轻量模型
+		if strings.Contains(model, "flash") || strings.Contains(model, "mini") || strings.Contains(model, "haiku") {
+			score += 40
+		}
+	}
+
+	// 规则 D：意图标签微调
+	for _, tag := range intent.Tags {
+		switch tag {
+		case "math":
+			if strings.Contains(model, "reasoner") {
+				score += 30 // 数学/CoT 优先深度推理模型
+			}
+		case "react":
+			if strings.Contains(model, "claude") {
+				score += 20 // React 生态 Claude 有优势
+			}
+		case "svg":
+			if strings.Contains(model, "stable-diffusion") {
+				score += 25 // 矢量/绘图 SD 擅长
+			}
+		}
+	}
+
+	// 策略加权（§3.3 权重矩阵的加成实现）
+	switch pref {
+	case "stability-first", "quality-first":
+		// 大模型加成；注意 gpt-4o-mini 等轻量变体虽含 "gpt-4" 子串，
+		// 但属于小模型，不应获得质量/稳定性加成
+		lightweight := strings.Contains(model, "mini") || strings.Contains(model, "flash") || strings.Contains(model, "haiku")
+		if !lightweight && (strings.Contains(model, "sonnet") || strings.Contains(model, "gpt-4") || strings.Contains(model, "opus")) {
+			score += 15
+		}
+	case "cost-first":
+		if strings.Contains(model, "mini") || strings.Contains(model, "flash") || strings.Contains(model, "haiku") || strings.Contains(model, "deepseek") {
+			score += 15
+		}
+	case "speed-first":
+		if strings.Contains(model, "flash") || strings.Contains(model, "mini") || strings.Contains(model, "haiku") {
+			score += 15
+		}
+	}
+
+	return score
 }

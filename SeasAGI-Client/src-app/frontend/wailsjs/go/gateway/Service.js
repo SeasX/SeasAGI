@@ -22,8 +22,20 @@ export function ResetComboRouteMetrics() {
   return window['go']['gateway']['Service']['ResetComboRouteMetrics']();
 }
 
+export function ServeGatewayRequest(arg1, arg2, arg3) {
+  return window['go']['gateway']['Service']['ServeGatewayRequest'](arg1, arg2, arg3);
+}
+
 export function SetAccessToken(arg1) {
   return window['go']['gateway']['Service']['SetAccessToken'](arg1);
+}
+
+export function SetRTKConfig(arg1, arg2) {
+  return window['go']['gateway']['Service']['SetRTKConfig'](arg1, arg2);
+}
+
+export function SetUsageService(arg1) {
+  return window['go']['gateway']['Service']['SetUsageService'](arg1);
 }
 
 export function Start(arg1) {

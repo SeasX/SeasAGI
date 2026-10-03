@@ -131,6 +131,18 @@ SeasAGI-Client/
 - **崩溃恢复**：重启时自动清理残留系统代理，健康探针 goroutine 检测代理异常后自动停止
 - **透传安全**：未匹配域名透明隧道转发，60 秒超时保护，不影响正常上网
 
+#### 已知局限（不接管）
+
+一键接管基于系统代理（HTTP/HTTPS over TCP）与本地 CA 实现，以下流量属于客观盲区，无法被监控或治理：
+
+- **HTTP/3（QUIC / UDP 443）**：系统代理仅接管 TCP，基于 UDP 的流量不会被拦截
+- **h2 / gRPC 长连接**：仅对标准 HTTP/HTTPS 请求做解析与治理，gRPC 等二进制长连接不被改写
+- **证书固定（Certificate Pinning）客户端**：内置证书校验的应用会拒绝本地 CA，从而绕过 MITM
+- **不读取系统代理的进程**：自行实现网络栈或显式指定代理的 CLI/工具，需手动设置环境变量（见「CLI 兼容提示」）
+- **未纳入接管域名清单的流量**：仅清单内的域名会被转发到本地网关
+
+> WebSocket（ws/wss）流量已复用同一网关主链路，可正常接管与记账。
+
 ### 体验
 
 - Playground 即时测试页面
@@ -149,7 +161,7 @@ SeasAGI-Client/
 [`scripts/version.txt`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/scripts/version.txt) 是唯一的版本号定义文件：
 
 ```
-0.1.0
+0.1.5
 ```
 
 - 更新版本号只需修改此文件
@@ -167,7 +179,7 @@ SeasAGI-Client/
 客户端界面左上角 Logo 右侧显示版本号徽标：
 
 ```
-[icon] SeasAGI  v0.1.0
+[icon] SeasAGI  v0.1.5
 ```
 
 实现位置：[`Layout.tsx`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/src-app/frontend/src/components/Layout.tsx) 中使用 `import.meta.env.VITE_APP_VERSION` 渲染。

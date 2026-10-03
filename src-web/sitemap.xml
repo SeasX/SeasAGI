@@ -15,7 +15,7 @@
   </url>
 
   <url>
-    <loc>https://SeasAGI.SeasX.ai/#features</loc>
+    <loc>https://SeasAGI.SeasX.ai/#core-features</loc>
     <lastmod>2026-08-15</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
@@ -38,6 +38,13 @@
   <url>
     <loc>https://SeasAGI.SeasX.ai/#channels</loc>
     <lastmod>2026-08-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <url>
+    <loc>https://SeasAGI.SeasX.ai/#model-index</loc>
+    <lastmod>2026-09-14</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>

@@ -90,10 +90,6 @@ export function DiscoverModels(arg1) {
   return window['go']['main']['App']['DiscoverModels'](arg1);
 }
 
-export function ExchangeOAuthCode(arg1, arg2, arg3, arg4, arg5, arg6) {
-  return window['go']['main']['App']['ExchangeOAuthCode'](arg1, arg2, arg3, arg4, arg5, arg6);
-}
-
 export function ExportConfig() {
   return window['go']['main']['App']['ExportConfig']();
 }
@@ -120,6 +116,10 @@ export function FetchMITMTargetsFromEnterprise() {
 
 export function FetchModelCatalog() {
   return window['go']['main']['App']['FetchModelCatalog']();
+}
+
+export function FetchModelIndex(arg1) {
+  return window['go']['main']['App']['FetchModelIndex'](arg1);
 }
 
 export function FetchModelStats() {
@@ -178,6 +178,10 @@ export function GetEvalScorecard(arg1) {
   return window['go']['main']['App']['GetEvalScorecard'](arg1);
 }
 
+export function GetIntentScenarioStats() {
+  return window['go']['main']['App']['GetIntentScenarioStats']();
+}
+
 export function GetLocalAccessToken() {
   return window['go']['main']['App']['GetLocalAccessToken']();
 }
@@ -218,16 +222,8 @@ export function GetMITMTargets() {
   return window['go']['main']['App']['GetMITMTargets']();
 }
 
-export function GetOAuthConnections() {
-  return window['go']['main']['App']['GetOAuthConnections']();
-}
-
 export function GetOAuthProviders() {
   return window['go']['main']['App']['GetOAuthProviders']();
-}
-
-export function GetOAuthToken(arg1) {
-  return window['go']['main']['App']['GetOAuthToken'](arg1);
 }
 
 export function GetOfficialComboTemplates() {
@@ -240,6 +236,10 @@ export function GetOptimizationConfig() {
 
 export function GetOptimizationPlan(arg1, arg2) {
   return window['go']['main']['App']['GetOptimizationPlan'](arg1, arg2);
+}
+
+export function GetOverageUsage() {
+  return window['go']['main']['App']['GetOverageUsage']();
 }
 
 export function GetPerfAuditReport() {
@@ -442,12 +442,20 @@ export function PerformUpdate() {
   return window['go']['main']['App']['PerformUpdate']();
 }
 
+export function PlatformRequest(arg1, arg2, arg3) {
+  return window['go']['main']['App']['PlatformRequest'](arg1, arg2, arg3);
+}
+
 export function PreviewComboOptimization(arg1, arg2) {
   return window['go']['main']['App']['PreviewComboOptimization'](arg1, arg2);
 }
 
 export function PushCloudCombo(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) {
   return window['go']['main']['App']['PushCloudCombo'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+}
+
+export function QuitApp() {
+  return window['go']['main']['App']['QuitApp']();
 }
 
 export function ReadCurrentPrompt(arg1) {
@@ -476,10 +484,6 @@ export function ReorderChannels(arg1) {
 
 export function ResetLocalAccessToken() {
   return window['go']['main']['App']['ResetLocalAccessToken']();
-}
-
-export function RevokeOAuthToken(arg1) {
-  return window['go']['main']['App']['RevokeOAuthToken'](arg1);
 }
 
 export function RunDiagnostics() {
@@ -554,6 +558,10 @@ export function SetLogRotationConfig(arg1) {
   return window['go']['main']['App']['SetLogRotationConfig'](arg1);
 }
 
+export function SetLogRotator(arg1) {
+  return window['go']['main']['App']['SetLogRotator'](arg1);
+}
+
 export function SetMITMManager(arg1) {
   return window['go']['main']['App']['SetMITMManager'](arg1);
 }
@@ -564,6 +572,10 @@ export function SetOptimizationConfig(arg1) {
 
 export function SetPlatformAPIBaseURL(arg1) {
   return window['go']['main']['App']['SetPlatformAPIBaseURL'](arg1);
+}
+
+export function SetRTKSettings(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SetRTKSettings'](arg1, arg2, arg3, arg4);
 }
 
 export function SetRateLimitConfig(arg1) {
@@ -578,6 +590,10 @@ export function ShowMessage(arg1, arg2) {
   return window['go']['main']['App']['ShowMessage'](arg1, arg2);
 }
 
+export function SimulateIntentRouting(arg1, arg2) {
+  return window['go']['main']['App']['SimulateIntentRouting'](arg1, arg2);
+}
+
 export function StartLocalGateway() {
   return window['go']['main']['App']['StartLocalGateway']();
 }
@@ -586,8 +602,8 @@ export function StartMITM() {
   return window['go']['main']['App']['StartMITM']();
 }
 
-export function StartOAuthFlow(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['StartOAuthFlow'](arg1, arg2, arg3, arg4);
+export function StartOAuthLogin(arg1) {
+  return window['go']['main']['App']['StartOAuthLogin'](arg1);
 }
 
 export function StartTunnel(arg1) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getPlatformAPIBaseURL, getPlatformToken } from "../utils/commands";
+import { platformRequest } from "../utils/commands";
 import { useTranslation } from "../i18n";
 import type { MarketListing } from "../stores/marketStore";
 
@@ -27,21 +27,29 @@ export function TokenListingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [purchasing, setPurchasing] = useState(false);
+  // 下单操作错误（独立于页面级 error，避免整页被错误信息替换）
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [sellerReviews, setSellerReviews] = useState<SellerReviewData | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
+  // 我的市场余额：用于下单前提示余额是否充足
+  const [myBalance, setMyBalance] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchListing = async () => {
       setLoading(true);
       setError(null);
       try {
-        const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-        const resp = await fetch(`${baseURL}/token-market/listings/${id}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
+        const resp = await platformRequest("GET", `/token-market/listings/${id}`);
+        if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
+        const data = resp.body;
         setListing(data.data);
+        // 拉取我的市场余额（下单前置提示）
+        platformRequest("GET", "/token-market/account")
+          .then((r) => (r.status < 400 ? r.body : null))
+          .then((d) => {
+            if (typeof d?.data?.balance === "number") setMyBalance(d.data.balance);
+          })
+          .catch(() => {});
         // P11: 拉取卖家评价
         if (data.data?.seller_user_id) {
           fetchSellerReviews(data.data.seller_user_id);
@@ -59,12 +67,9 @@ export function TokenListingDetailPage() {
   const fetchSellerReviews = async (sellerID: string) => {
     setReviewLoading(true);
     try {
-      const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-      const resp = await fetch(`${baseURL}/token-market/sellers/${sellerID}/reviews`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      const resp = await platformRequest("GET", `/token-market/sellers/${sellerID}/reviews`);
+      if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
+      const data = resp.body;
       setSellerReviews(data.data);
     } catch {
       setSellerReviews(null);
@@ -76,26 +81,18 @@ export function TokenListingDetailPage() {
   const handlePurchase = async () => {
     if (!listing) return;
     setPurchasing(true);
-    setError(null);
+    setPurchaseError(null);
     try {
-      const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-      const resp = await fetch(`${baseURL}/token-market/orders`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ listing_id: listing.listing_id }),
-      });
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
+      const resp = await platformRequest("POST", "/token-market/orders", { listing_id: listing.listing_id });
+      if (resp.status >= 400) {
+        const errData = resp.body || {};
         throw new Error(errData.error || `HTTP ${resp.status}`);
       }
-      const data = await resp.json();
+      const data = resp.body;
       // 跳转到扫码交易页
       navigate(`/token-market/scan-trade?order=${data.data.order_id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setPurchaseError(err instanceof Error ? err.message : String(err));
     } finally {
       setPurchasing(false);
     }
@@ -105,9 +102,14 @@ export function TokenListingDetailPage() {
   if (error) return <div className="page-container"><div className="form-error">{error}</div></div>;
   if (!listing) return <div className="page-container"><div className="empty-state"><p>{t("tokenMarket.listingNotFound")}</p></div></div>;
 
+  // 成交价：fixed_price 为原价；discount 为折扣后实付价（与服务端 CreateOrder 计算一致）
+  const dealAmount = listing.sale_type === "fixed_price"
+    ? listing.price
+    : listing.price * (1 - listing.discount_rate);
   const displayPrice = listing.sale_type === "fixed_price"
     ? `${listing.price} ${listing.currency}`
-    : `${(listing.discount_rate * 100).toFixed(0)}% ${t("tokenMarket.off")}`;
+    : `${dealAmount.toFixed(2)} ${listing.currency}（${(listing.discount_rate * 100).toFixed(0)}% ${t("tokenMarket.off")}）`;
+  const insufficient = myBalance !== null && myBalance < dealAmount;
 
   return (
     <div className="page-container">
@@ -148,12 +150,27 @@ export function TokenListingDetailPage() {
 
         {listing.status === "active" && (
           <div className="detail-actions">
-            <button className="btn btn-primary" onClick={handlePurchase} disabled={purchasing}>
+            {insufficient && (
+              <div className="form-error" style={{ marginBottom: "8px" }}>
+                {t("tokenMarket.insufficientBalance")}
+              </div>
+            )}
+            {myBalance !== null && (
+              <div className="detail-row" style={{ marginBottom: "8px" }}>
+                <span className="detail-key">{t("tokenMarket.myBalance")}</span>
+                <span className="detail-value">${myBalance.toFixed(2)}</span>
+              </div>
+            )}
+            <button
+              className="btn btn-primary"
+              onClick={handlePurchase}
+              disabled={purchasing || insufficient}
+            >
               {purchasing ? t("common.processing") : t("tokenMarket.purchase")}
             </button>
           </div>
         )}
-        {error && <div className="form-error">{error}</div>}
+        {purchaseError && <div className="form-error">{purchaseError}</div>}
       </div>
 
       {/* P11: 卖家评价 */}

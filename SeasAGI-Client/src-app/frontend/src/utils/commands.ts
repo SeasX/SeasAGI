@@ -1,4 +1,4 @@
-import type { Channel, DiscoveredModel, RequestLog, RuntimeStatus, AuthState, AppConfig, ModelCombo, CloudUsage, CloudBilling, CloudCombo, OptimizationPlan, OptimizationConfig, ModelStatsEntry, UsageSummary, OAuthProvider, OAuthConnection, ProviderHealthMetric, ProviderHealthSummary, BYOKPolicy, QuickStrategy, TaskProfile, MITMStatus } from "../utils/types";
+import type { Channel, DiscoveredModel, RequestLog, RuntimeStatus, AuthState, AppConfig, ModelCombo, CloudUsage, CloudBilling, CloudCombo, OptimizationPlan, OptimizationConfig, ModelStatsEntry, UsageSummary, ProviderHealthMetric, ProviderHealthSummary, BYOKPolicy, QuickStrategy, TaskProfile, MITMStatus, OverageRecord, OAuthProvider } from "../utils/types";
 
 type WailsAppApi = {
   StartLocalGateway(): Promise<void>;
@@ -7,8 +7,12 @@ type WailsAppApi = {
   Login(email: string, password: string): Promise<void>;
   Logout(): Promise<void>;
   Register(email: string, password: string, displayName: string): Promise<void>;
+  GetOAuthProviders(): Promise<OAuthProvider[]>;
+  StartOAuthLogin(provider: string): Promise<void>;
   GetCloudUsage(): Promise<CloudUsage>;
   GetCloudBilling(): Promise<CloudBilling>;
+  GetOverageUsage(): Promise<OverageRecord | null>;
+  PlatformRequest(method: string, path: string, body: string): Promise<{ status: number; body: any }>;
   GetRecommendedCombos(): Promise<CloudCombo[]>;
   GetOptimizationPlan(mode: string, taskType: string): Promise<OptimizationPlan>;
   GetUsageSummary(): Promise<UsageSummary>;
@@ -18,6 +22,8 @@ type WailsAppApi = {
   PreviewComboOptimization(mode: string, taskType: string): Promise<any>;
   ApplyComboOptimization(toModel: string, preset: string, updateExisting: boolean): Promise<void>;
   GetComboRouteMetrics(): Promise<any[]>;
+  SimulateIntentRouting(prompt: string, model: string): Promise<any>;
+  GetIntentScenarioStats(): Promise<any[]>;
   GetDefaultComboName(): Promise<string>;
   SetDefaultComboName(name: string): Promise<void>;
   GetComboByName(name: string): Promise<ModelCombo>;
@@ -48,14 +54,10 @@ type WailsAppApi = {
   DeleteComboTemplate(name: string): Promise<void>;
   RenameComboTemplate(oldName: string, newName: string): Promise<void>;
   GetAppConfig(): Promise<AppConfig>;
+  SetRTKSettings(rtkEnabled: boolean, rtkMaxOutputChars: number, cavemanEnabled: boolean, cavemanStyle: string): Promise<void>;
+  QuitApp(): Promise<void>;
   SetLocale(locale: string): Promise<void>;
   GetLocale(): Promise<string>;
-  GetOAuthProviders(): Promise<{name: string; displayName: string; authURL: string; iconURL: string}[]>;
-  GetOAuthConnections(): Promise<OAuthConnection[]>;
-  StartOAuthFlow(providerName: string, clientID: string, clientSecret: string, redirectURI: string): Promise<string>;
-  ExchangeOAuthCode(providerName: string, code: string, clientID: string, clientSecret: string, redirectURI: string, codeVerifier: string): Promise<void>;
-  GetOAuthToken(providerName: string): Promise<string>;
-  RevokeOAuthToken(providerName: string): Promise<void>;
   GetPlans(): Promise<Record<string, any>[]>;
   FetchActiveGrants(): Promise<Record<string, any>[]>;
   SetSelectedGrant(grantID: string, relayURL: string): Promise<void>;
@@ -124,6 +126,7 @@ type WailsAppApi = {
   FetchFreeChannels(): Promise<Record<string, any>[]>;
   FetchEnterpriseChannels(): Promise<Record<string, any>[]>;
   FetchModelCatalog(): Promise<Record<string, any>[]>;
+  FetchModelIndex(category: string): Promise<Record<string, any>>;
   FetchMITMTargetsFromEnterprise(): Promise<Record<string, any>>;
   GetRateLimitConfig(): Promise<Record<string, any>>;
   SetRateLimitConfig(config: Record<string, any>): Promise<void>;
@@ -242,6 +245,18 @@ export async function createCheckoutSession(planId: string, quantity?: number): 
   return getAppApi().CreateCheckoutSession(planId);
 }
 
+export interface PlatformResponse {
+  status: number;
+  body: any;
+}
+
+// platformRequest 统一经 Go 后端代理平台 API：前端不再持有并外发平台 Token。
+// method: HTTP 方法；path: 平台相对路径（须以 / 开头）；body: 可选请求体（会自动 JSON 序列化）。
+export async function platformRequest(method: string, path: string, body?: unknown): Promise<PlatformResponse> {
+  const payload = body === undefined || body === null ? "" : JSON.stringify(body);
+  return getAppApi().PlatformRequest(method, path, payload);
+}
+
 export async function getPlatformAPIBaseURL(): Promise<string> {
   return getAppApi().GetPlatformAPIBaseURL();
 }
@@ -327,6 +342,19 @@ export async function getAppConfig(): Promise<AppConfig> {
   return getAppApi().GetAppConfig();
 }
 
+export async function setRTKSettings(
+  rtkEnabled: boolean,
+  rtkMaxOutputChars: number,
+  cavemanEnabled: boolean,
+  cavemanStyle: string
+): Promise<void> {
+  return getAppApi().SetRTKSettings(rtkEnabled, rtkMaxOutputChars, cavemanEnabled, cavemanStyle);
+}
+
+export async function quitApp(): Promise<void> {
+  return getAppApi().QuitApp();
+}
+
 export async function setLocale(locale: string): Promise<void> {
   return getAppApi().SetLocale(locale);
 }
@@ -353,30 +381,6 @@ export async function getTunnelStatus(): Promise<Record<string, unknown>> {
 
 export async function getTunnelURL(): Promise<string> {
   return getAppApi().GetTunnelURL();
-}
-
-export async function getOAuthProviders(): Promise<OAuthProvider[]> {
-  return getAppApi().GetOAuthProviders();
-}
-
-export async function getOAuthConnections(): Promise<OAuthConnection[]> {
-  return getAppApi().GetOAuthConnections();
-}
-
-export async function startOAuthFlow(providerName: string, clientID: string, clientSecret: string, redirectURI: string): Promise<string> {
-  return getAppApi().StartOAuthFlow(providerName, clientID, clientSecret, redirectURI);
-}
-
-export async function exchangeOAuthCode(providerName: string, code: string, clientID: string, clientSecret: string, redirectURI: string, codeVerifier: string): Promise<void> {
-  return getAppApi().ExchangeOAuthCode(providerName, code, clientID, clientSecret, redirectURI, codeVerifier);
-}
-
-export async function getOAuthToken(providerName: string): Promise<string> {
-  return getAppApi().GetOAuthToken(providerName);
-}
-
-export async function revokeOAuthToken(providerName: string): Promise<void> {
-  return getAppApi().RevokeOAuthToken(providerName);
 }
 
 export async function getOfficialComboTemplates(): Promise<ModelCombo[]> {
@@ -430,12 +434,24 @@ export async function register(email: string, password: string, displayName: str
   return getAppApi().Register(email, password, displayName);
 }
 
+export async function getOAuthProviders(): Promise<OAuthProvider[]> {
+  return getAppApi().GetOAuthProviders();
+}
+
+export async function startOAuthLogin(provider: string): Promise<void> {
+  return getAppApi().StartOAuthLogin(provider);
+}
+
 export async function getCloudUsage(): Promise<CloudUsage> {
   return getAppApi().GetCloudUsage();
 }
 
 export async function getCloudBilling(): Promise<CloudBilling> {
   return getAppApi().GetCloudBilling();
+}
+
+export async function getOverageUsage(): Promise<OverageRecord | null> {
+  return getAppApi().GetOverageUsage();
 }
 
 export async function fetchActiveGrants(): Promise<Record<string, any>[]> {
@@ -492,6 +508,14 @@ export async function applyComboOptimization(toModel: string, preset: string, up
 
 export async function getComboRouteMetrics(): Promise<any[]> {
   return getAppApi().GetComboRouteMetrics();
+}
+
+export async function simulateIntentRouting(prompt: string, model: string): Promise<any> {
+  return getAppApi().SimulateIntentRouting(prompt, model);
+}
+
+export async function getIntentScenarioStats(): Promise<any[]> {
+  return getAppApi().GetIntentScenarioStats();
 }
 
 export async function getDefaultComboName(): Promise<string> {
@@ -664,6 +688,10 @@ export async function fetchEnterpriseChannels(): Promise<Record<string, any>[]> 
 
 export async function fetchModelCatalog(): Promise<Record<string, any>[]> {
   return getAppApi().FetchModelCatalog();
+}
+
+export async function fetchModelIndex(category: string): Promise<Record<string, any>> {
+  return getAppApi().FetchModelIndex(category);
 }
 
 export async function getRateLimitConfig(): Promise<Record<string, any>> {

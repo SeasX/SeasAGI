@@ -18,6 +18,7 @@ func NewSystemProxySetter() interface {
 	Set(addr string) error
 	Clear() error
 	IsActive() (bool, error)
+	CurrentAddr() (string, error)
 } {
 	return &darwinProxySetter{}
 }
@@ -104,6 +105,44 @@ func (d *darwinProxySetter) IsActive() (bool, error) {
 	// 检查输出中是否包含 "Enabled: Yes"
 	re := regexp.MustCompile(`(?i)Enabled:\s*Yes`)
 	return re.MatchString(string(output)), nil
+}
+
+// CurrentAddr 返回当前生效的 HTTP 代理地址（host:port）。
+// 代理未启用或无法解析时返回空字符串，便于调用方区分「本客户端的代理」与
+// 「用户自有的代理」。
+func (d *darwinProxySetter) CurrentAddr() (string, error) {
+	service, err := d.detectNetworkService()
+	if err != nil {
+		return "", err
+	}
+
+	output, err := exec.Command("networksetup", "-getwebproxy", service).Output()
+	if err != nil {
+		return "", nil
+	}
+
+	enabled := false
+	host, port := "", ""
+	for _, line := range strings.Split(string(output), "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		switch key {
+		case "Enabled":
+			enabled = strings.EqualFold(value, "Yes")
+		case "Server":
+			host = value
+		case "Port":
+			port = value
+		}
+	}
+	if !enabled || host == "" || port == "" {
+		return "", nil
+	}
+	return host + ":" + port, nil
 }
 
 func splitHostPort(addr string) (string, string, error) {

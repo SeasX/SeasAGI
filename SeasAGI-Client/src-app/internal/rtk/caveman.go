@@ -52,8 +52,10 @@ func (ci *CavemanInjector) Inject(messages []map[string]any) []map[string]any {
 		role, _ := msg["role"].(string)
 		if role == "system" {
 			hasSystem = true
-			content, _ := msg["content"].(string)
-			if !strings.Contains(content, "Be concise") &&
+			content, ok := msg["content"].(string)
+			// 非字符串 content（如多模态数组）原样保留，不做覆盖
+			if ok &&
+				!strings.Contains(content, "Be concise") &&
 				!strings.Contains(content, "Be brief") &&
 				!strings.Contains(content, "Minimal output") &&
 				!strings.Contains(content, "Terse") {
@@ -98,6 +100,13 @@ func ListCavemanStyles() []map[string]string {
 		})
 	}
 	return result
+}
+
+// IsValidCavemanStyle 判断风格 ID 是否为受支持的四风格之一。
+// 供设置层校验持久化值，避免非法风格在注入时静默降级为 concise。
+func IsValidCavemanStyle(style string) bool {
+	_, ok := cavemanPrompts[CavemanStyle(style)]
+	return ok
 }
 
 func CavemanInjectIntoCanonical(messages []map[string]any, enabled bool, style string) []map[string]any {

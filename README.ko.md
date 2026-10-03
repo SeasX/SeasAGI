@@ -16,7 +16,7 @@ SeasAGI는 세 개의 하위 프로젝트로 구성된 계층형 AI 게이트웨
 |-------------|---------|------|-------------|
 | `SeasAGI-Client/` | **GPL 3.0** 완전 오픈소스 | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | 네이티브 데스크톱 클라이언트 (Wails + Go + React), 로컬 통합 게이트웨이, API Keys 절대 업로드 안 함 |
 | `SeasAGI-Server/` | **AGPL 3.0** 오픈소스 자체 호스팅 가능 | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | 커뮤니티 에디션 클라우드 제어 평면: 인증 / 채널 / Provider 리소스 풀 / 모델 카탈로그 / Combo CRUD / 사용량 / 임베디드 관리자 대시보드 / 기본 릴레이 포워딩 |
-| `SeasAGI-Server-Enterprise/` | 폐쇄소스 | — | 엔터프라이즈 에디션 클라우드, Stripe 결제 / 멀티 테넌트 거버넌스 / Combo 거버넌스 승인 / 관리자 대시보드 포함. [엔터프라이즈 README](SeasAGI-Server-Enterprise/README.md) 참조 |
+| `SeasAGI-Server-Enterprise/` | 폐쇄소스 | — | 엔터프라이즈 에디션 클라우드, 멀티 테넌트 거버넌스 / Combo 거버넌스 승인 / 관리자 대시보드 포함. [엔터프라이즈 README](SeasAGI-Server-Enterprise/README.md) 참조 |
 
 클라이언트는 **독립 실행**이 가능합니다 — 서버 없이도 모든 로컬 게이트웨이 기능이 작동합니다. 클라우드는 원격 가속 채널, 사용량 동기화, 팀 협업 및 엔터프라이즈 거버넌스를 제공하는 선택적 부가 서비스입니다.
 
@@ -214,7 +214,6 @@ bash SeasAGI-Server-Enterprise/scripts/build.sh
 | 클라이언트 백엔드 | Go (로컬 게이트웨이 / 라우팅 엔진 / 비용 최적화 / Provider 실행자) |
 | 서버 프레임워크 | Go + Gin |
 | 데이터베이스 | SQLite |
-| 결제 | Stripe (엔터프라이즈) |
 | 배포 | systemd + nginx |
 | 클라이언트 배포 | Homebrew Cask / DMG / 바이너리 |
 

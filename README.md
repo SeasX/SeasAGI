@@ -16,7 +16,7 @@ SeasAGI is a layered AI gateway platform consisting of three sub-projects:
 |-------------|---------|-------|-------------|
 | `SeasAGI-Client/` | **GPL 3.0** fully open-source | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | Native desktop client (Wails + Go + React), local unified gateway, API Keys never uploaded |
 | `SeasAGI-Server/` | **AGPL 3.0** open-source self-hostable | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | Community edition cloud control plane: auth / channels / provider resource pools / model catalog / Combo CRUD / usage / embedded admin dashboard / basic relay forwarding |
-| `SeasAGI-Server-Enterprise/` | Closed-source | — | Enterprise edition cloud, includes Stripe billing / multi-tenant governance / Combo governance approval / admin dashboard. See [Enterprise README](SeasAGI-Server-Enterprise/README.md) |
+| `SeasAGI-Server-Enterprise/` | Closed-source | — | Enterprise edition cloud, includes multi-tenant governance / Combo governance approval / admin dashboard. See [Enterprise README](SeasAGI-Server-Enterprise/README.md) |
 
 The client can **run independently** — all local gateway features work without a Server. The cloud is an optional value-add service providing remote accelerated channels, usage sync, team collaboration, and enterprise governance.
 
@@ -216,7 +216,6 @@ bash SeasAGI-Server-Enterprise/scripts/build.sh
 | Client Backend | Go (local gateway / routing engine / cost optimization / Provider executors) |
 | Server Framework | Go + Gin |
 | Database | SQLite |
-| Payments | Stripe (Enterprise) |
 | Deployment | systemd + nginx |
 | Client Distribution | Homebrew Cask / DMG / Binary |
 

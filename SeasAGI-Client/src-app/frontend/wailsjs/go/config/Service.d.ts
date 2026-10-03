@@ -24,13 +24,13 @@ export function GetDefaultComboName():Promise<string>;
 
 export function GetModelCombo(arg1:string):Promise<config.ModelCombo|boolean>;
 
-export function GetOAuthProviderConfig(arg1:string):Promise<config.OAuthProviderConfig|boolean>;
-
 export function GetOptimizationConfig():Promise<config.OptimizationConfig>;
 
 export function GetPlatformAPIBaseURL():Promise<string>;
 
 export function GetRateLimitConfig():Promise<config.RateLimitConfig>;
+
+export function GetSecurityConfig():Promise<config.SecurityConfig>;
 
 export function GetSelectedGrantID():Promise<string>;
 
@@ -43,8 +43,6 @@ export function ListChannels():Promise<Array<config.Channel>>;
 export function ListComboTemplates():Promise<Array<config.ModelCombo>>;
 
 export function ListModelCombos():Promise<Array<config.ModelCombo>>;
-
-export function ListOAuthProviderConfigs():Promise<Array<config.OAuthProviderConfig>>;
 
 export function NormalizeChannelWeights():Promise<Array<string>>;
 
@@ -62,11 +60,11 @@ export function SaveCustomChannel(arg1:config.Channel):Promise<string>;
 
 export function SaveModelCombo(arg1:config.ModelCombo):Promise<void>;
 
-export function SaveOAuthProviderConfig(arg1:config.OAuthProviderConfig):Promise<void>;
-
 export function SetAnalyticsEnabled(arg1:boolean):Promise<void>;
 
 export function SetAutoLaunch(arg1:boolean):Promise<void>;
+
+export function SetCavemanConfig(arg1:boolean,arg2:string):Promise<void>;
 
 export function SetDefaultComboName(arg1:string):Promise<void>;
 
@@ -76,7 +74,11 @@ export function SetOptimizationConfig(arg1:config.OptimizationConfig):Promise<vo
 
 export function SetPlatformAPIBaseURL(arg1:string):Promise<void>;
 
+export function SetRTKConfig(arg1:boolean,arg2:number):Promise<void>;
+
 export function SetRateLimitConfig(arg1:config.RateLimitConfig):Promise<void>;
+
+export function SetSecurityConfig(arg1:config.SecurityConfig):Promise<void>;
 
 export function SetSelectedGrant(arg1:string,arg2:string):Promise<void>;
 

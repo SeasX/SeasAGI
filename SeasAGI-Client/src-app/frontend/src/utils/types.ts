@@ -56,6 +56,10 @@ export interface RequestLog {
   route_steps: RouteStep[];
   status: "success" | "failure";
   duration_ms: number;
+  http_status: number;
+  ttft_ms: number;
+  input_tokens: number;
+  output_tokens: number;
   error_code: string | null;
   error_message: string | null;
 }
@@ -131,6 +135,11 @@ export interface AuthState {
   is_logged_in: boolean;
   user_id: string | null;
   email: string | null;
+}
+
+export interface OAuthProvider {
+  name: string;
+  client_id: string;
 }
 
 export interface LoginStatus {
@@ -209,25 +218,6 @@ export interface CloudCombo {
   models: string[];
   description: string;
   strategy: string;
-}
-
-export interface OAuthProvider {
-  name: string;
-  displayName: string;
-  authURL: string;
-  iconURL: string;
-}
-
-export interface OAuthConnection {
-  name: string;
-  displayName: string;
-  iconURL: string;
-  connected: boolean;
-  connecting: boolean;
-  configured: boolean;
-  clientIDMask: string;
-  expiresAt: string | null;
-  error: string;
 }
 
 export interface OptimizationRecommendation {
@@ -344,8 +334,16 @@ export interface TaskProfile {
   min_success_rate?: number;
 }
 
+export type QuickStrategyAlias =
+  | "quality_first"
+  | "cost_first"
+  | "balanced"
+  | "stable_first"
+  | "speed_first"
+  | "tools_first";
+
 export interface QuickStrategy {
-  alias: "stable_first" | "cost_first" | "speed_first" | "tools_first";
+  alias: QuickStrategyAlias;
   display_name: string;
   description: string;
   task_profile: TaskProfile;
@@ -357,6 +355,30 @@ export interface QuickStrategy {
 }
 
 // MITM 代理状态
+export interface ModelIndexEntry {
+  id: number;
+  category: string;
+  rank: number;
+  model_name: string;
+  provider: string;
+  provider_logo: string;
+  release_date: string;
+  eval_count: number;
+  evidence_status: string;
+  input_price: number;
+  output_price: number;
+  consensus_score: number;
+  detail_url: string;
+  source_key: string;
+  updated_at: string;
+}
+
+export interface ModelIndexData {
+  category: string;
+  updated_at: string;
+  entries: ModelIndexEntry[];
+}
+
 export interface MITMStatus {
   state: "stopped" | "starting" | "running" | "stopping" | "error";
   proxy_port: number;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getPlatformAPIBaseURL, getPlatformToken } from "../utils/commands";
+import { platformRequest } from "../utils/commands";
 import { useTranslation } from "../i18n";
 import { useMarketStore, type MarketOrder } from "../stores/marketStore";
 
@@ -30,16 +30,13 @@ export function TokenMyOrdersPage() {
     try {
       const p = pageNum ?? page;
       const st = status ?? statusFilter;
-      const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
       const params = new URLSearchParams();
       params.set("page", String(p));
       params.set("page_size", String(pageSize));
       if (st) params.set("status", st);
-      const resp = await fetch(`${baseURL}/token-market/orders?${params}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      const resp = await platformRequest("GET", `/token-market/orders?${params}`);
+      if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
+      const data = resp.body;
       setMyOrders(data.data || []);
       setTotal(data.total || 0);
       setTotalPages(data.total_pages || 1);
@@ -57,13 +54,9 @@ export function TokenMyOrdersPage() {
   const handleSettle = async (orderId: string) => {
     setSettlingId(orderId);
     try {
-      const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-      const resp = await fetch(`${baseURL}/token-market/orders/${orderId}/settle`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
+      const resp = await platformRequest("POST", `/token-market/orders/${orderId}/settle`);
+      if (resp.status >= 400) {
+        const errData = resp.body || {};
         throw new Error(errData.error || `HTTP ${resp.status}`);
       }
       // 更新本地状态
@@ -81,17 +74,9 @@ export function TokenMyOrdersPage() {
     setSubmittingReview(true);
     setError(null);
     try {
-      const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-      const resp = await fetch(`${baseURL}/token-market/orders/${reviewOrder}/review`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ rating: reviewRating, comment: reviewComment }),
-      });
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
+      const resp = await platformRequest("POST", `/token-market/orders/${reviewOrder}/review`, { rating: reviewRating, comment: reviewComment });
+      if (resp.status >= 400) {
+        const errData = resp.body || {};
         throw new Error(errData.error || `HTTP ${resp.status}`);
       }
       setReviewOrder(null);

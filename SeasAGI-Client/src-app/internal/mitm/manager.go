@@ -4,10 +4,20 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
+)
+
+const (
+	// defaultProxyHost 系统代理指向的本地地址（MITM 代理监听在所有网卡上）。
+	defaultProxyHost = "127.0.0.1"
+	// defaultProxyPort MITM 代理监听端口，同时也是写入系统代理的端口。
+	defaultProxyPort = 8080
 )
 
 // Manager 编排 MITM 生命周期的启动和停止，确保失败时按逆序回滚。
@@ -26,25 +36,48 @@ type Manager struct {
 	healthCancel context.CancelFunc
 }
 
+// isOwnProxyAddr 判断 current 是否指向本客户端的 MITM 代理。
+// 用于区分「SeasAGI 自身写入的系统代理」与「用户自有的代理配置」，避免误清后者。
+func isOwnProxyAddr(current string) bool {
+	current = strings.TrimSpace(current)
+	if current == "" {
+		return false
+	}
+	host, port, err := net.SplitHostPort(current)
+	if err != nil {
+		return false
+	}
+	if port != strconv.Itoa(defaultProxyPort) {
+		return false
+	}
+	switch strings.ToLower(host) {
+	case "", "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
+}
+
 // NewManager 创建 Manager 实例。gatewayURL 为本地网关地址（如 http://127.0.0.1:4318）。
 func NewManager(ca *CertificateAuthority, rules *Rules, gatewayURL string) *Manager {
 	interceptLog := NewInterceptLogger(200)
+	addr := fmt.Sprintf(":%d", defaultProxyPort)
 	return &Manager{
 		state:        StateStopped,
 		ca:           ca,
 		rules:        rules,
-		proxyAddr:    ":8080",
-		proxy:        NewProxy(":8080", ca, rules, gatewayURL, interceptLog),
+		proxyAddr:    addr,
+		proxy:        NewProxy(addr, ca, rules, gatewayURL, interceptLog),
 		interceptLog: interceptLog,
 		status: Status{
 			State:      StateStopped,
-			ProxyPort:  8080,
+			ProxyPort:  defaultProxyPort,
 			RulesCount: rules.Count(),
 		},
 	}
 }
 
-// Start 按 StartupStep 顺序逐步启动。任一步失败时逆序回滚已完成步骤。
+// Start 按 StartupStep 顺序逐步启动。任一步失败时逆序回滚已完成步骤，
+// 并返回具体错误，供上层（前端）感知真实失败原因。
 func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -54,11 +87,24 @@ func (m *Manager) Start(ctx context.Context) error {
 		return nil
 	}
 
-	// 残留系统代理清理（崩溃恢复场景）
+	// 刷新基线域名（厂商 API + 受支持目标，含企业动态下发），
+	// 再载入用户自定义增删。两者合并后即为本次运行的拦截清单。
+	m.rules.SetBase(DefaultBaseDomains())
+	if err := m.rules.Load(); err != nil {
+		logging.Warningf("mitm: load persisted rules failed: %v", err)
+	}
+
+	// 残留系统代理清理（崩溃恢复场景）：
+	// 仅当当前系统代理确实指向本客户端时才清除，避免误清用户自有的代理配置。
 	if m.sysProxy != nil {
 		if active, _ := m.sysProxy.IsActive(); active {
-			logging.Info("mitm: detected residual system proxy, clearing before start")
-			_ = m.sysProxy.Clear()
+			cur, cerr := m.sysProxy.CurrentAddr()
+			if cerr == nil && isOwnProxyAddr(cur) {
+				logging.Infof("mitm: detected residual SeasAGI system proxy (%s), clearing before start", cur)
+				_ = m.sysProxy.Clear()
+			} else {
+				logging.Warningf("mitm: system proxy is active but not owned by SeasAGI (%s), leaving it untouched", cur)
+			}
 		}
 	}
 
@@ -67,49 +113,69 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.status.LastError = ""
 
 	// Step 1: CA
+	if m.ca == nil {
+		werr := fmt.Errorf("CA not initialized")
+		m.failWith(werr)
+		return werr
+	}
 	if err := m.ca.EnsureCA(); err != nil {
 		m.rollback([]string{"ca"})
-		m.failWith(fmt.Errorf("CA init: %w", err))
-		return nil
+		werr := fmt.Errorf("CA init: %w", err)
+		m.failWith(werr)
+		return werr
 	}
+	// CA 已在本地生成（不代表已被系统信任）。
 	m.status.CAInstalled = true
+	m.status.CATrusted = false
 
 	// Step 2: Trust（如果有注入）
 	if m.trust != nil {
 		caPEM, err := m.ca.PEMBytes()
 		if err != nil {
 			m.rollback([]string{"ca"})
-			m.failWith(fmt.Errorf("export CA PEM: %w", err))
-			return nil
+			werr := fmt.Errorf("export CA PEM: %w", err)
+			m.failWith(werr)
+			return werr
 		}
 		if err := m.trust.Install(caPEM); err != nil {
 			m.rollback([]string{"ca"})
-			m.failWith(fmt.Errorf("install CA trust: %w", err))
-			return nil
+			werr := fmt.Errorf("install CA trust: %w", err)
+			m.failWith(werr)
+			return werr
 		}
-		m.status.CAInstalled = true
+		if ok, err := m.trust.IsInstalled(); err == nil && !ok {
+			m.rollback([]string{"ca"})
+			werr := fmt.Errorf("CA trust installed but not verifiable")
+			m.failWith(werr)
+			return werr
+		}
+		m.status.CATrusted = true
 	}
 
 	// Step 3: Proxy
 	if err := m.proxy.Start(ctx); err != nil {
 		m.rollback([]string{"trust", "ca"})
-		m.failWith(fmt.Errorf("start proxy: %w", err))
-		return nil
+		werr := fmt.Errorf("start proxy: %w", err)
+		m.failWith(werr)
+		return werr
 	}
 
 	// Step 4: SystemProxy（如果有注入）
 	if m.sysProxy != nil {
 		if !m.proxy.IsHealthy() {
 			m.rollback([]string{"proxy", "trust", "ca"})
-			m.failWith(fmt.Errorf("proxy not healthy after start"))
-			return nil
+			werr := fmt.Errorf("proxy not healthy after start")
+			m.failWith(werr)
+			return werr
 		}
-		if err := m.sysProxy.Set("127.0.0.1:8080"); err != nil {
+		if err := m.sysProxy.Set(fmt.Sprintf("%s:%d", defaultProxyHost, defaultProxyPort)); err != nil {
 			m.rollback([]string{"proxy", "trust", "ca"})
-			m.failWith(fmt.Errorf("set system proxy: %w", err))
-			return nil
+			werr := fmt.Errorf("set system proxy: %w", err)
+			m.failWith(werr)
+			return werr
 		}
 		m.status.SystemProxy = true
+		m.status.SystemProxyOwned = true
 	}
 
 	m.state = StateRunning
@@ -148,9 +214,16 @@ func (m *Manager) Stop() error {
 	m.healthProbe = nil
 
 	// 逆序停止
+	// 仅清除指向本客户端的系统代理，避免把用户后来手动配置的代理一并清掉。
 	if m.sysProxy != nil {
-		_ = m.sysProxy.Clear()
+		cur, cerr := m.sysProxy.CurrentAddr()
+		if cerr == nil && isOwnProxyAddr(cur) {
+			_ = m.sysProxy.Clear()
+		} else {
+			logging.Warningf("mitm: system proxy not owned by SeasAGI (%s), not clearing on stop", cur)
+		}
 		m.status.SystemProxy = false
+		m.status.SystemProxyOwned = false
 	}
 
 	if m.proxy != nil {
@@ -158,12 +231,10 @@ func (m *Manager) Stop() error {
 	}
 
 	// CA trust 保留（不卸载，避免反复安装/卸载）
-
 	m.ca.Cleanup()
 
 	m.state = StateStopped
 	m.status.State = StateStopped
-	m.status.CAInstalled = false
 	return nil
 }
 
@@ -179,21 +250,29 @@ func (m *Manager) GetRules() []string {
 	return m.rules.List()
 }
 
-// AddRule 动态新增拦截域名。
+// AddRule 动态新增拦截域名，并持久化用户改动。
 func (m *Manager) AddRule(domain string) error {
 	m.mu.Lock()
 	m.rules.Add(domain)
 	m.status.RulesCount = m.rules.Count()
 	m.mu.Unlock()
+	if err := m.rules.Save(); err != nil {
+		logging.Warningf("mitm: persist rules failed: %v", err)
+		return err
+	}
 	return nil
 }
 
-// RemoveRule 动态移除拦截域名。
+// RemoveRule 动态移除拦截域名，并持久化用户改动。
 func (m *Manager) RemoveRule(domain string) error {
 	m.mu.Lock()
 	m.rules.Remove(domain)
 	m.status.RulesCount = m.rules.Count()
 	m.mu.Unlock()
+	if err := m.rules.Save(); err != nil {
+		logging.Warningf("mitm: persist rules failed: %v", err)
+		return err
+	}
 	return nil
 }
 

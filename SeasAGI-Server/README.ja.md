@@ -68,7 +68,6 @@ SeasAGI-Server/
 
 以下の機能はエンタープライズプロジェクト `SeasAGI-Server-Enterprise/` に移動されました：
 
-- Stripe 課金 & Checkout Session
 - プラン駆動の商用機能ゲーティング
 - マルチテナント請求 / 注文 / 支払い / 請求書
 - Combo ガバナンス（可視性ポリシー、デプロイ承認）

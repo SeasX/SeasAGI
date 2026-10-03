@@ -131,6 +131,18 @@ SeasAGI-Client/
 - **クラッシュリカバリ**：再起動時に残留システムプロキシを自動クリーンアップ、ヘルスプローブ goroutine がプロキシ異常を検出すると自動停止
 - **パススルー安全性**：非マッチングドメインは透過的トンネル転送、60 秒タイムアウト保護で通常のブラウジングに影響なし
 
+#### 既知の制限（ハイジャック対象外）
+
+ワンクリックハイジャックはシステムプロキシ（TCP 上の HTTP/HTTPS）とローカル CA に基づいています。以下のトラフィックは客観的な盲区であり、監視・治理の対象になりません：
+
+- **HTTP/3（QUIC / UDP 443）**：システムプロキシは TCP のみを扱うため、UDP ベースのトラフィックはハイジャックされません
+- **h2 / gRPC 長時間接続**：標準 HTTP/HTTPS リクエストのみ解析・治理し、gRPC などのバイナリ長時間接続は書き換えられません
+- **証明書ピンニング（Certificate Pinning）クライアント**：内部で証明書検証を行うアプリはローカル CA を拒否し、MITM を回避します
+- **システムプロキシを読まないプロセス**：独自ネットワークスタックや明示的プロキシを持つ CLI/ツールは、環境変数の手動設定が必要です（「CLI 互換ヒント」参照）
+- **ハイジャックドメインリスト外のトラフィック**：リスト内のドメインのみローカルゲートウェイへ転送されます
+
+> WebSocket（ws/wss）トラフィックは同じゲートウェイメインパスを再利用し、正常にハイジャック・課金されます。
+
 ### エクスペリエンス
 
 - Playground 即時テストページ
@@ -149,7 +161,7 @@ SeasAGI-Client/
 [`scripts/version.txt`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/scripts/version.txt) が唯一のバージョン番号定義ファイルです：
 
 ```
-0.1.0
+0.1.5
 ```
 
 - バージョン番号の更新はこのファイルを変更するだけで完了します
@@ -167,7 +179,7 @@ SeasAGI-Client/
 クライアントインターフェース左上の Logo 右側にバージョン番号バッジを表示：
 
 ```
-[icon] SeasAGI  v0.1.0
+[icon] SeasAGI  v0.1.5
 ```
 
 実装箇所：[`Layout.tsx`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/src-app/frontend/src/components/Layout.tsx) 内で `import.meta.env.VITE_APP_VERSION` を使用してレンダリング。

@@ -131,6 +131,18 @@ SeasAGI-Client/
 - **크래시 복구**: 재시작 시 잔류 시스템 프록시 자동 정리, 헬스 프로브 goroutine이 프록시 이상 감지 시 자동 중지
 - **패스스루 안전성**: 비일치 도메인은 투명 터널 전달, 60초 타임아웃 보호로 일반 인터넷 사용에 영향 없음
 
+#### 알려진 제한 (가로채지 않음)
+
+원클릭 하이재킹은 시스템 프록시(TCP 기반 HTTP/HTTPS)와 로컬 CA에 기반합니다. 다음 트래픽은 객관적인 사각지대로 모니터링이나 거버넌스가 불가능합니다:
+
+- **HTTP/3 (QUIC / UDP 443)**: 시스템 프록시는 TCP만 처리하므로 UDP 기반 트래픽은 가로채지 않습니다
+- **h2 / gRPC 장기 연결**: 표준 HTTP/HTTPS 요청만 파싱·거버넌스하며, gRPC 등 바이너리 장기 연결은 재작성되지 않습니다
+- **인증서 고정(Certificate Pinning) 클라이언트**: 내부적으로 인증서 검증을 수행하는 앱은 로컬 CA를 거부하여 MITM을 우회합니다
+- **시스템 프록시를 읽지 않는 프로세스**: 자체 네트워크 스택을 갖거나 명시적 프록시를 지정하는 CLI/도구는 환경 변수를 수동으로 설정해야 합니다(「CLI 호환 힌트」 참조)
+- **가로채기 도메인 목록 외 트래픽**: 목록에 있는 도메인만 로컬 게이트웨이로 전달됩니다
+
+> WebSocket(ws/wss) 트래픽은 동일한 게이트웨이 메인 경로를 재사용하며 정상적으로 가로채기 및 과금이 가능합니다.
+
 ### 사용자 경험
 
 - Playground 즉시 테스트 페이지
@@ -149,7 +161,7 @@ SeasAGI-Client/
 [`scripts/version.txt`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/scripts/version.txt) 가 유일한 버전 번호 정의 파일입니다:
 
 ```
-0.1.0
+0.1.5
 ```
 
 - 버전 번호 업데이트는 이 파일만 수정하면 됩니다.
@@ -167,7 +179,7 @@ SeasAGI-Client/
 클라이언트 인터페이스左上단 Logo 오른쪽에 버전 번호 배지가 표시됩니다:
 
 ```
-[icon] SeasAGI  v0.1.0
+[icon] SeasAGI  v0.1.5
 ```
 
 구현 위치: [`Layout.tsx`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/src-app/frontend/src/components/Layout.tsx) 에서 `import.meta.env.VITE_APP_VERSION`을 사용하여 렌더링.

@@ -21,6 +21,7 @@ import (
 	"github.com/SeasAGI/SeasAGI-Client/internal/providers"
 	"github.com/SeasAGI/SeasAGI-Client/internal/routing"
 	"github.com/SeasAGI/SeasAGI-Client/internal/rtk"
+	"github.com/SeasAGI/SeasAGI-Client/internal/usage"
 )
 
 type Service struct {
@@ -32,6 +33,8 @@ type Service struct {
 	configSvc       *config.Service
 	authSvc         *auth.Service
 	logSvc          *logs.Service
+	usageSvc        *usage.Service
+	security        *securityGuard
 	resolver        *routing.Resolver
 	rtkPipeline     *rtk.Pipeline
 	circuitBreakers map[string]*providers.CircuitBreaker
@@ -54,6 +57,8 @@ type Service struct {
 	oauthRefresher *providers.OAuthTokenRefresher
 	// Per-channel concurrency limiter (P2-23)
 	concurrencyLimiter *providers.ConcurrencyLimiter
+	// Request-level rate limiter (RPM/TPM/min-interval/global concurrency)
+	rateLimiter *rateLimiter
 	// HTTP client for grant relay routing
 	grantHTTPClient *http.Client
 }
@@ -152,6 +157,8 @@ func NewService(
 		healthCancel:    nil,
 		comboMetrics:    make(map[string]*ComboRouteMetrics),
 		stateStore:      stateStore,
+		security:        newSecurityGuard(),
+		rateLimiter:     newRateLimiter(),
 	}
 
 	// Start auto-save if state store is available
@@ -195,9 +202,9 @@ func (s *Service) Start(ctx context.Context) error {
 	mux.HandleFunc("/v1/audio/speech", s.handleTTS)
 	mux.HandleFunc("/v1/audio/transcriptions", s.handleSTT)
 
-	// WebSocket bridge
+	// WebSocket bridge（与 HTTP 主链路共用治理逻辑）
 	if s.wsBridge == nil {
-		s.wsBridge = NewWSBridge()
+		s.wsBridge = NewWSBridge(s)
 	}
 	mux.HandleFunc("/v1/ws", s.wsBridge.HandleWS)
 
@@ -274,6 +281,34 @@ func (s *Service) SetAccessToken(token string) {
 	s.accessToken = token
 }
 
+// SetUsageService 注入用量记账服务；未注入时网关跳过用量记录。
+func (s *Service) SetUsageService(svc *usage.Service) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.usageSvc = svc
+}
+
+// currentUsageService 返回用量记账服务快照，避免热更新时的数据竞争。
+func (s *Service) currentUsageService() *usage.Service {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.usageSvc
+}
+
+// SetRTKConfig 热更新 RTK 压缩管线（设置页保存后立即生效，无需重启网关）。
+func (s *Service) SetRTKConfig(enabled bool, maxOutputChars int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rtkPipeline = rtk.NewPipeline(enabled, maxOutputChars)
+}
+
+// currentRTKPipeline 返回 RTK 管线快照，避免热更新时的数据竞争。
+func (s *Service) currentRTKPipeline() *rtk.Pipeline {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.rtkPipeline
+}
+
 func (s *Service) handleListModels(w http.ResponseWriter, r *http.Request) {
 	if !s.validateToken(r) {
 		writeJSONError(w, http.StatusUnauthorized, "Invalid access token")
@@ -310,11 +345,16 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// DLP (Data Loss Prevention): Advanced masking would be applied here on
-	// req.Messages before forwarding to the upstream provider, using
-	// security.NewDLPMatcher().MaskMessagesAdvanced(req.Messages). This masks
-	// PII, PEM private key blocks, and secret assignment values (password=,
-	// secret=, api_key=, token=) to prevent leakage to third-party LLMs.
+	// 请求级限流预检：月度成本硬上限 / RPM / TPM / 最小间隔 / 全局并发。
+	release, allowed := s.checkRateLimits(w)
+	if !allowed {
+		return
+	}
+	defer release()
+
+	// DLP (Data Loss Prevention): 内容治理在下方完成 —— 先按原始内容做提示注入
+	// 检测，再按需对 messages 做 PII/DLP 脱敏（PII、PEM 私钥块、secret 赋值行），
+	// 防止敏感信息泄露给第三方 LLM。
 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -325,11 +365,30 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 	var rawBody map[string]any
 	_ = json.Unmarshal(bodyBytes, &rawBody)
 
+	// 脱敏会原地改写 rawBody 中的 messages；命中后重新序列化请求体，确保 BYOK 与
+	// Grant 中继两条转发路径都拿到脱敏后的内容。
+	secCfg := s.configSvc.GetSecurityConfig()
+	injection := injectionFinding{}
+	if rawBody != nil {
+		var maskedHits int
+		injection, maskedHits = s.security.governRequestBody(secCfg, rawBody)
+		if maskedHits > 0 {
+			if remarshaled, mErr := json.Marshal(rawBody); mErr == nil {
+				bodyBytes = remarshaled
+			}
+			logging.Warningf("PII/DLP masked %d content block(s) in chat request", maskedHits)
+		}
+	}
+
 	req, err := protocol.ParseRequest(bodyBytes)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	// 旁路采集响应用量（状态码/TTFT/token/限流），不影响原有响应语义。
+	capture := newUsageCapture(w, req.Stream)
+	w = capture
 
 	req.Messages = flattenMessagesContent(req.Messages)
 
@@ -355,6 +414,23 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		req.Messages = rtk.CavemanInjectIntoCanonical(req.Messages, true, cfg.CavemanStyle)
 	}
 
+	// RTK：压缩请求中回传的工具结果（role=tool），降低上游 token 消耗
+	rtkPipeline := s.currentRTKPipeline()
+	if rtkPipeline != nil && rtkPipeline.Enabled {
+		req.Messages = rtk.ApplyPipelineToMessages(req.Messages, rtkPipeline)
+	}
+
+	// Caveman/RTK 只改 canonical messages；这里把修改后的 messages 回写 rawBody 并重新
+	// 序列化 bodyBytes，使 Grant 中继（直接转发 bodyBytes）与 Passthrough（转发 rawBody）
+	// 两条路径同样拿到注入/压缩后的内容，模式与上方 DLP 一致。仅限 openai-chat 源格式：
+	// gemini/anthropic 等源的 wire 键不同，回写会引入非法字段。
+	if rawBody != nil && req.SourceFormat == protocol.FormatOpenAIChat {
+		rawBody["messages"] = req.Messages
+		if remarshaled, mErr := json.Marshal(rawBody); mErr == nil {
+			bodyBytes = remarshaled
+		}
+	}
+
 	// Extract task_type from request for task-aware routing
 	taskType := ""
 	if rawBody != nil {
@@ -364,10 +440,12 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 			taskType = "tools"
 		}
 	}
+	// v0.2.0: 场景化意图识别（Fast Path 启发式），驱动 Combo 按需适配路由
+	intent := routing.DetectIntent(req.Messages)
 	if taskType == "" || taskType == "chat" {
 		// Auto-detect task type from message content when not explicitly set
-		if detected := routing.DetectTaskType(req.Messages); detected != "chat" {
-			taskType = detected
+		if intent.TaskType != "chat" {
+			taskType = intent.TaskType
 		}
 	}
 	if taskType == "" {
@@ -393,12 +471,26 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	normalizedModel, plan, err := s.resolver.ResolveChatPlan(req.Model, taskType)
+	// 调试注入开关（仅本地 Playground 使用）：命中后在非流式响应附加 _combo_steps/_intent
+	debugTrace := false
+	if rawBody != nil {
+		if v, ok := rawBody["_seasagi_debug"].(bool); ok {
+			debugTrace = v
+			delete(rawBody, "_seasagi_debug") // 不向下游透传
+		}
+	}
+
+	normalizedModel, plan, err := s.resolver.ResolveChatPlan(req.Model, taskType, intent)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	req.Model = normalizedModel
+
+	// 目标 channel 已知，叠加 per-channel 限流覆盖。
+	if len(plan) > 0 && !s.checkChannelRateLimit(w, plan[0].Channel.ChannelID) {
+		return
+	}
 
 	// Apply request-level constraints to filter candidates
 	if len(appliedConstraints) > 0 {
@@ -432,6 +524,7 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 	var errCode *string
 	var errMessage *string
 	selectedChannelID := ""
+	selectedChannelName := ""
 	selectedUpstreamModel := ""
 	var routeSteps []logs.RouteStep
 	routeTrace := summarizeRoutePlan(plan)
@@ -446,6 +539,20 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 
 	defer func() {
 		duration := float64(time.Since(start).Milliseconds())
+		intentScenario := ""
+		if intent != nil {
+			intentScenario = intent.Scenario
+		}
+		// 采集响应侧指标（HTTP 码 / TTFT / token）写入请求日志，供监控与排障。
+		httpStatus, ttftMs, usageObj, _ := capture.usageSnapshot()
+		if ttftMs < 0 {
+			ttftMs = 0
+		}
+		var inputTokens, outputTokens int64
+		if usageObj != nil {
+			inputTokens = tokenValue(usageObj, "prompt_tokens", "input_tokens")
+			outputTokens = tokenValue(usageObj, "completion_tokens", "output_tokens")
+		}
 		_ = s.logSvc.RecordLog(logs.RequestLog{
 			RequestID:          fmt.Sprintf("req_%d", time.Now().UnixNano()),
 			CreatedAt:          time.Now().UTC().Format(time.RFC3339),
@@ -456,11 +563,37 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 			RouteSteps:         routeSteps,
 			Status:             status,
 			DurationMs:         duration,
+			HTTPStatus:         httpStatus,
+			TTFTMs:             ttftMs,
+			InputTokens:        inputTokens,
+			OutputTokens:       outputTokens,
 			ErrorCode:          errCode,
 			ErrorMessage:       errMessage,
 			AppliedConstraints: constraintsJSON,
+			IntentScenario:     intentScenario,
+		})
+		s.recordUsageAndTokens(capture, usageMeta{
+			ChannelID:   selectedChannelID,
+			ChannelName: selectedChannelName,
+			Model:       req.Model,
+			Headers:     w.Header(),
+			Always:      true,
 		})
 	}()
+
+	// 提示注入处置：block 直接拦截（HTTP 4xx，用量不记账），log 仅告警后放行。
+	if injection.Detected {
+		if secCfg.PromptInjectionAction == config.PromptInjectionBlock {
+			status = "failure"
+			code := "prompt_injection_blocked"
+			message := "Request blocked by security policy: potential prompt injection detected"
+			errCode = &code
+			errMessage = &message
+			writeJSONError(w, http.StatusBadRequest, message)
+			return
+		}
+		logging.Warningf("prompt injection detected: severity=%s model=%s", injection.Severity, req.Model)
+	}
 
 	// P8: Grant routing — if user has an active grant, route through enterprise relay
 	grantRelayURL := s.configSvc.GetSelectedGrantRelayURL()
@@ -470,6 +603,7 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		if err == nil {
 			status = "success"
 			selectedChannelID = "grant_" + grantID
+			selectedChannelName = "Token Market Relay"
 			defer resp.Body.Close()
 			s.proxyResponse(w, resp)
 			return
@@ -482,6 +616,7 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 	routeTrace = summarizeAttemptTrace(attempts)
 	if usedStep != nil {
 		selectedChannelID = usedStep.Channel.ChannelID
+		selectedChannelName = usedStep.Channel.DisplayName
 		selectedUpstreamModel = usedStep.UpstreamModel
 	}
 	if forwardErr != nil {
@@ -490,7 +625,7 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		providerErr, ok := forwardErr.(*providers.ProviderError)
 		if ok {
 			code := providerErr.Type
-			message := providerErr.Message
+			message := s.security.sanitizeError(secCfg, providerErr.Message)
 			errCode = &code
 			errMessage = &message
 			writeJSONError(w, statusFromProviderError(providerErr), message)
@@ -498,7 +633,7 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		}
 
 		code := "upstream_error"
-		message := forwardErr.Error()
+		message := s.security.sanitizeError(secCfg, forwardErr.Error())
 		errCode = &code
 		errMessage = &message
 		writeJSONError(w, http.StatusBadGateway, message)
@@ -510,6 +645,10 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 	// Record success metrics for the combo
 	s.recordComboMetrics(normalizedModel, len(attempts), true)
 	copyHeaders(w.Header(), resp.Header)
+	injectDebug := debugTrace && !req.Stream
+	if injectDebug {
+		w.Header().Del("Content-Length") // 注入后长度变化，交给 Go 自动分块
+	}
 	w.WriteHeader(resp.StatusCode)
 
 	if req.Stream {
@@ -517,34 +656,9 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 			_ = protocol.ProcessReasoningSSEStream(resp.Body, w)
 			return
 		}
-		if s.rtkPipeline != nil && s.rtkPipeline.Enabled {
-			_ = rtk.ProcessSSEStream(resp.Body, w, s.rtkPipeline)
-			return
-		}
+		// 响应方向原样透传：模型输出（最终回答/工具入参）不做 RTK 改写
 		_, _ = io.Copy(w, resp.Body)
 		return
-	}
-
-	if s.rtkPipeline != nil && s.rtkPipeline.Enabled {
-		respBytes, readErr := io.ReadAll(resp.Body)
-		if readErr == nil {
-			processed := rtk.ProcessNonStreamResponse(respBytes, s.rtkPipeline)
-			if needsReasoning {
-				var respMap map[string]any
-				if json.Unmarshal(processed, &respMap) == nil {
-					reasoning, cleanBody := protocol.ExtractReasoningFromResponse(respMap)
-					if reasoning != "" {
-						merged := protocol.MergeReasoningIntoContent(cleanBody, reasoning)
-						if mergedBytes, marshalErr := json.Marshal(merged); marshalErr == nil {
-							w.Write(mergedBytes)
-							return
-						}
-					}
-				}
-			}
-			w.Write(processed)
-			return
-		}
 	}
 
 	if needsReasoning {
@@ -566,7 +680,34 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if injectDebug {
+		// ponytail: 仅覆盖普通非流式路径；reasoning 分支提前 return，不含调试字段
+		respBytes, readErr := io.ReadAll(resp.Body)
+		if readErr == nil {
+			_, _ = w.Write(injectDebugKeys(respBytes, routeSteps, intent))
+			return
+		}
+	}
+
 	_, _ = io.Copy(w, resp.Body)
+}
+
+// injectDebugKeys 在非流式 JSON 响应中附加执行链轨迹与识别意图，供 Playground 诊断展示。
+func injectDebugKeys(body []byte, routeSteps []logs.RouteStep, intent *routing.IntentContext) []byte {
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil || m == nil {
+		return body
+	}
+	if len(routeSteps) > 0 {
+		m["_combo_steps"] = routeSteps
+	}
+	if intent != nil {
+		m["_intent"] = intent
+	}
+	if out, err := json.Marshal(m); err == nil {
+		return out
+	}
+	return body
 }
 
 func (s *Service) validateToken(r *http.Request) bool {
@@ -574,11 +715,73 @@ func (s *Service) validateToken(r *http.Request) bool {
 	if len(auth) <= 7 || !strings.HasPrefix(auth, "Bearer ") {
 		return false
 	}
-	token := strings.TrimSpace(auth[7:])
+	return s.tokenMatches(strings.TrimSpace(auth[7:]))
+}
+
+// tokenMatches 以常量时间比较访问令牌，供 HTTP 与 WebSocket 入口共用。
+func (s *Service) tokenMatches(token string) bool {
+	if token == "" {
+		return false
+	}
 	s.mu.RLock()
 	currentToken := s.accessToken
 	s.mu.RUnlock()
-	return token != "" && subtle.ConstantTimeCompare([]byte(token), []byte(currentToken)) == 1
+	return subtle.ConstantTimeCompare([]byte(token), []byte(currentToken)) == 1
+}
+
+// ServeGatewayRequest 在进程内复用 HTTP 主链路处理一次请求，返回（状态码, 响应体）。
+// WebSocket 桥接通过它复用与 HTTP 完全一致的鉴权 / 限流 / DLP / 路由 / 转发 / 记账逻辑，
+// 避免 WebSocket 成为绕过治理的旁路。
+func (s *Service) ServeGatewayRequest(path string, body []byte, token string) (int, []byte) {
+	req, err := http.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	if err != nil {
+		return http.StatusBadRequest, []byte(`{"error":{"message":"invalid ws request"}}`)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := &bodyRecorder{header: make(http.Header)}
+	switch path {
+	case "/v1/chat/completions":
+		s.handleChatCompletions(rec, req)
+	case "/v1/models":
+		s.handleListModels(rec, req)
+	default:
+		return http.StatusNotFound, []byte(`{"error":{"message":"unsupported websocket message type"}}`)
+	}
+	return rec.snapshot()
+}
+
+// bodyRecorder 把 handler 的响应收集到内存，供进程内复用 HTTP 链路时取回结果。
+type bodyRecorder struct {
+	header http.Header
+	status int
+	buf    bytes.Buffer
+}
+
+func (r *bodyRecorder) Header() http.Header { return r.header }
+
+func (r *bodyRecorder) WriteHeader(status int) {
+	if r.status == 0 {
+		r.status = status
+	}
+}
+
+func (r *bodyRecorder) Write(p []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.buf.Write(p)
+}
+
+// Flush 让 bodyRecorder 满足 http.Flusher（流式 handler 会调用），此处仅累加不实时下发。
+func (r *bodyRecorder) Flush() {}
+
+func (r *bodyRecorder) snapshot() (int, []byte) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.status, r.buf.Bytes()
 }
 
 // forwardRequest tries each candidate step in order.

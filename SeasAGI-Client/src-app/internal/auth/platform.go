@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -72,7 +74,7 @@ func (s *Service) Register(email, password, displayName string) error {
 		if result.Error == "" {
 			result.Error = "platform registration failed"
 		}
-		return fmt.Errorf(result.Error)
+		return errors.New(result.Error)
 	}
 	if result.AccessToken == "" {
 		return fmt.Errorf("platform returned empty access token")
@@ -148,6 +150,87 @@ func (s *Service) FetchCloudBilling() (*CloudBilling, error) {
 		return nil, fmt.Errorf("fetch cloud billing failed")
 	}
 	return result.Data, nil
+}
+
+// OverageUsage 用户当期超额用量记录（对应 platform-api /usage/overage/user）。
+type OverageUsage struct {
+	OverageID       string  `json:"overage_id"`
+	UserID          string  `json:"user_id"`
+	PlanID          string  `json:"plan_id"`
+	BillingPeriod   string  `json:"billing_period"`
+	OverageRequests int     `json:"overage_requests"`
+	OverageCost     float64 `json:"overage_cost"`
+	Currency        string  `json:"currency"`
+	Billed          bool    `json:"billed"`
+	InvoiceID       string  `json:"invoice_id"`
+	CreatedAt       string  `json:"created_at"`
+}
+
+func (s *Service) FetchOverageUsage() (*OverageUsage, error) {
+	if !s.IsLoggedIn() {
+		return nil, fmt.Errorf("not logged in")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, platformAPIBaseURL()+"/usage/overage/user", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.GetPlatformToken())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("fetch overage usage failed")
+	}
+
+	var record OverageUsage
+	if err := json.NewDecoder(resp.Body).Decode(&record); err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+// DoPlatformRequest 代客户端调用平台 API：在后端附加访问令牌，前端无需持有平台 Token。
+// 返回（HTTP 状态码, 原始响应体, error）。error 仅表示本地失败（未登录 / 请求构造失败 / 网络不可达），
+// 平台返回的 4xx/5xx 会如实通过状态码回传，便于调用方按原有语义处理。
+func (s *Service) DoPlatformRequest(method, path string, body []byte) (int, []byte, error) {
+	if !s.IsLoggedIn() {
+		return 0, nil, fmt.Errorf("not logged in")
+	}
+	if !strings.HasPrefix(path, "/") {
+		return 0, nil, fmt.Errorf("invalid platform path %q", path)
+	}
+
+	var reader *bytes.Reader
+	if len(body) > 0 {
+		reader = bytes.NewReader(body)
+	} else {
+		reader = bytes.NewReader(nil)
+	}
+	req, err := http.NewRequest(method, platformAPIBaseURL()+path, reader)
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.GetPlatformToken())
+	if len(body) > 0 {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	return resp.StatusCode, respBody, nil
 }
 
 type ActiveGrant struct {
@@ -302,7 +385,7 @@ func (s *Service) FetchPlans() ([]CloudPlan, error) {
 		if result.Error == "" {
 			result.Error = "fetch plans failed"
 		}
-		return nil, fmt.Errorf(result.Error)
+		return nil, errors.New(result.Error)
 	}
 	if result.Data == nil {
 		return []CloudPlan{}, nil
@@ -541,7 +624,7 @@ func (s *Service) FetchOfficialComboTemplates(ctx context.Context) ([]CloudCombo
 		if result.Error == "" {
 			result.Error = "fetch official combo templates failed"
 		}
-		return nil, fmt.Errorf(result.Error)
+		return nil, errors.New(result.Error)
 	}
 	if result.Data == nil {
 		return []CloudComboTemplate{}, nil

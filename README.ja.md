@@ -16,7 +16,7 @@ SeasAGI は 3 つのサブプロジェクトから構成される階層型 AI �
 |-------------|---------|-------|-------------|
 | `SeasAGI-Client/` | **GPL 3.0** 完全オープンソース | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | ネイティブデスクトップクライアント（Wails + Go + React）、ローカル統合ゲートウェイ、API Keys はアップロードされない |
 | `SeasAGI-Server/` | **AGPL 3.0** オープンソース セルフホスト可能 | [![Build status](https://ci.appveyor.com/api/projects/status/github/SeasX/SeasAGI?svg=true)](https://ci.appveyor.com/project/SeasX/SeasAGI) | コミュニティエディションクラウドコントロールプレーン：認証 / チャネル / Provider リソースプール / モデルカタログ / Combo CRUD / 使用量 / 組み込み管理ダッシュボード / 基本リレーフォワーディング |
-| `SeasAGI-Server-Enterprise/` | クローズドソース | — | エンタープライズエディションクラウド、Stripe 課金 / マルチテナントガバナンス / Combo ガバナンス承認 / 管理ダッシュボードを含む。[エンタープライズ README](SeasAGI-Server-Enterprise/README.md) を参照 |
+| `SeasAGI-Server-Enterprise/` | クローズドソース | — | エンタープライズエディションクラウド、マルチテナントガバナンス / Combo ガバナンス承認 / 管理ダッシュボードを含む。[エンタープライズ README](SeasAGI-Server-Enterprise/README.md) を参照 |
 
 クライアントは**単体で動作**可能 — すべてのローカルゲートウェイ機能は Server なしで動作します。クラウドはリモート高速チャネル、使用量同期、チーム協調、エンタープライズガバナンスを提供するオプションの付加価値サービスです。
 
@@ -214,7 +214,6 @@ bash SeasAGI-Server-Enterprise/scripts/build.sh
 | クライアントバックエンド | Go（ローカルゲートウェイ / ルーティングエンジン / コスト最適化 / Provider Executor） |
 | サーバーフレームワーク | Go + Gin |
 | データベース | SQLite |
-| 決済 | Stripe（エンタープライズ） |
 | デプロイ | systemd + nginx |
 | クライアント配布 | Homebrew Cask / DMG / Binary |
 

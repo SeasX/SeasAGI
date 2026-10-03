@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -20,9 +21,10 @@ type AuthInfo struct {
 }
 
 type Service struct {
-	mu    sync.RWMutex
-	info  AuthInfo
-	token string
+	mu           sync.RWMutex
+	info         AuthInfo
+	token        string
+	oauthRunning bool
 }
 
 func NewService() *Service {
@@ -321,6 +323,55 @@ func (s *Service) FetchModelCatalog(ctx context.Context) ([]map[string]interface
 	if resp.StatusCode >= 400 {
 		if result.Error == "" {
 			result.Error = "fetch model catalog failed"
+		}
+		return nil, errors.New(result.Error)
+	}
+	return result.Data, nil
+}
+
+// FetchModelIndex 拉取 AI 模型指数公开榜单（企业服务端优先，降级开源平台 API）。
+// 该端点为公开资讯内容，无需登录；category 为空时服务端返回综合榜。
+func (s *Service) FetchModelIndex(ctx context.Context, category string) (map[string]interface{}, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+
+	base := enterpriseAPIBaseURL()
+	if base == "" {
+		base = platformAPIBaseURL()
+	}
+	endpoint := base + "/model-index"
+	if category != "" {
+		endpoint += "?category=" + url.QueryEscape(category)
+	}
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	if s.GetPlatformToken() != "" {
+		req.Header.Set("Authorization", "Bearer "+s.GetPlatformToken())
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Data  map[string]interface{} `json:"data"`
+		Error string                 `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		if result.Error == "" {
+			result.Error = "fetch model index failed"
 		}
 		return nil, errors.New(result.Error)
 	}

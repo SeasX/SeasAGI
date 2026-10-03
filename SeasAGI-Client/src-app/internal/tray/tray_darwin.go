@@ -15,6 +15,7 @@ void destroyTray();
 */
 import "C"
 import (
+	"strings"
 	"sync"
 	"unsafe"
 )
@@ -24,6 +25,7 @@ var (
 	menuByTag    = make(map[int]func())
 	activeChanID string
 	nextTag      int
+	reopenFn     func()
 )
 
 //export goTrayMenuClick
@@ -34,6 +36,25 @@ func goTrayMenuClick(tag C.int) {
 	if ok && fn != nil {
 		fn()
 	}
+}
+
+// 由 ObjC 的 AppDelegate category（applicationShouldHandleReopen）在主线程调用，
+// 语义与托盘"显示窗口"一致：唤出主窗口。
+//
+//export goTrayReopen
+func goTrayReopen() {
+	menuMu.Lock()
+	fn := reopenFn
+	menuMu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+func setReopenHandler(fn func()) {
+	menuMu.Lock()
+	reopenFn = fn
+	menuMu.Unlock()
 }
 
 func nextMenuTag(fn func()) int {
@@ -59,9 +80,10 @@ func stopPlatformTray() {
 func rebuildPlatformMenu(showFn, quitFn func(), channels []ChannelInfo, onSwitch func(string)) {
 	C.clearTrayMenu()
 
+	// ponytail: nextTag 单调递增不归零——异步 clearTrayMenu 生效前点击旧菜单项时，
+	// 旧 tag 在新 map 中自然 miss（no-op），不会误触新 handler。
 	menuMu.Lock()
 	menuByTag = make(map[int]func())
-	nextTag = 0
 	menuMu.Unlock()
 
 	{
@@ -81,8 +103,18 @@ func rebuildPlatformMenu(showFn, quitFn func(), channels []ChannelInfo, onSwitch
 		if !ch.Enabled {
 			label = label + " (已禁用)"
 		}
+		// ponytail: 本地库里可能存有脏数据——无效 UTF-8 字节会让 ObjC 侧
+		// stringWithUTF8String: 返回 nil（兜底见 tray_darwin.m 的 nil 防护），
+		// 空串则菜单项完全不可辨识，这里统一清洗成可显示的占位内容。
+		label = strings.ToValidUTF8(label, "\uFFFD")
+		if label == "" {
+			label = "(未命名通道)"
+		}
+		menuMu.Lock()
+		active := ch.ID == activeChanID
+		menuMu.Unlock()
 		checked := 0
-		if ch.ID == activeChanID {
+		if active {
 			checked = 1
 		}
 		tag := nextMenuTag(func() {
@@ -113,9 +145,7 @@ func rebuildPlatformMenu(showFn, quitFn func(), channels []ChannelInfo, onSwitch
 }
 
 func setActiveChannel(id string) {
+	menuMu.Lock()
 	activeChanID = id
-}
-
-func getActiveChannel() string {
-	return activeChanID
+	menuMu.Unlock()
 }

@@ -46,10 +46,6 @@ export function GetModelCombo(arg1) {
   return window['go']['config']['Service']['GetModelCombo'](arg1);
 }
 
-export function GetOAuthProviderConfig(arg1) {
-  return window['go']['config']['Service']['GetOAuthProviderConfig'](arg1);
-}
-
 export function GetOptimizationConfig() {
   return window['go']['config']['Service']['GetOptimizationConfig']();
 }
@@ -60,6 +56,10 @@ export function GetPlatformAPIBaseURL() {
 
 export function GetRateLimitConfig() {
   return window['go']['config']['Service']['GetRateLimitConfig']();
+}
+
+export function GetSecurityConfig() {
+  return window['go']['config']['Service']['GetSecurityConfig']();
 }
 
 export function GetSelectedGrantID() {
@@ -84,10 +84,6 @@ export function ListComboTemplates() {
 
 export function ListModelCombos() {
   return window['go']['config']['Service']['ListModelCombos']();
-}
-
-export function ListOAuthProviderConfigs() {
-  return window['go']['config']['Service']['ListOAuthProviderConfigs']();
 }
 
 export function NormalizeChannelWeights() {
@@ -122,16 +118,16 @@ export function SaveModelCombo(arg1) {
   return window['go']['config']['Service']['SaveModelCombo'](arg1);
 }
 
-export function SaveOAuthProviderConfig(arg1) {
-  return window['go']['config']['Service']['SaveOAuthProviderConfig'](arg1);
-}
-
 export function SetAnalyticsEnabled(arg1) {
   return window['go']['config']['Service']['SetAnalyticsEnabled'](arg1);
 }
 
 export function SetAutoLaunch(arg1) {
   return window['go']['config']['Service']['SetAutoLaunch'](arg1);
+}
+
+export function SetCavemanConfig(arg1, arg2) {
+  return window['go']['config']['Service']['SetCavemanConfig'](arg1, arg2);
 }
 
 export function SetDefaultComboName(arg1) {
@@ -150,8 +146,16 @@ export function SetPlatformAPIBaseURL(arg1) {
   return window['go']['config']['Service']['SetPlatformAPIBaseURL'](arg1);
 }
 
+export function SetRTKConfig(arg1, arg2) {
+  return window['go']['config']['Service']['SetRTKConfig'](arg1, arg2);
+}
+
 export function SetRateLimitConfig(arg1) {
   return window['go']['config']['Service']['SetRateLimitConfig'](arg1);
+}
+
+export function SetSecurityConfig(arg1) {
+  return window['go']['config']['Service']['SetSecurityConfig'](arg1);
 }
 
 export function SetSelectedGrant(arg1, arg2) {

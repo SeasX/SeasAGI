@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
-import { getCloudUsage, getCloudBilling, getUsageSummary, getPlatformAPIBaseURL, getPlatformToken } from "../utils/commands";
+import { getCloudUsage, getCloudBilling, getUsageSummary, getOverageUsage } from "../utils/commands";
 import type { CloudUsage, CloudBilling, UsageSummary, OverageRecord } from "../utils/types";
 import { useTranslation } from "../i18n";
 
@@ -32,18 +32,9 @@ export function UsagePage() {
         if (cb) setCloudBilling(cb);
         setLocalSummary(ls);
 
-        try {
-          const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
-          const resp = await fetch(`${baseURL}/usage/overage/user`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          });
-          if (resp.ok) {
-            const data: OverageRecord = await resp.json();
-            setOverage(data);
-          }
-        } catch {
-          // overage data is optional
-        }
+        // 超额用量由 Go 后端代理平台请求，前端不直接持有并外发平台 Token
+        const ov = await getOverageUsage().catch(() => null);
+        if (ov) setOverage(ov);
       } catch {
       } finally {
         setLoading(false);

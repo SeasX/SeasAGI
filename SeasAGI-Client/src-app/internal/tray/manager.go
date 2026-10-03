@@ -32,6 +32,15 @@ func (m *Manager) Run(iconData []byte) {
 		return
 	}
 	m.running = true
+	// Dock 图标点击（applicationShouldHandleReopen）回调，复用 onShow 唤出窗口
+	setReopenHandler(func() {
+		m.mu.RLock()
+		onShow := m.onShow
+		m.mu.RUnlock()
+		if onShow != nil {
+			onShow()
+		}
+	})
 	runPlatformTray(iconData)
 	m.rebuild()
 }

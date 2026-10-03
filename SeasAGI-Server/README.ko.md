@@ -68,7 +68,6 @@ SeasAGI-Server/
 
 다음 기능은 엔터프라이즈 프로젝트 `SeasAGI-Server-Enterprise/`로 이전되었습니다:
 
-- Stripe 결제 및 Checkout Session
 - 플랜 기반 상업 기능 게이팅
 - 멀티 테넌트 청구 / 주문 / 결제 / 인보이스
 - Combo 거버넌스 (가시성 정책, 배포 승인)

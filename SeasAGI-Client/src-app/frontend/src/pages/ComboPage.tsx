@@ -5,7 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useAppStore } from "../stores/appStore";
 import * as cmd from "../utils/commands";
 import { getErrorMessage } from "../utils/errors";
-import type { Channel, ModelCombo, ModelComboStep, QuickStrategy } from "../utils/types";
+import type { Channel, ModelCombo, ModelComboStep, ProviderHealthSummary, QuickStrategy, QuickStrategyAlias } from "../utils/types";
 import { useTranslation } from "../i18n";
 import { validateForm, comboFormSchema } from "../utils/validation";
 
@@ -20,6 +20,91 @@ const emptyDraft = (): ModelCombo => ({
   strategy: "fallback",
   sticky_uses: 1,
 });
+
+/* ── M4.3 策略画像辅助 ── */
+
+// 成本估算（启发式）：轻量模型名 → 低成本，旗舰 → 高成本，无定价 API 故按模型名分层
+function costScoreOf(model: string): number {
+  const m = (model || "").toLowerCase();
+  if (/mini|flash|haiku|nano|lite|small|deepseek|qwen/.test(m)) return 0.9;
+  if (/opus|ultra|o1|gpt-4(?!\w)|-pro\b|\/max|gemini-2\.5-pro/.test(m)) return 0.3;
+  return 0.6;
+}
+
+function costTierOf(model: string): { score: number; cls: string; key: string } {
+  const score = costScoreOf(model);
+  if (score >= 0.75) return { score, cls: "cost-tier-low", key: "combo.costLow" };
+  if (score >= 0.45) return { score, cls: "cost-tier-mid", key: "combo.costMid" };
+  return { score, cls: "cost-tier-high", key: "combo.costHigh" };
+}
+
+const clamp01 = (v: number) => Math.max(0.05, Math.min(1, v));
+
+// 由当前步骤 + Provider 健康数据实时推导四维画像（无数据时用保守默认值）
+function radarScores(steps: ModelComboStep[], health: ProviderHealthSummary[]) {
+  const valid = steps.filter((s) => s.model);
+  const known = valid
+    .map((s) => health.find((h) => h.provider_id === s.channel_id))
+    .filter((h): h is ProviderHealthSummary => !!h);
+  const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
+  const quality = known.length ? clamp01(avg(known.map((h) => h.avg_success_rate))) : 0.8;
+  const latency = known.length ? avg(known.map((h) => h.avg_latency_ms)) : 1200;
+  const speed = clamp01(1 - latency / 4000);
+  const penalty = known.length ? avg(known.map((h) => h.avg_penalty_score)) : 0.1;
+  const circuits = known.reduce((s, h) => s + h.circuit_open_count, 0);
+  const stability = clamp01(quality - penalty * 0.5 - circuits * 0.15);
+  const cost = valid.length ? clamp01(avg(valid.map((s) => costScoreOf(s.model)))) : 0.5;
+  return { quality, cost, speed, stability };
+}
+
+// 纯 SVG 四维雷达图（零依赖），随编辑实时伸缩
+function StrategyRadar({ steps, health, t }: {
+  steps: ModelComboStep[];
+  health: ProviderHealthSummary[];
+  t: (key: string, vars?: any) => string;
+}) {
+  const s = radarScores(steps, health);
+  const axes = [
+    { key: "combo.radarQuality", value: s.quality },
+    { key: "combo.radarCost", value: s.cost },
+    { key: "combo.radarSpeed", value: s.speed },
+    { key: "combo.radarStability", value: s.stability },
+  ];
+  const cx = 100, cy = 100, R = 72;
+  const pt = (i: number, r: number) => {
+    const angle = -Math.PI / 2 + (i * Math.PI) / 2;
+    return [cx + Math.cos(angle) * r, cy + Math.sin(angle) * r] as const;
+  };
+  const ring = (r: number) => axes.map((_, i) => pt(i, r).join(",")).join(" ");
+  const data = axes.map((a, i) => pt(i, R * a.value).join(",")).join(" ");
+  const fmt = (v: number) => (v * 100).toFixed(0);
+  return (
+    <div className="radar-box">
+      <svg className="radar-svg" width={200} height={200} viewBox="0 0 200 200">
+        {[0.33, 0.66, 1].map((f) => (
+          <polygon key={f} points={ring(R * f)} fill="none" stroke="var(--border-strong)" strokeWidth={1} />
+        ))}
+        {axes.map((_, i) => {
+          const [x, y] = pt(i, R);
+          return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="var(--border-strong)" strokeWidth={1} />;
+        })}
+        <polygon points={data} fill="rgba(88,101,242,0.25)" stroke="var(--primary)" strokeWidth={2} />
+        {axes.map((a, i) => {
+          const [x, y] = pt(i, R * a.value);
+          return <circle key={i} cx={x} cy={y} r={3} fill="var(--primary)" />;
+        })}
+      </svg>
+      <div className="radar-legend">
+        {axes.map((a) => (
+          <div key={a.key} className="radar-legend-row">
+            <span>{t(a.key)}</span>
+            <span className="radar-legend-value">{fmt(a.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; showTemplatesTab?: boolean }) {
   const { t } = useTranslation();
@@ -45,6 +130,8 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
   const [cloudCombos, setCloudCombos] = useState<ModelCombo[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
+  // M4.3: 编辑器打开时拉取 Provider 健康度，供雷达图与步骤健康点使用
+  const [providerHealth, setProviderHealth] = useState<ProviderHealthSummary[]>([]);
 
   const loadPageData = async () => {
     setLoading(true);
@@ -105,6 +192,11 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
   useEffect(() => {
     void loadPageData();
   }, [auth.is_logged_in]);
+
+  useEffect(() => {
+    if (!editing) return;
+    void cmd.getProviderHealthSummary().then((h) => setProviderHealth(h || [])).catch(() => setProviderHealth([]));
+  }, [editing !== null]);
 
   // Merge local and cloud combos for display, dedup by logical_name
   const allCombos = useMemo(() => {
@@ -228,16 +320,16 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
     });
   };
 
-  const applyQuickStrategy = (alias: "stable_first" | "cost_first" | "speed_first" | "tools_first") => {
-    const strategies = {
-      stable_first: {
-        name: t("combo.stableFirst"),
-        description: t("combo.stableFirstDesc"),
+  const applyQuickStrategy = (alias: QuickStrategyAlias) => {
+    const strategies: Record<QuickStrategyAlias, { name: string; description: string; strategy: string; steps: { channel_id: string; model: string }[] }> = {
+      quality_first: {
+        name: t("combo.qualityFirst"),
+        description: t("combo.qualityFirstDesc"),
         strategy: "fallback",
         steps: [
+          { channel_id: "anthropic", model: "claude-opus-4-8" },
           { channel_id: "openai", model: "gpt-4o" },
           { channel_id: "anthropic", model: "claude-sonnet-5" },
-          { channel_id: "google", model: "gemini-2.5-flash" },
         ],
       },
       cost_first: {
@@ -248,6 +340,26 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
           { channel_id: "openrouter", model: "minimax/minimax-m3" },
           { channel_id: "google", model: "gemini-2.5-flash" },
           { channel_id: "openai", model: "gpt-4o-mini" },
+        ],
+      },
+      balanced: {
+        name: t("combo.balanced"),
+        description: t("combo.balancedDesc"),
+        strategy: "fallback",
+        steps: [
+          { channel_id: "openai", model: "gpt-4o" },
+          { channel_id: "google", model: "gemini-2.5-flash" },
+          { channel_id: "openai", model: "gpt-4o-mini" },
+        ],
+      },
+      stable_first: {
+        name: t("combo.stableFirst"),
+        description: t("combo.stableFirstDesc"),
+        strategy: "fallback",
+        steps: [
+          { channel_id: "openai", model: "gpt-4o" },
+          { channel_id: "anthropic", model: "claude-sonnet-5" },
+          { channel_id: "google", model: "gemini-2.5-flash" },
         ],
       },
       speed_first: {
@@ -471,11 +583,11 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
           <div className="quick-strategy-label">{t("combo.quickStrategy")}:</div>
           <div className="quick-strategy-buttons">
             <button 
-              className="quick-strategy-btn stable-first" 
-              onClick={() => applyQuickStrategy("stable_first")}
-              title={t("combo.stableFirstDesc")}
+              className="quick-strategy-btn quality-first" 
+              onClick={() => applyQuickStrategy("quality_first")}
+              title={t("combo.qualityFirstDesc")}
             >
-              {t("combo.stableFirst")}
+              {t("combo.qualityFirst")}
             </button>
             <button 
               className="quick-strategy-btn cost-first" 
@@ -483,6 +595,20 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
               title={t("combo.costFirstDesc")}
             >
               {t("combo.costFirst")}
+            </button>
+            <button 
+              className="quick-strategy-btn balanced" 
+              onClick={() => applyQuickStrategy("balanced")}
+              title={t("combo.balancedDesc")}
+            >
+              {t("combo.balanced")}
+            </button>
+            <button 
+              className="quick-strategy-btn stable-first" 
+              onClick={() => applyQuickStrategy("stable_first")}
+              title={t("combo.stableFirstDesc")}
+            >
+              {t("combo.stableFirst")}
             </button>
             <button 
               className="quick-strategy-btn speed-first" 
@@ -746,6 +872,21 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
                 </select>
               </div>
               <div className="form-group">
+                <label>{t("combo.quickStrategy")}</label>
+                <select
+                  value={editing.quick_strategy || ""}
+                  onChange={(e) => setEditing({ ...editing, quick_strategy: (e.target.value || undefined) as QuickStrategyAlias | undefined })}
+                >
+                  <option value="">{t("combo.quickStrategyAuto")}</option>
+                  <option value="quality_first">{t("combo.qualityFirst")}</option>
+                  <option value="cost_first">{t("combo.costFirst")}</option>
+                  <option value="balanced">{t("combo.balanced")}</option>
+                  <option value="stable_first">{t("combo.stableFirst")}</option>
+                  <option value="speed_first">{t("combo.speedFirst")}</option>
+                  <option value="tools_first">{t("combo.toolsFirst")}</option>
+                </select>
+              </div>
+              <div className="form-group">
                 <label>{t("combo.stickyUses")}</label>
                 <input
                   type="number"
@@ -756,12 +897,23 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
               </div>
             </div>
 
+            <StrategyRadar steps={editing.steps} health={providerHealth} t={t} />
+
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={editing.steps.map((_, i) => `step-${i}`)} strategy={verticalListSortingStrategy}>
                 <div className="combo-step-list">
                   <div className="section-title">{t("combo.stepChain")}</div>
                   {editing.steps.map((step, index) => (
-                    <SortableStepCard key={`step-${index}`} id={`step-${index}`} step={step} index={index} channels={channels} onUpdate={updateStep} onRemove={removeStep} onUpdateMeta={updateStepMeta} onAddProvider={addStepProvider} onRemoveProvider={removeStepProvider} onToggleChannel={toggleStepChannel} t={t} />
+                    <div key={`step-wrap-${index}`}>
+                      <SortableStepCard id={`step-${index}`} step={step} index={index} channels={channels} health={providerHealth} onUpdate={updateStep} onRemove={removeStep} onUpdateMeta={updateStepMeta} onAddProvider={addStepProvider} onRemoveProvider={removeStepProvider} onToggleChannel={toggleStepChannel} t={t} />
+                      {index < editing.steps.length - 1 && (
+                        <div className="combo-step-flow" aria-hidden="true">
+                          <span className="combo-step-flow-line" />
+                          <span className="combo-step-flow-arrow">▼</span>
+                          <span className="combo-step-flow-label">{t("combo.flowFallback")}</span>
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </SortableContext>
@@ -786,11 +938,12 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
   );
 }
 
-function SortableStepCard({ id, step, index, channels, onUpdate, onRemove, onUpdateMeta, onAddProvider, onRemoveProvider, onToggleChannel, t }: {
+function SortableStepCard({ id, step, index, channels, health, onUpdate, onRemove, onUpdateMeta, onAddProvider, onRemoveProvider, onToggleChannel, t }: {
   id: string;
   step: ModelComboStep;
   index: number;
   channels: Channel[];
+  health: ProviderHealthSummary[];
   onUpdate: (index: number, key: "channel_id" | "model", value: string) => void;
   onRemove: (index: number) => void;
   onUpdateMeta: (index: number, key: string, value: any) => void;
@@ -840,8 +993,19 @@ function SortableStepCard({ id, step, index, channels, onUpdate, onRemove, onUpd
   const providers = step.providers || [];
   const stepChannels = step.channels || [];
 
+  // M4.3：实时成本估算徽章 + 渠道健康度点
+  const costTier = costTierOf(step.model);
+  const stepHealth = step.channel_id ? health.find((h) => h.provider_id === step.channel_id) : undefined;
+  const healthDotCls = !stepHealth
+    ? ""
+    : stepHealth.avg_success_rate >= 0.95
+      ? "step-health-dot ok"
+      : stepHealth.avg_success_rate >= 0.85
+        ? "step-health-dot warn"
+        : "step-health-dot bad";
+
   return (
-    <div ref={setNodeRef} style={style} className="combo-step-card">
+    <div ref={setNodeRef} style={style} className={`combo-step-card ${isDragging ? "is-dragging" : ""}`}>
       <div className="combo-step-drag-handle" {...attributes} {...listeners}>
         ⠿
       </div>
@@ -863,7 +1027,16 @@ function SortableStepCard({ id, step, index, channels, onUpdate, onRemove, onUpd
         </div>
         <div className="form-group">
           <label>{t("combo.modelName")}</label>
-          <input value={step.model} onChange={(e) => onUpdate(index, "model", e.target.value)} placeholder={t("combo.modelPlaceholder")} />
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input value={step.model} onChange={(e) => onUpdate(index, "model", e.target.value)} placeholder={t("combo.modelPlaceholder")} style={{ flex: 1 }} />
+            {step.model && <span className={`cost-tier-badge ${costTier.cls}`} title={t("combo.costEstimator")}>{t(costTier.key)}</span>}
+            {healthDotCls && (
+              <span
+                className={healthDotCls}
+                title={`${t("combo.stepHealth")}: ${((stepHealth!.avg_success_rate || 0) * 100).toFixed(1)}% · ${Math.round(stepHealth!.avg_latency_ms || 0)}ms`}
+              />
+            )}
+          </div>
         </div>
       </div>
 

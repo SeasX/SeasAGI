@@ -18,6 +18,7 @@ interface ChatMessage {
   channel?: string;
   curlCommand?: string;
   comboSteps?: { step: number; role: string; model: string; status: "ok" | "fallback" | "error"; latency_ms?: number }[];
+  intent?: { scenario: string; required_iq: string; confidence?: number };
 }
 
 interface ImageResult {
@@ -29,6 +30,38 @@ interface ImageResult {
 interface VideoResult {
   url?: string;
   status?: string;
+}
+
+// M4.2 场景自适应渲染：代码块 + 图片 + 纯文本，零依赖（无 markdown 库）
+function MessageContent({ content }: { content: string }) {
+  const { t } = useTranslation();
+  const parts: React.ReactNode[] = [];
+  // 匹配 ```lang ... ``` 代码块与 ![alt](url) 图片，其余按原文输出
+  const re = /```(\w*)\n?([\s\S]*?)```|!\[([^\]]*)\]\(([^)]+)\)/g;
+  let last = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content))) {
+    if (m.index > last) parts.push(<span key={key++}>{content.slice(last, m.index)}</span>);
+    if (m[2] !== undefined) {
+      parts.push(
+        <div key={key++} className="curl-command-block">
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span className="text-muted">{m[1] || "code"}</span>
+            <button className="btn-link" onClick={() => navigator.clipboard.writeText(m![2])}>
+              {t("playground.copyCode")}
+            </button>
+          </div>
+          <pre style={{ margin: 0 }}><code>{m[2]}</code></pre>
+        </div>
+      );
+    } else {
+      parts.push(<img key={key++} src={m[4]} alt={m[3]} style={{ maxWidth: "100%", borderRadius: 8, display: "block" }} />);
+    }
+    last = re.lastIndex;
+  }
+  if (last < content.length) parts.push(<span key={key++}>{content.slice(last)}</span>);
+  return <>{parts}</>;
 }
 
 export function PlaygroundPage() {
@@ -135,11 +168,14 @@ export function PlaygroundPage() {
       const channelLabel = useChannel ? channels.find(c => c.channel_id === useChannel)?.display_name || useChannel : "";
       const gatewayStatus = result._gateway_status || result._status_code;
       const isError = gatewayStatus >= 400;
+      const intent = result._intent
+        ? { scenario: result._intent.scenario as string, required_iq: result._intent.required_iq as string, confidence: result._intent.confidence as number | undefined }
+        : undefined;
       const steps = result._combo_steps
         ? (result._combo_steps as any[]).map((s: any, idx: number) => ({
             step: idx + 1,
             role: s.step_role || s.role || "",
-            model: s.model || "",
+            model: s.upstream_model || s.model || "",
             status: (s.status === "success" ? "ok" : s.status === "fallback" ? "fallback" : "error") as "ok" | "fallback" | "error",
             latency_ms: s.latency_ms,
           }))
@@ -147,10 +183,10 @@ export function PlaygroundPage() {
 
       if (isError) {
         const errMsg = result.error?.message || `HTTP ${gatewayStatus}`;
-        setMessages([...newMessages, { role: "assistant", content: `Error: ${errMsg}`, curlCommand, comboSteps: steps }]);
+        setMessages([...newMessages, { role: "assistant", content: `Error: ${errMsg}`, curlCommand, comboSteps: steps, intent }]);
       } else {
         const content = result.choices?.[0]?.message?.content ?? JSON.stringify(result, null, 2);
-        setMessages([...newMessages, { role: "assistant", content, model: result.model || model, channel: channelLabel || undefined, curlCommand, comboSteps: steps }]);
+        setMessages([...newMessages, { role: "assistant", content, model: result.model || model, channel: channelLabel || undefined, curlCommand, comboSteps: steps, intent }]);
       }
     } catch (err: any) {
       setMessages([...newMessages, { role: "assistant", content: `Error: ${err.message}` }]);
@@ -346,9 +382,18 @@ export function PlaygroundPage() {
                         <span className="message-time">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
                       <div className={`message-bubble ${msg.role === "user" ? "bubble-user" : "bubble-assistant"}`}>
-                        <div className="message-content">{msg.content}</div>
-                        {msg.role === "assistant" && (msg.model || msg.channel || msg.curlCommand || msg.comboSteps) && (
+                        <div className="message-content"><MessageContent content={msg.content} /></div>
+                        {msg.role === "assistant" && (msg.model || msg.channel || msg.curlCommand || msg.comboSteps || msg.intent) && (
                           <div className="message-meta">
+                            {msg.intent && (
+                              <span
+                                className="meta-item"
+                                title={`confidence: ${msg.intent.confidence ?? "-"}`}
+                              >
+                                {msg.intent.scenario === "image_gen" ? "🎨" : msg.intent.scenario === "code_logic" ? "🎯" : msg.intent.scenario === "creative" ? "✍️" : msg.intent.scenario === "research_audit" ? "📚" : msg.intent.scenario === "data_extract" ? "📊" : "💬"}{" "}
+                                {msg.intent.scenario} · IQ: {msg.intent.required_iq}
+                              </span>
+                            )}
                             {msg.channel && <span className="meta-item">{msg.channel}</span>}
                             {msg.model && <span className="meta-item">{msg.model}</span>}
                             {msg.comboSteps && (

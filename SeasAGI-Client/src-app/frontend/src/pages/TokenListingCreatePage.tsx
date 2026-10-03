@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getPlatformAPIBaseURL, getPlatformToken } from "../utils/commands";
+import { platformRequest } from "../utils/commands";
 import { useTranslation } from "../i18n";
 import { useMarketStore, type MarketListing } from "../stores/marketStore";
 
@@ -27,7 +27,6 @@ export function TokenListingCreatePage() {
     setError(null);
 
     try {
-      const [baseURL, token] = await Promise.all([getPlatformAPIBaseURL(), getPlatformToken()]);
       const body: Record<string, any> = {
         token_label: tokenLabel,
         token_fingerprint: tokenFingerprint,
@@ -53,21 +52,14 @@ export function TokenListingCreatePage() {
         body.available_quota = parseFloat(availableQuota) || 0;
       }
 
-      const resp = await fetch(`${baseURL}/token-market/listings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(body),
-      });
+      const resp = await platformRequest("POST", "/token-market/listings", body);
 
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
+      if (resp.status >= 400) {
+        const errData = resp.body || {};
         throw new Error(errData.error || `HTTP ${resp.status}`);
       }
 
-      const data = await resp.json();
+      const data = resp.body;
       const newListing: MarketListing = data.data;
       setMyListings([newListing, ...myListings]);
       navigate("/token-market/my-listings");

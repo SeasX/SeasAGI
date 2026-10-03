@@ -6,6 +6,7 @@ package network
 // noopProxySetter 是无操作的默认实现。
 type noopProxySetter struct{}
 
-func (n *noopProxySetter) Set(addr string) error    { return nil }
-func (n *noopProxySetter) Clear() error             { return nil }
-func (n *noopProxySetter) IsActive() (bool, error)  { return false, nil }
+func (n *noopProxySetter) Set(addr string) error        { return nil }
+func (n *noopProxySetter) Clear() error                 { return nil }
+func (n *noopProxySetter) IsActive() (bool, error)      { return false, nil }
+func (n *noopProxySetter) CurrentAddr() (string, error) { return "", nil }
