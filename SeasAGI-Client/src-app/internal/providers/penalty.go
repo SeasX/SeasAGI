@@ -1,6 +1,8 @@
 package providers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"sync"
 	"time"
 )
@@ -179,39 +181,61 @@ func (cm *CooldownManager) SetCooldown(key string) {
 	cm.SetCooldownWithReason(key, "rate_limited")
 }
 
+// cooldownKey 将原始状态键（可能是 API key 明文）哈希为不可逆的短标识，
+// 避免明文 key 落盘到 state.db，同时保持同一 key 的稳定性。
+func cooldownKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
 func (cm *CooldownManager) SetCooldownWithReason(key, reason string) {
+	k := cooldownKey(key)
+	if k == "" {
+		return
+	}
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	cm.entries[key] = &CooldownEntry{
+	cm.entries[k] = &CooldownEntry{
 		ExpiresAt: time.Now().Add(cm.duration),
 		Reason:    reason,
 	}
 }
 
 func (cm *CooldownManager) IsOnCooldown(key string) bool {
+	k := cooldownKey(key)
+	if k == "" {
+		return false
+	}
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	entry, exists := cm.entries[key]
+	entry, exists := cm.entries[k]
 	if !exists {
 		return false
 	}
 	if time.Now().After(entry.ExpiresAt) {
-		delete(cm.entries, key)
+		delete(cm.entries, k)
 		return false
 	}
 	return true
 }
 
 func (cm *CooldownManager) GetRemaining(key string) time.Duration {
+	k := cooldownKey(key)
+	if k == "" {
+		return 0
+	}
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	entry, exists := cm.entries[key]
+	entry, exists := cm.entries[k]
 	if !exists {
 		return 0
 	}
 	remaining := time.Until(entry.ExpiresAt)
 	if remaining <= 0 {
-		delete(cm.entries, key)
+		delete(cm.entries, k)
 		return 0
 	}
 	return remaining
@@ -220,7 +244,7 @@ func (cm *CooldownManager) GetRemaining(key string) time.Duration {
 func (cm *CooldownManager) Clear(key string) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	delete(cm.entries, key)
+	delete(cm.entries, cooldownKey(key))
 }
 
 func (cm *CooldownManager) GetAll() map[string]time.Time {

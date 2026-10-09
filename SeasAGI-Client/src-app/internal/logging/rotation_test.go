@@ -3,6 +3,7 @@ package logging
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -112,4 +113,26 @@ func TestLogRotatorStopIdempotent(t *testing.T) {
 	r.Start()
 	r.Stop()
 	r.Stop() // 重复 Stop 不应 panic
+}
+
+// Stop 之后再次 Start 必须能正常启停（历史上会因 stopCh=nil 导致 goroutine 泄漏）。
+func TestLogRotatorStartStopRestart(t *testing.T) {
+	r := NewLogRotator("/tmp/restart.log", RotationConfig{CheckInterval: time.Hour})
+	before := runtime.NumGoroutine()
+
+	r.Start()
+	r.Start() // 重复 Start 不应再起一个 goroutine
+	r.Stop()
+	r.Start() // 重启
+	r.Stop()
+
+	// 给调度器一点时间回收 goroutine
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if runtime.NumGoroutine() <= before+1 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("goroutine leak after Start/Stop: before=%d after=%d", before, runtime.NumGoroutine())
 }

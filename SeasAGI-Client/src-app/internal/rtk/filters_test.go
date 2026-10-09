@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestFilterSmartTruncate(t *testing.T) {
@@ -168,5 +169,18 @@ func TestTruncateToMax(t *testing.T) {
 	}
 	if got := truncateToMax(long, 0); got != long {
 		t.Error("non-positive maxChars should default to 8000 and keep content")
+	}
+}
+
+// 多字节字符必须按 rune 截断，不得产生非法 UTF-8。
+func TestTruncateToMaxRuneSafe(t *testing.T) {
+	content := strings.Repeat("汉", 10) // 10 runes, 30 bytes
+	got := truncateToMax(content, 5)
+	if !utf8.ValidString(got) {
+		t.Errorf("truncated output is not valid UTF-8: %q", got)
+	}
+	want := strings.Repeat("汉", 5) + "\n... (truncated) ..."
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

@@ -47,7 +47,6 @@ export function LogPage() {
   const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
 
   const channelOptions = [...new Set(logs.map((l) => l.channel_id).filter(Boolean))];
-  const channelTypes = ["local", "platform", "relay", "unknown"] as const;
 
   const channelTypeColors: Record<string, string> = {
     local: "var(--green)",
@@ -69,9 +68,6 @@ export function LogPage() {
   };
 
   const getChannelType = (log: RequestLog): string => {
-    if (log.channel_type && channelTypes.includes(log.channel_type as any)) {
-      return log.channel_type;
-    }
     const id = log.channel_id || "";
     if (id.startsWith("relay_") || id.startsWith("relay-")) return "relay";
     if (id.startsWith("platform_") || id.startsWith("platform-")) return "platform";

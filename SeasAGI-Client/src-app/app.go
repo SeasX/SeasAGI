@@ -1078,21 +1078,22 @@ func (a *App) SaveCustomChannel(channel config.Channel) (string, error) {
 	if channel.ChannelID == "" {
 		channel.ChannelID = fmt.Sprintf("ch_%d", time.Now().UnixNano())
 	}
-	// Save single APIKey to keychain
+	// 单 key 存入 keychain
 	if channel.APIKey != "" {
 		if err := keychain.SaveChannelKey(channel.ChannelID, channel.APIKey); err != nil {
 			return "", err
 		}
 	}
-	// Save multi-key APIKeys: always persist to config JSON via configSvc
-	// If no single key but multi-keys exist, save first key to keychain too
-	if channel.APIKey == "" && len(channel.APIKeys) > 0 {
-		firstKey := channel.APIKeys[0]
-		if firstKey != "" {
-			if err := keychain.SaveChannelKey(channel.ChannelID, firstKey); err != nil {
+	// 多 key 存入 keychain（不落盘 config.json）。首个 key 同时写入单 key 槽位，
+	// 兼容只读取单 key 的调用路径。
+	if len(channel.APIKeys) > 0 {
+		if err := keychain.SaveChannelKeys(channel.ChannelID, channel.APIKeys); err != nil {
+			return "", err
+		}
+		if channel.APIKey == "" && channel.APIKeys[0] != "" {
+			if err := keychain.SaveChannelKey(channel.ChannelID, channel.APIKeys[0]); err != nil {
 				return "", err
 			}
-			channel.APIKey = "" // keep single key empty; keychain has it
 		}
 	}
 	return a.configSvc.SaveCustomChannel(channel)
@@ -1100,6 +1101,9 @@ func (a *App) SaveCustomChannel(channel config.Channel) (string, error) {
 
 func (a *App) DeleteCustomChannel(channelID string) error {
 	if err := keychain.DeleteChannelKey(channelID); err != nil {
+		return err
+	}
+	if err := keychain.DeleteChannelKeys(channelID); err != nil {
 		return err
 	}
 	return a.configSvc.DeleteCustomChannel(channelID)
@@ -1381,6 +1385,10 @@ func (a *App) ResetLocalAccessToken() (string, error) {
 		return "", err
 	}
 	a.gatewaySvc.SetAccessToken(token)
+	// MITM 拦截转发注入的令牌需同步更新，避免被接管请求因旧令牌 401。
+	if a.mitmMgr != nil {
+		a.mitmMgr.SetAccessToken(token)
+	}
 	return token, nil
 }
 

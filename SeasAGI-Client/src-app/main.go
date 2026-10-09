@@ -139,6 +139,8 @@ func runDesktop() {
 	optimizerSvc := optimizer.NewService(configSvc, usageSvc)
 	app := NewApp(authSvc, configSvc, gatewaySvc, logSvc, discoverySvc, mcpSvc, promptsSvc, skillsSvc, usageSvc, optimizerSvc, deeplinkMgr, presetsSvc, syncMgr, sessionsSvc, configioSvc, localTokenStore)
 	app.SetMITMManager(mitmMgr)
+	// 拦截转发时注入本机访问令牌，保证被接管 SDK 的请求能通过网关鉴权。
+	mitmMgr.SetAccessToken(accessToken)
 	app.SetLogRotator(logRotator)
 
 	trayMgr := tray.NewManager(

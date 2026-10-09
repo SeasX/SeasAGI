@@ -905,6 +905,7 @@ export namespace logs {
 	    error_message?: string;
 	    applied_constraints?: string;
 	    intent_scenario?: string;
+	    request_payload?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RequestLog(source);
@@ -929,6 +930,7 @@ export namespace logs {
 	        this.error_message = source["error_message"];
 	        this.applied_constraints = source["applied_constraints"];
 	        this.intent_scenario = source["intent_scenario"];
+	        this.request_payload = source["request_payload"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1381,6 +1383,7 @@ export namespace usage {
 	    input_tokens: number;
 	    output_tokens: number;
 	    cost_usd: number;
+	    cost_estimated?: boolean;
 	    cache_read_tokens?: number;
 	    cache_write_tokens?: number;
 	    uncached_input_tokens?: number;
@@ -1409,6 +1412,7 @@ export namespace usage {
 	        this.input_tokens = source["input_tokens"];
 	        this.output_tokens = source["output_tokens"];
 	        this.cost_usd = source["cost_usd"];
+	        this.cost_estimated = source["cost_estimated"];
 	        this.cache_read_tokens = source["cache_read_tokens"];
 	        this.cache_write_tokens = source["cache_write_tokens"];
 	        this.uncached_input_tokens = source["uncached_input_tokens"];

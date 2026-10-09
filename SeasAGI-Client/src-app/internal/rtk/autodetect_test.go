@@ -118,3 +118,28 @@ func TestDetectOutputTypeUnknown(t *testing.T) {
 		t.Errorf("want %s, got %s", TypeUnknown, got)
 	}
 }
+
+// 成段散文（每行都含空格）不应被误判为 ls。
+func TestDetectOutputTypeProseNotLs(t *testing.T) {
+	content := strings.Join([]string{
+		"the quick brown fox jumps",
+		"over the lazy dog again",
+		"and then it runs away",
+		"into the forest nearby",
+	}, "\n")
+	if got := DetectOutputType(content); got == TypeLs {
+		t.Errorf("prose with spaces should not be detected as %s", TypeLs)
+	}
+}
+
+// ls -l 长格式（权限位开头）应仍被识别为 ls。
+func TestDetectOutputTypeLsLongFormat(t *testing.T) {
+	content := strings.Join([]string{
+		"-rw-r--r--  1 user staff  1234 Sep 30 10:00 Makefile",
+		"drwxr-xr-x  5 user staff   160 Sep 30 10:00 docs",
+		"-rw-r--r--  1 user staff   512 Sep 30 10:00 LICENSE",
+	}, "\n")
+	if got := DetectOutputType(content); got != TypeLs {
+		t.Errorf("want %s, got %s", TypeLs, got)
+	}
+}

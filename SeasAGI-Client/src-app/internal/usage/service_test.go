@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -74,7 +75,7 @@ func TestRecordUsage_AddsRecordAndCalculatesCost(t *testing.T) {
 	}
 }
 
-func TestRecordUsage_UnknownModelCostZero(t *testing.T) {
+func TestRecordUsage_UnknownModelUsesFallbackPrice(t *testing.T) {
 	svc := newTestService(t)
 	svc.RecordUsage("ch1", "Channel 1", "unknown-model", 1_000_000, 500_000)
 
@@ -82,8 +83,90 @@ func TestRecordUsage_UnknownModelCostZero(t *testing.T) {
 	if len(records) != 1 {
 		t.Fatalf("expected 1 record, got %d", len(records))
 	}
-	if records[0].CostUSD != 0 {
-		t.Errorf("expected cost 0 for unknown model, got %.4f", records[0].CostUSD)
+	// fallback: input=1.0/1M, output=1.0/1M => 1.0 + 0.5 = 1.5
+	if records[0].CostUSD != 1.5 {
+		t.Errorf("expected fallback cost 1.5 for unknown model, got %.4f", records[0].CostUSD)
+	}
+	if !records[0].CostEstimated {
+		t.Error("expected CostEstimated=true for unknown model")
+	}
+}
+
+func TestRecordUsage_KnownModelNotEstimated(t *testing.T) {
+	svc := newTestService(t)
+	svc.RecordUsage("ch1", "Channel 1", "gpt-4o", 1000, 500)
+	records := svc.GetAllRecords()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].CostEstimated {
+		t.Error("expected CostEstimated=false for known model")
+	}
+}
+
+func TestRecordUsageV2_CacheTokenDiscount(t *testing.T) {
+	svc := newTestService(t)
+	// gpt-4o: in=2.5/1M, out=10/1M.
+	// 1M cache-read tokens should cost 2.5 * 0.1 = 0.25, not the full 2.5.
+	svc.RecordUsageV2(UsageDetail{
+		ChannelID:       "ch1",
+		Model:           "gpt-4o",
+		CacheReadTokens: 1_000_000,
+	})
+	records := svc.GetAllRecords()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if diff := records[0].CostUSD - 0.25; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("expected cache-read cost 0.25, got %.6f", records[0].CostUSD)
+	}
+}
+
+func TestRecordUsageV2_CacheWritePremium(t *testing.T) {
+	svc := newTestService(t)
+	// 1M cache-write tokens at 1.25 * 2.5 = 3.125
+	svc.RecordUsageV2(UsageDetail{
+		ChannelID:        "ch1",
+		Model:            "gpt-4o",
+		CacheWriteTokens: 1_000_000,
+	})
+	records := svc.GetAllRecords()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if diff := records[0].CostUSD - 3.125; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("expected cache-write cost 3.125, got %.6f", records[0].CostUSD)
+	}
+}
+
+func TestRecordUsageV2_UnclassifiedTokensArePriced(t *testing.T) {
+	svc := newTestService(t)
+	// 1M unclassified tokens priced at the input rate (2.5/1M).
+	svc.RecordUsageV2(UsageDetail{
+		ChannelID:          "ch1",
+		Model:              "gpt-4o",
+		UnclassifiedTokens: 1_000_000,
+	})
+	records := svc.GetAllRecords()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if diff := records[0].CostUSD - 2.5; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("expected unclassified cost 2.5, got %.6f", records[0].CostUSD)
+	}
+}
+
+func TestLookupPricing_LongestPrefixMatch(t *testing.T) {
+	// gpt-4o-mini-2024-08-06 must resolve to gpt-4o-mini, not gpt-4o.
+	p, ok := LookupPricing("gpt-4o-mini-2024-08-06")
+	if !ok {
+		t.Fatal("expected prefix match for gpt-4o-mini-2024-08-06")
+	}
+	if p.Model != "gpt-4o-mini" {
+		t.Errorf("expected longest prefix gpt-4o-mini, got %s", p.Model)
+	}
+	if _, ok := LookupPricing("totally-unknown-model"); ok {
+		t.Error("expected no match for unknown model")
 	}
 }
 
@@ -448,6 +531,49 @@ func TestRecordUsage_PersistsToFile(t *testing.T) {
 	}
 	if records[0].ChannelID != "ch1" {
 		t.Errorf("expected channel_id ch1, got %s", records[0].ChannelID)
+	}
+}
+
+func TestRecordUsageV2_IncrementalAppendAccumulates(t *testing.T) {
+	svc := newTestService(t)
+	for i := 0; i < 5; i++ {
+		svc.RecordUsage("ch1", "Channel 1", "gpt-4o", 1000, 500)
+	}
+	// A fresh service must replay every appended record from the JSONL log.
+	svc2 := &Service{
+		records: make([]UsageRecord, 0),
+		pricing: make([]ModelPricing, 0),
+		path:    svc.path,
+	}
+	svc2.load()
+	svc2.initDefaultPricing()
+	if got := len(svc2.GetAllRecords()); got != 5 {
+		t.Errorf("expected 5 appended records replayed, got %d", got)
+	}
+}
+
+func TestLoad_LegacySnapshotMigration(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage_records.json")
+	legacy := `{
+  "records": [
+    {"timestamp": "2025-01-01T00:00:00Z", "channel_id": "legacy", "model": "gpt-4o", "request_count": 1, "input_tokens": 100, "output_tokens": 50, "cost_usd": 0.3}
+  ],
+  "pricing": [
+    {"model": "gpt-4o", "input_price_per_1m": 2.5, "output_price_per_1m": 10}
+  ]
+}`
+	if err := os.WriteFile(path, []byte(legacy), 0644); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+	svc := &Service{records: make([]UsageRecord, 0), pricing: make([]ModelPricing, 0), path: path}
+	svc.load()
+	records := svc.GetAllRecords()
+	if len(records) != 1 || records[0].ChannelID != "legacy" {
+		t.Fatalf("legacy snapshot not loaded, got %+v", records)
+	}
+	if pricing := svc.ListPricing(); len(pricing) != 1 || pricing[0].Model != "gpt-4o" {
+		t.Errorf("legacy pricing not loaded, got %+v", pricing)
 	}
 }
 

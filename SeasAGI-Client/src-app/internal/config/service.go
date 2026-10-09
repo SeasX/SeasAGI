@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SeasAGI/SeasAGI-Client/internal/keychain"
+	"github.com/SeasAGI/SeasAGI-Client/internal/usage"
 )
 
 type AppConfig struct {
@@ -618,6 +621,14 @@ func (s *Service) SaveCustomChannel(ch Channel) (string, error) {
 			if len(ch.Models) == 0 {
 				ch.Models = existingModels
 			}
+			// 前端拿到的是脱敏后的渠道（不含明文 key）。入参未携带 key 时保留内存
+			// 中已有的 key，避免仅编辑其它字段就把凭证清空。
+			if ch.APIKey == "" {
+				ch.APIKey = s.channels[i].APIKey
+			}
+			if len(ch.APIKeys) == 0 {
+				ch.APIKeys = s.channels[i].APIKeys
+			}
 			s.channels[i] = ch
 			return ch.ChannelID, s.saveLocked()
 		}
@@ -868,16 +879,26 @@ func modelTier(model string) int {
 	return 5
 }
 
+// modelCost returns a single cost signal (USD per 1M output tokens) for the
+// given model. The canonical price table lives in internal/usage so that cost
+// accounting and routing price constraints can never diverge; the map below is
+// only a legacy fallback for models not present in that table.
 func modelCost(model string) float64 {
+	if p, ok := usage.LookupPricing(model); ok {
+		return p.OutputPricePer1M
+	}
 	if cost, ok := modelCostMap[model]; ok {
 		return cost
 	}
+	best := 1.0
+	bestLen := -1
 	for k, v := range modelCostMap {
-		if strings.HasPrefix(model, k) {
-			return v
+		if strings.HasPrefix(model, k) && len(k) > bestLen {
+			best = v
+			bestLen = len(k)
 		}
 	}
-	return 1.0
+	return best
 }
 
 // ModelCost returns the estimated cost per 1K tokens for the given model.
@@ -1272,7 +1293,26 @@ func (s *Service) load() error {
 	defer s.mu.Unlock()
 	s.config = state.Config
 	s.channels = state.Channels
+	s.restoreChannelSecretsLocked()
 	return nil
+}
+
+// restoreChannelSecretsLocked 恢复渠道多 key 到内存。config.json 不再持久化明文 key，
+// 因此多 key 统一存放在 keychain；同时兼容旧配置里残留的明文 key（迁移进 keychain）。
+// 调用方需持有 s.mu。
+func (s *Service) restoreChannelSecretsLocked() {
+	for i := range s.channels {
+		if len(s.channels[i].APIKeys) > 0 {
+			// 旧配置里的明文多 key：迁移到 keychain，后续保存不再落盘。
+			_ = keychain.SaveChannelKeys(s.channels[i].ChannelID, s.channels[i].APIKeys)
+			continue
+		}
+		keys, err := keychain.GetChannelKeys(s.channels[i].ChannelID)
+		if err != nil || len(keys) == 0 {
+			continue
+		}
+		s.channels[i].APIKeys = keys
+	}
 }
 
 func (s *Service) saveLocked() error {
@@ -1282,7 +1322,9 @@ func (s *Service) saveLocked() error {
 
 	channels := make([]Channel, 0, len(s.channels))
 	for _, ch := range s.channels {
+		// 明文凭证不落盘：单 key 与多 key 都在 keychain 中保存。
 		ch.APIKey = ""
+		ch.APIKeys = nil
 		channels = append(channels, ch)
 	}
 
@@ -1347,7 +1389,9 @@ func (s *Service) GetSetting(key string) string {
 }
 
 func sanitizeChannel(ch Channel) Channel {
+	// 凭证一律不外传：单 key 与多 key 都存放在 keychain，列表中不回传明文。
 	ch.APIKey = ""
+	ch.APIKeys = nil
 	return ch
 }
 

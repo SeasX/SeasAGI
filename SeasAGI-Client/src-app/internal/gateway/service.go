@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -197,6 +198,8 @@ func (s *Service) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/models", s.handleListModels)
 	mux.HandleFunc("/v1/chat/completions", s.handleChatCompletions)
+	mux.HandleFunc("/v1/messages", s.handleAnthropicMessages)
+	mux.HandleFunc("/v1/responses", s.handleResponses)
 	mux.HandleFunc("/v1/embeddings", s.handleEmbeddings)
 	mux.HandleFunc("/v1/images/generations", s.handleImageGenerations)
 	mux.HandleFunc("/v1/audio/speech", s.handleTTS)
@@ -340,6 +343,24 @@ func (s *Service) handleListModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
+	s.handleChat(w, r, "")
+}
+
+// handleAnthropicMessages 处理 Anthropic Messages API（/v1/messages）。被接管的
+// Claude Code 等 SDK 使用该协议，网关按 Anthropic 语义解析请求并转换响应回该协议。
+func (s *Service) handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
+	s.handleChat(w, r, protocol.FormatAnthropic)
+}
+
+// handleResponses 处理 OpenAI Responses API（/v1/responses）。被接管的 Codex 等工具
+// 使用该协议。
+func (s *Service) handleResponses(w http.ResponseWriter, r *http.Request) {
+	s.handleChat(w, r, protocol.FormatOpenAIResponses)
+}
+
+// handleChat 是聊天补全主链路。forcedSourceFormat 为空时按请求体自动探测协议；
+// 非空时按指定协议解析（用于 /v1/messages、/v1/responses 专用路由）。
+func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourceFormat protocol.Format) {
 	if !s.validateToken(r) {
 		writeJSONError(w, http.StatusUnauthorized, "Invalid access token")
 		return
@@ -380,7 +401,12 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	req, err := protocol.ParseRequest(bodyBytes)
+	req, err := func() (*protocol.CanonicalRequest, error) {
+		if forcedSourceFormat == "" {
+			return protocol.ParseRequest(bodyBytes)
+		}
+		return protocol.ParseRequestAs(bodyBytes, forcedSourceFormat)
+	}()
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
@@ -553,6 +579,11 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 			inputTokens = tokenValue(usageObj, "prompt_tokens", "input_tokens")
 			outputTokens = tokenValue(usageObj, "completion_tokens", "output_tokens")
 		}
+		// 仅失败请求保留脱敏后的请求体快照，便于排障/审计；成功请求不落盘以免膨胀。
+		requestPayload := ""
+		if status != "success" && rawBody != nil {
+			requestPayload = logging.ProtectPayloadForLog(rawBody)
+		}
 		_ = s.logSvc.RecordLog(logs.RequestLog{
 			RequestID:          fmt.Sprintf("req_%d", time.Now().UnixNano()),
 			CreatedAt:          time.Now().UTC().Format(time.RFC3339),
@@ -571,6 +602,7 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 			ErrorMessage:       errMessage,
 			AppliedConstraints: constraintsJSON,
 			IntentScenario:     intentScenario,
+			RequestPayload:     requestPayload,
 		})
 		s.recordUsageAndTokens(capture, usageMeta{
 			ChannelID:   selectedChannelID,
@@ -645,19 +677,42 @@ func (s *Service) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 	// Record success metrics for the combo
 	s.recordComboMetrics(normalizedModel, len(attempts), true)
 	copyHeaders(w.Header(), resp.Header)
+	// 源协议非 OpenAI Chat（/v1/messages、/v1/responses）时需把上游响应转换回该协议，
+	// 转换后长度可能变化，故移除上游 Content-Length 交给 Go 重新分块。
+	convertSource := req.SourceFormat != protocol.FormatOpenAIChat
 	injectDebug := debugTrace && !req.Stream
-	if injectDebug {
-		w.Header().Del("Content-Length") // 注入后长度变化，交给 Go 自动分块
+	if injectDebug || (convertSource && !req.Stream) {
+		w.Header().Del("Content-Length")
 	}
 	w.WriteHeader(resp.StatusCode)
 
 	if req.Stream {
+		if convertSource {
+			converted := protocol.ConvertStreamToSource(resp.Body, req.SourceFormat, req.Model)
+			_, _ = io.Copy(w, converted)
+			_ = converted.Close()
+			return
+		}
 		if needsReasoning {
 			_ = protocol.ProcessReasoningSSEStream(resp.Body, w)
 			return
 		}
 		// 响应方向原样透传：模型输出（最终回答/工具入参）不做 RTK 改写
 		_, _ = io.Copy(w, resp.Body)
+		return
+	}
+
+	if convertSource {
+		respBytes, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return
+		}
+		converted, convErr := protocol.ConvertOpenAIResponseToSource(respBytes, req.SourceFormat, req.Model)
+		if convErr != nil {
+			_, _ = w.Write(respBytes)
+			return
+		}
+		_, _ = w.Write(converted)
 		return
 	}
 
@@ -858,19 +913,11 @@ func (s *Service) forwardRequest(ctx context.Context, candidates []routing.PlanS
 			continue
 		}
 
-		if len(step.Channel.APIKeys) > 1 {
-			rotator := s.getKeyRotator(step.Channel.ChannelID, step.Channel.APIKeys)
-			selectedKey := rotator.Next()
-			if selectedKey != "" {
-				if optCfg.CooldownEnabled && s.cooldownMgr.IsOnCooldown(selectedKey) {
-					attempt.Status = "cooldown"
-					attempt.Error = fmt.Sprintf("key %s... is on cooldown", safeKeyPrefix(selectedKey))
-					attempts = append(attempts, attempt)
-					continue
-				}
-				providerCfg.APIKey = selectedKey
-			}
-		}
+		// 多 key 轮询：在一个候选渠道内依次尝试多个 key。处于冷却（等价于"拉黑"）的 key
+		// 会被跳过，鉴权失败/限流的 key 会被记入冷却——避免永远只用 keys[0]，也避免因单个
+		// 坏 key 而跳过整个渠道。
+		keyCandidates := step.Channel.APIKeys
+		rotateKeys := len(keyCandidates) > 1
 
 		// Per-channel concurrency limit (P2-23)
 		if !s.concurrencyLimiter.Acquire(step.Channel.ChannelID) {
@@ -882,18 +929,61 @@ func (s *Service) forwardRequest(ctx context.Context, candidates []routing.PlanS
 		}
 
 		executor := providers.ResolveExecutor(providerCfg)
-		attemptStart := time.Now()
-		upstreamResp, err := executor.ChatCompletions(ctx, providerCfg, &providers.UpstreamRequest{
-			Model:    step.UpstreamModel,
-			Messages: req.Messages,
-			Stream:   req.Stream,
-			Extra:    req.Extra,
-		})
+		var upstreamResp *providers.UpstreamResponse
+		var execErr error
+		cooldownSkipped := 0
+
+		if rotateKeys {
+			rotator := s.getKeyRotator(step.Channel.ChannelID, keyCandidates)
+			tried := make(map[string]bool, len(keyCandidates))
+			for i := 0; i < len(keyCandidates); i++ {
+				key := rotator.Next()
+				if key == "" || tried[key] {
+					break
+				}
+				tried[key] = true
+				if optCfg.CooldownEnabled && s.cooldownMgr.IsOnCooldown(key) {
+					cooldownSkipped++
+					continue
+				}
+				cfg := *providerCfg
+				cfg.APIKey = key
+				attemptStart := time.Now()
+				resp, err := executor.ChatCompletions(ctx, &cfg, &providers.UpstreamRequest{
+					Model:    step.UpstreamModel,
+					Messages: req.Messages,
+					Stream:   req.Stream,
+					Extra:    req.Extra,
+				})
+				if err == nil {
+					upstreamResp = resp
+					execErr = nil
+					routing.RecordLatency(step.Channel.ChannelID, float64(time.Since(attemptStart).Milliseconds()))
+					break
+				}
+				execErr = err
+				if optCfg.CooldownEnabled {
+					if pe, ok := err.(*providers.ProviderError); ok && providers.ShouldRotateKey(pe.StatusCode) {
+						s.cooldownMgr.SetCooldownWithReason(key, "key_failed")
+					}
+				}
+			}
+		} else {
+			attemptStart := time.Now()
+			upstreamResp, execErr = executor.ChatCompletions(ctx, providerCfg, &providers.UpstreamRequest{
+				Model:    step.UpstreamModel,
+				Messages: req.Messages,
+				Stream:   req.Stream,
+				Extra:    req.Extra,
+			})
+			if execErr == nil {
+				routing.RecordLatency(step.Channel.ChannelID, float64(time.Since(attemptStart).Milliseconds()))
+			}
+		}
 		s.concurrencyLimiter.Release(step.Channel.ChannelID)
 
-		if err == nil {
+		if execErr == nil {
 			cb.RecordSuccess()
-			routing.RecordLatency(step.Channel.ChannelID, float64(time.Since(attemptStart).Milliseconds()))
 			s.recordPenaltySuccess(step)
 			s.resolver.RecordSessionStep(sessionKey, step)
 			attempt.Status = "success"
@@ -905,30 +995,25 @@ func (s *Service) forwardRequest(ctx context.Context, candidates []routing.PlanS
 			}, &step, attempts, nil
 		}
 
-		cb.RecordFailure()
-		attempt.Error = err.Error()
-		lastErr = err
-
-		if len(step.Channel.APIKeys) > 1 && providerCfg.APIKey != "" {
-			providerErr, ok := err.(*providers.ProviderError)
-			if ok && providers.ShouldRotateKey(providerErr.StatusCode) {
-				rotator := s.getKeyRotator(step.Channel.ChannelID, step.Channel.APIKeys)
-				rotator.MarkKeyFailed(providerCfg.APIKey)
-			}
+		// 熔断只对服务端/网络类错误计数，避免单个坏 key 触发的 4xx 把整渠道熔断。
+		if circuitBreakerCounts(execErr) {
+			cb.RecordFailure()
 		}
+		errMsg := execErr.Error()
+		if cooldownSkipped > 0 {
+			errMsg = fmt.Sprintf("%s (%d key(s) skipped on cooldown)", errMsg, cooldownSkipped)
+		}
+		attempt.Error = errMsg
+		lastErr = execErr
 
+		err = execErr
 		providerErr, ok := err.(*providers.ProviderError)
 		if ok {
 			_, retryable := classifier.Classify(providerErr.StatusCode, providerErr.Message)
 			if retryable {
 				attempt.Status = "retryable_failure"
-				if providerErr.StatusCode == 429 {
-					if optCfg.PenaltyEnabled {
-						s.recordPenaltyRateLimit(step)
-					}
-					if optCfg.CooldownEnabled && providerCfg.APIKey != "" {
-						s.cooldownMgr.SetCooldownWithReason(providerCfg.APIKey, "rate_limited")
-					}
+				if providerErr.StatusCode == 429 && optCfg.PenaltyEnabled {
+					s.recordPenaltyRateLimit(step)
 				}
 			} else {
 				attempt.Status = "failure"
@@ -1108,11 +1193,18 @@ func (s *Service) recordPenaltyRateLimit(step routing.PlanStep) {
 	s.penaltyMgr.RecordRateLimit(s.penaltyKey(step))
 }
 
-func safeKeyPrefix(key string) string {
-	if len(key) <= 8 {
-		return key
+// circuitBreakerCounts 判断一次上游失败是否应计入熔断器。仅服务端错误（5xx）与网络类
+// 错误计数；客户端错误（401/403/404/429 等 4xx）不计，避免单个坏 key 或单次限流把
+// 整个渠道熔断。
+func circuitBreakerCounts(err error) bool {
+	if err == nil {
+		return false
 	}
-	return key[:8]
+	var pe *providers.ProviderError
+	if errors.As(err, &pe) {
+		return pe.StatusCode == 0 || pe.StatusCode >= 500
+	}
+	return true
 }
 
 func summarizeRoutePlan(plan []routing.PlanStep) string {

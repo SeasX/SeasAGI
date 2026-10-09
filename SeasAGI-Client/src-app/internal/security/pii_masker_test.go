@@ -1,6 +1,7 @@
 package security
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -145,4 +146,77 @@ func TestPIIMaskerMaskMessages(t *testing.T) {
 	if content != "My email is [EMAIL]" {
 		t.Errorf("Masked content = %q, want 'My email is [EMAIL]'", content)
 	}
+}
+
+func TestDLPMatcherDetectAdvanced(t *testing.T) {
+	d := NewDLPMatcher()
+
+	input := "email alice@test.com\n" +
+		"password = hunter2\n" +
+		"-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAK\n-----END RSA PRIVATE KEY-----"
+
+	detections := d.DetectAdvanced(input)
+	types := map[string]bool{}
+	for _, det := range detections {
+		types[det.Type] = true
+	}
+	if !types["email"] {
+		t.Error("expected email detection")
+	}
+	if !types["sensitive_phrase"] {
+		t.Error("expected sensitive_phrase detection (password / private key)")
+	}
+	if !types["private_key_block"] {
+		t.Error("expected private_key_block detection")
+	}
+}
+
+func TestDLPMatcherMaskAdvanced(t *testing.T) {
+	d := NewDLPMatcher()
+
+	input := "password = hunter2\n" +
+		"contact alice@test.com\n" +
+		"-----BEGIN RSA PRIVATE KEY-----\nSECRETKEYMATERIAL\n-----END RSA PRIVATE KEY-----"
+
+	masked := d.MaskAdvanced(input)
+
+	if contains(masked, "hunter2") {
+		t.Errorf("secret value should be redacted, got: %q", masked)
+	}
+	if contains(masked, "alice@test.com") {
+		t.Errorf("email should be masked, got: %q", masked)
+	}
+	if contains(masked, "SECRETKEYMATERIAL") {
+		t.Errorf("PEM key material should be masked, got: %q", masked)
+	}
+	if !contains(masked, "[REDACTED]") {
+		t.Errorf("expected [REDACTED] marker, got: %q", masked)
+	}
+	if !contains(masked, "[PRIVATE_KEY]") {
+		t.Errorf("expected [PRIVATE_KEY] marker, got: %q", masked)
+	}
+	if !contains(masked, "[EMAIL]") {
+		t.Errorf("expected [EMAIL] marker, got: %q", masked)
+	}
+}
+
+func TestDLPMatcherMaskMessagesAdvanced(t *testing.T) {
+	d := NewDLPMatcher()
+
+	messages := []map[string]interface{}{
+		{"role": "user", "content": "token = abc123"},
+		{"role": "assistant", "content": "no secrets"},
+	}
+	d.MaskMessagesAdvanced(messages)
+
+	if got := messages[0]["content"].(string); contains(got, "abc123") {
+		t.Errorf("token value should be redacted, got: %q", got)
+	}
+	if got := messages[1]["content"].(string); got != "no secrets" {
+		t.Errorf("clean message should be unchanged, got: %q", got)
+	}
+}
+
+func contains(s, sub string) bool {
+	return strings.Contains(s, sub)
 }

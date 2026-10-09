@@ -28,6 +28,8 @@ type RequestLog struct {
 	ErrorMessage       *string     `json:"error_message"`
 	AppliedConstraints string      `json:"applied_constraints,omitempty"` // JSON of constraint conditions applied
 	IntentScenario     string      `json:"intent_scenario,omitempty"`     // M4.5: 场景化意图（code_logic/image_gen/...）
+	// RequestPayload 失败请求的脱敏请求体快照（敏感字段已 REDACTED），用于排障与审计。
+	RequestPayload string `json:"request_payload,omitempty"`
 }
 
 type RouteStep struct {

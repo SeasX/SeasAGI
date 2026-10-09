@@ -1,12 +1,32 @@
 package usage
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
+)
+
+// maxRecords caps how many in-memory records are retained; the oldest are
+// dropped once the cap is exceeded (and the file is compacted).
+const maxRecords = 10000
+
+// Fallback pricing (USD per 1M tokens) used when a model is not present in the
+// pricing table. The record is flagged via UsageRecord.CostEstimated.
+const (
+	fallbackInputPricePer1M  = 1.0
+	fallbackOutputPricePer1M = 1.0
+)
+
+// Cache token price ratios applied to the model's input price. Providers bill
+// prompt-cache reads at a steep discount and cache writes at a premium.
+const (
+	cacheReadPriceRatio  = 0.1
+	cacheWritePriceRatio = 1.25
 )
 
 type UsageRecord struct {
@@ -18,6 +38,9 @@ type UsageRecord struct {
 	InputTokens  int64   `json:"input_tokens"`
 	OutputTokens int64   `json:"output_tokens"`
 	CostUSD      float64 `json:"cost_usd"`
+	// CostEstimated is true when the model was not found in the pricing table and
+	// a fallback price was applied.
+	CostEstimated bool `json:"cost_estimated,omitempty"`
 
 	// Token v2 breakdown (P0-6)
 	CacheReadTokens     int64  `json:"cache_read_tokens,omitempty"`
@@ -83,11 +106,29 @@ func NewService() *Service {
 	return svc
 }
 
+// persistLine is one line of the append-only usage log. Exactly one of the two
+// fields is set per line.
+type persistLine struct {
+	Record  *UsageRecord   `json:"record,omitempty"`
+	Pricing []ModelPricing `json:"pricing,omitempty"`
+}
+
+// load reads the usage log. New files are JSONL (one persistLine per line); a
+// legacy single-JSON snapshot ({records:[...],pricing:[...]}) is still accepted
+// for backward compatibility.
 func (s *Service) load() {
 	data, err := os.ReadFile(s.path)
-	if err != nil {
+	if err != nil || len(data) == 0 {
 		return
 	}
+	if records, pricing, ok := parseJSONL(data); ok {
+		s.records = records
+		if len(pricing) > 0 {
+			s.pricing = pricing
+		}
+		return
+	}
+	// Legacy snapshot fallback.
 	var loaded struct {
 		Records []UsageRecord  `json:"records"`
 		Pricing []ModelPricing `json:"pricing"`
@@ -99,21 +140,74 @@ func (s *Service) load() {
 	s.pricing = loaded.Pricing
 }
 
-func (s *Service) persist() {
-	data := struct {
-		Records []UsageRecord  `json:"records"`
-		Pricing []ModelPricing `json:"pricing"`
-	}{
-		Records: s.records,
-		Pricing: s.pricing,
+// parseJSONL decodes the whole file as JSONL. It returns ok=false (without side
+// effects) as soon as any line is not a standalone JSON object, which signals a
+// legacy pretty-printed snapshot.
+func parseJSONL(data []byte) ([]UsageRecord, []ModelPricing, bool) {
+	records := make([]UsageRecord, 0)
+	var pricing []ModelPricing
+	sawLine := false
+	for _, raw := range bytes.Split(data, []byte("\n")) {
+		line := bytes.TrimSpace(raw)
+		if len(line) == 0 {
+			continue
+		}
+		var pl persistLine
+		if err := json.Unmarshal(line, &pl); err != nil {
+			return nil, nil, false
+		}
+		sawLine = true
+		if pl.Record != nil {
+			records = append(records, *pl.Record)
+		}
+		if len(pl.Pricing) > 0 {
+			pricing = pl.Pricing
+		}
 	}
-	out, err := json.MarshalIndent(data, "", "  ")
+	return records, pricing, sawLine
+}
+
+// appendRecordLocked incrementally appends a single record to the log. The
+// caller must hold s.mu.
+func (s *Service) appendRecordLocked(record UsageRecord) {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
+		return
+	}
+	line, err := json.Marshal(persistLine{Record: &record})
 	if err != nil {
 		return
 	}
-	os.MkdirAll(filepath.Dir(s.path), 0755)
+	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(line, '\n'))
+}
+
+// persist rewrites the whole log atomically (tmp file + rename). Used on
+// initialisation, pricing changes, purge and compaction.
+func (s *Service) persist() {
+	var buf bytes.Buffer
+	writeLine := func(pl persistLine) {
+		line, err := json.Marshal(pl)
+		if err != nil {
+			return
+		}
+		buf.Write(line)
+		buf.WriteByte('\n')
+	}
+	writeLine(persistLine{Pricing: s.pricing})
+	for i := range s.records {
+		writeLine(persistLine{Record: &s.records[i]})
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
+		return
+	}
 	tmpFile := s.path + ".tmp"
-	_ = os.WriteFile(tmpFile, out, 0644)
+	if err := os.WriteFile(tmpFile, buf.Bytes(), 0644); err != nil {
+		return
+	}
 	_ = os.Rename(tmpFile, s.path)
 }
 
@@ -152,32 +246,65 @@ type UsageSummary struct {
 	MonthCostUSD      float64 `json:"month_cost_usd"`
 }
 
+// defaultPricing is the single source of truth for model prices (USD per 1M
+// tokens, split by input/output). config.ModelCost derives its routing scalar
+// from this table so the two price tables can no longer diverge.
+var defaultPricing = []ModelPricing{
+	{Model: "gpt-4o", InputPricePer1M: 2.5, OutputPricePer1M: 10},
+	{Model: "gpt-4o-mini", InputPricePer1M: 0.15, OutputPricePer1M: 0.6},
+	{Model: "gpt-5", InputPricePer1M: 5.0, OutputPricePer1M: 20},
+	{Model: "gpt-5-mini", InputPricePer1M: 0.3, OutputPricePer1M: 1.2},
+	{Model: "gpt-5-nano", InputPricePer1M: 0.1, OutputPricePer1M: 0.4},
+	{Model: "claude-sonnet-4-20250514", InputPricePer1M: 3, OutputPricePer1M: 15},
+	{Model: "claude-opus-4-20250514", InputPricePer1M: 15, OutputPricePer1M: 75},
+	{Model: "claude-4-sonnet", InputPricePer1M: 4, OutputPricePer1M: 18},
+	{Model: "claude-4-opus", InputPricePer1M: 18, OutputPricePer1M: 80},
+	{Model: "claude-haiku-3-5-20241022", InputPricePer1M: 0.8, OutputPricePer1M: 4},
+	{Model: "gemini-2.5-pro", InputPricePer1M: 1.25, OutputPricePer1M: 10},
+	{Model: "gemini-2.5-flash", InputPricePer1M: 0.15, OutputPricePer1M: 0.6},
+	{Model: "deepseek-chat", InputPricePer1M: 0.27, OutputPricePer1M: 1.1},
+	{Model: "deepseek-v4-pro", InputPricePer1M: 0.5, OutputPricePer1M: 2.0},
+	{Model: "deepseek-v4-flash", InputPricePer1M: 0.1, OutputPricePer1M: 0.4},
+	{Model: "glm-5", InputPricePer1M: 0.5, OutputPricePer1M: 2.0},
+	{Model: "glm-5.1", InputPricePer1M: 0.8, OutputPricePer1M: 3.0},
+	{Model: "kimi-2.5", InputPricePer1M: 0.6, OutputPricePer1M: 2.5},
+	{Model: "kimi-2.6", InputPricePer1M: 1.0, OutputPricePer1M: 4.0},
+	{Model: "minimax-m2.7", InputPricePer1M: 0.4, OutputPricePer1M: 1.5},
+}
+
+// lookupIn finds the pricing entry for model using exact match first, then the
+// longest prefix match (so "gpt-4o-mini-2024" resolves to gpt-4o-mini, not gpt-4o).
+func lookupIn(pricing []ModelPricing, model string) (ModelPricing, bool) {
+	for _, p := range pricing {
+		if p.Model == model {
+			return p, true
+		}
+	}
+	var best ModelPricing
+	bestLen := -1
+	for _, p := range pricing {
+		if strings.HasPrefix(model, p.Model) && len(p.Model) > bestLen {
+			best = p
+			bestLen = len(p.Model)
+		}
+	}
+	if bestLen >= 0 {
+		return best, true
+	}
+	return ModelPricing{}, false
+}
+
+// LookupPricing returns the canonical pricing entry for a model. It is used by
+// other packages (e.g. config routing) so that all cost estimates share one table.
+func LookupPricing(model string) (ModelPricing, bool) {
+	return lookupIn(defaultPricing, model)
+}
+
 func (s *Service) initDefaultPricing() {
 	if len(s.pricing) > 0 {
 		return
 	}
-	s.pricing = []ModelPricing{
-		{Model: "gpt-4o", InputPricePer1M: 2.5, OutputPricePer1M: 10},
-		{Model: "gpt-4o-mini", InputPricePer1M: 0.15, OutputPricePer1M: 0.6},
-		{Model: "gpt-5", InputPricePer1M: 5.0, OutputPricePer1M: 20},
-		{Model: "gpt-5-mini", InputPricePer1M: 0.3, OutputPricePer1M: 1.2},
-		{Model: "gpt-5-nano", InputPricePer1M: 0.1, OutputPricePer1M: 0.4},
-		{Model: "claude-sonnet-4-20250514", InputPricePer1M: 3, OutputPricePer1M: 15},
-		{Model: "claude-opus-4-20250514", InputPricePer1M: 15, OutputPricePer1M: 75},
-		{Model: "claude-4-sonnet", InputPricePer1M: 4, OutputPricePer1M: 18},
-		{Model: "claude-4-opus", InputPricePer1M: 18, OutputPricePer1M: 80},
-		{Model: "claude-haiku-3-5-20241022", InputPricePer1M: 0.8, OutputPricePer1M: 4},
-		{Model: "gemini-2.5-pro", InputPricePer1M: 1.25, OutputPricePer1M: 10},
-		{Model: "gemini-2.5-flash", InputPricePer1M: 0.15, OutputPricePer1M: 0.6},
-		{Model: "deepseek-chat", InputPricePer1M: 0.27, OutputPricePer1M: 1.1},
-		{Model: "deepseek-v4-pro", InputPricePer1M: 0.5, OutputPricePer1M: 2.0},
-		{Model: "deepseek-v4-flash", InputPricePer1M: 0.1, OutputPricePer1M: 0.4},
-		{Model: "glm-5", InputPricePer1M: 0.5, OutputPricePer1M: 2.0},
-		{Model: "glm-5.1", InputPricePer1M: 0.8, OutputPricePer1M: 3.0},
-		{Model: "kimi-2.5", InputPricePer1M: 0.6, OutputPricePer1M: 2.5},
-		{Model: "kimi-2.6", InputPricePer1M: 1.0, OutputPricePer1M: 4.0},
-		{Model: "minimax-m2.7", InputPricePer1M: 0.4, OutputPricePer1M: 1.5},
-	}
+	s.pricing = append([]ModelPricing(nil), defaultPricing...)
 	s.persist()
 }
 
@@ -223,33 +350,33 @@ type UsageDetail struct {
 // RecordUsageV2 records a request with full token v2 breakdown, TTFT, service tier,
 // and response header snapshot.
 func (s *Service) RecordUsageV2(detail UsageDetail) {
-	inputTokens := detail.InputTokens
-	outputTokens := detail.OutputTokens
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	var costUSD float64
-	for _, p := range s.pricing {
-		if p.Model == detail.Model {
-			costUSD = (float64(inputTokens)/1_000_000)*p.InputPricePer1M + (float64(outputTokens)/1_000_000)*p.OutputPricePer1M
-			break
+	pricing, found := lookupIn(s.pricing, detail.Model)
+	if !found {
+		// Unknown model: apply a fallback price and flag the record so the
+		// estimated cost is visible downstream instead of silently reading 0.
+		pricing = ModelPricing{
+			Model:            detail.Model,
+			InputPricePer1M:  fallbackInputPricePer1M,
+			OutputPricePer1M: fallbackOutputPricePer1M,
 		}
 	}
+
+	costUSD := estimateCost(detail, pricing)
 
 	// Determine token quality (P0-10)
 	quality := classifyTokenQuality(detail)
 
-	// Validate invariants (P0-6): if inconsistent, mark quality accordingly
-	inputTotal := detail.UncachedInputTokens + detail.CacheReadTokens + detail.CacheWriteTokens
-	outputTotal := detail.NonReasoningOutput + detail.ReasoningTokens
-	grandTotal := inputTotal + outputTotal + detail.UnclassifiedTokens
-
-	// If v2 breakdown is provided, prefer it over the simple input/output
-	if inputTotal > 0 {
+	inputTokens := detail.InputTokens
+	outputTokens := detail.OutputTokens
+	if inputTotal := detail.UncachedInputTokens + detail.CacheReadTokens + detail.CacheWriteTokens; inputTotal > 0 {
 		inputTokens = inputTotal
 	}
-	if outputTotal > 0 {
+	if outputTotal := detail.NonReasoningOutput + detail.ReasoningTokens; outputTotal > 0 {
 		outputTokens = outputTotal
 	}
-	_ = grandTotal // used for invariant validation
 
 	record := UsageRecord{
 		Timestamp:           time.Now().Format(time.RFC3339),
@@ -260,6 +387,7 @@ func (s *Service) RecordUsageV2(detail UsageDetail) {
 		InputTokens:         inputTokens,
 		OutputTokens:        outputTokens,
 		CostUSD:             costUSD,
+		CostEstimated:       !found,
 		CacheReadTokens:     detail.CacheReadTokens,
 		CacheWriteTokens:    detail.CacheWriteTokens,
 		UncachedInputTokens: detail.UncachedInputTokens,
@@ -275,13 +403,50 @@ func (s *Service) RecordUsageV2(detail UsageDetail) {
 		RateLimitReset:      detail.RateLimitReset,
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.records = append(s.records, record)
-	if len(s.records) > 10000 {
-		s.records = s.records[len(s.records)-10000:]
+	if len(s.records) > maxRecords {
+		// Compaction: drop the oldest and rewrite the log atomically.
+		s.records = s.records[len(s.records)-maxRecords:]
+		s.persist()
+		return
 	}
-	s.persist()
+	// Incremental append: only the new record is written, avoiding an O(n)
+	// full rewrite on every single request.
+	s.appendRecordLocked(record)
+}
+
+// estimateCost computes the USD cost of a request. When the granular v2 token
+// breakdown is available it is priced component by component (with prompt-cache
+// discounts); otherwise the coarse input/output counts are used at full price.
+func estimateCost(detail UsageDetail, p ModelPricing) float64 {
+	const perMillion = 1_000_000.0
+	inRate := p.InputPricePer1M / perMillion
+	outRate := p.OutputPricePer1M / perMillion
+
+	var cost float64
+	inputTotal := detail.UncachedInputTokens + detail.CacheReadTokens + detail.CacheWriteTokens
+	if inputTotal > 0 {
+		cost += float64(detail.UncachedInputTokens) * inRate
+		cost += float64(detail.CacheReadTokens) * inRate * cacheReadPriceRatio
+		cost += float64(detail.CacheWriteTokens) * inRate * cacheWritePriceRatio
+	} else {
+		cost += float64(detail.InputTokens) * inRate
+	}
+
+	outputTotal := detail.NonReasoningOutput + detail.ReasoningTokens
+	if outputTotal > 0 {
+		// Reasoning tokens are billed at the output rate.
+		cost += float64(detail.NonReasoningOutput) * outRate
+		cost += float64(detail.ReasoningTokens) * outRate
+	} else {
+		cost += float64(detail.OutputTokens) * outRate
+	}
+
+	// Unclassified tokens were previously not priced at all; charge them at the
+	// (cheaper) input rate so they are not silently free.
+	cost += float64(detail.UnclassifiedTokens) * inRate
+
+	return cost
 }
 
 func (s *Service) GetDailyUsage(days int) []DailyUsage {

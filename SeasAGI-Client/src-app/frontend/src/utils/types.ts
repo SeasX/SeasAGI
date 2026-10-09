@@ -50,7 +50,6 @@ export interface RequestLog {
   created_at: string;
   logical_model_name: string;
   channel_id: string;
-  channel_type: string; // "local" | "platform" | "relay" | "unknown"
   upstream_model: string;
   route_trace: string;
   route_steps: RouteStep[];
@@ -62,6 +61,8 @@ export interface RequestLog {
   output_tokens: number;
   error_code: string | null;
   error_message: string | null;
+  applied_constraints?: string;
+  intent_scenario?: string;
 }
 
 export interface CandidateProvider {

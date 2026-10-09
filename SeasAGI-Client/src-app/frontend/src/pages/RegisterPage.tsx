@@ -61,7 +61,8 @@ export function RegisterPage() {
     let cancelled = false;
     cmd.getOAuthProviders()
       .then((providers) => {
-        if (!cancelled) setOauthProviders(providers);
+        // Go 端 nil slice 经 Wails 序列化为 null（服务端未配置 OAuth 时），需归一化
+        if (!cancelled) setOauthProviders(Array.isArray(providers) ? providers : []);
       })
       .catch(() => {
         // 服务端未配置 OAuth 时静默隐藏第三方登录入口

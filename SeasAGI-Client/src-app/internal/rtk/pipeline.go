@@ -1,7 +1,9 @@
 package rtk
 
+import "github.com/SeasAGI/SeasAGI-Client/internal/logging"
+
 type Pipeline struct {
-	Enabled     bool
+	Enabled        bool
 	MaxOutputChars int
 }
 
@@ -10,7 +12,7 @@ func NewPipeline(enabled bool, maxOutputChars int) *Pipeline {
 		maxOutputChars = 8000
 	}
 	return &Pipeline{
-		Enabled:     enabled,
+		Enabled:        enabled,
 		MaxOutputChars: maxOutputChars,
 	}
 }
@@ -32,9 +34,14 @@ func (p *Pipeline) ProcessToolResult(content string) string {
 	return p.Process(content)
 }
 
-func (p *Pipeline) applyFilter(content string, outputType OutputType) string {
+func (p *Pipeline) applyFilter(content string, outputType OutputType) (result string) {
+	// 命名返回值初值为原始内容：过滤器 panic 时回退为原文，避免工具输出被静默清空。
+	result = content
 	defer func() {
-		recover()
+		if rec := recover(); rec != nil {
+			logging.Errorf("rtk: filter %s panicked, falling back to raw content: %v", outputType, rec)
+			result = content
+		}
 	}()
 
 	switch outputType {

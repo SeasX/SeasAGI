@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"sync"
 	"time"
-
-	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
 )
 
 // Proxy 是 MITM 拦截代理服务器。它监听本地端口，对命中规则的 HTTPS 请求进行拦截（动态签发证书），
@@ -22,6 +20,7 @@ type Proxy struct {
 	ca           *CertificateAuthority
 	rules        *Rules
 	gatewayURL   string // http://127.0.0.1:4318
+	accessToken  string // 本地网关访问令牌，拦截转发前注入
 	interceptLog InterceptLogger
 	addr         string
 }
@@ -35,6 +34,27 @@ func NewProxy(addr string, ca *CertificateAuthority, rules *Rules, gatewayURL st
 		interceptLog: logger,
 		addr:         addr,
 	}
+}
+
+// SetAccessToken 设置拦截转发时注入的本地网关访问令牌。
+func (p *Proxy) SetAccessToken(token string) {
+	p.mu.Lock()
+	p.accessToken = token
+	p.mu.Unlock()
+}
+
+// injectAuth 用本机访问令牌覆盖被接管请求的鉴权头。被接管的 SDK 携带的是厂商自身的
+// key，而本地网关校验的是本机令牌；若不改写，转发必然 401。
+func (p *Proxy) injectAuth(req *http.Request) {
+	p.mu.Lock()
+	token := p.accessToken
+	p.mu.Unlock()
+	if token == "" {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	// Anthropic SDK 使用 x-api-key；网关只校验 Authorization，清除以避免歧义。
+	req.Header.Del("x-api-key")
 }
 
 // Start 启动代理服务器。
@@ -133,14 +153,7 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 // interceptConnect 拦截 HTTPS 连接：劫持 TCP 连接 → 包装 TLS（使用动态签发的证书）→ 读取 HTTP 请求 → 转发到 gateway。
-// 对配置了证书 pin 的域名跳过拦截，改为透传，避免 MITM 破坏 pin 校验。
 func (p *Proxy) interceptConnect(w http.ResponseWriter, r *http.Request, host string) {
-	// 若该域名设置了证书 pin，则跳过 MITM 拦截，改为透传，以保留上游证书的完整性
-	if len(GetPins(host)) > 0 {
-		p.passthroughConnect(w, r, host)
-		return
-	}
-
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "hijacking not supported", http.StatusInternalServerError)
@@ -185,6 +198,8 @@ func (p *Proxy) serveInterceptedTLS(tlsConn net.Conn, originalHost string) {
 		// 重写请求目标为本地 gateway
 		req.URL.Scheme = "http"
 		req.URL.Host = p.gatewayURL[7:] // 去掉 "http://" 前缀
+		// 注入本机访问令牌：被接管 SDK 携带的是厂商 key，网关校验的是本机令牌。
+		p.injectAuth(req)
 
 		// 记录拦截日志
 		startTime := time.Now()
@@ -228,8 +243,6 @@ func (p *Proxy) serveInterceptedTLS(tlsConn net.Conn, originalHost string) {
 }
 
 // passthroughConnect 透传 HTTPS CONNECT 隧道（不拦截）。
-// 如果该域名配置了证书 pin，则先与上游建立 TLS 连接并校验 pin，
-// 校验失败则关闭连接并记录告警；通过后透传原始 TLS 流量。
 func (p *Proxy) passthroughConnect(w http.ResponseWriter, r *http.Request, host string) {
 	// CONNECT 请求的 r.Host 包含 host:port
 	targetAddr := r.Host
@@ -237,51 +250,12 @@ func (p *Proxy) passthroughConnect(w http.ResponseWriter, r *http.Request, host 
 		targetAddr = host + ":443"
 	}
 
-	// 若该域名设置了证书 pin，先主动与上游握手以校验 pin
-	pinned := len(GetPins(host)) > 0
-	var upstreamTLSConn *tls.Conn
-	if pinned {
-		dialer := &net.Dialer{Timeout: 30 * time.Second}
-		rawConn, err := dialer.Dial("tcp", targetAddr)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
-		}
-		upstreamTLSConn = tls.Client(rawConn, &tls.Config{
-			ServerName:         host,
-			InsecureSkipVerify: false,
-		})
-		if err := upstreamTLSConn.Handshake(); err != nil {
-			_ = upstreamTLSConn.Close()
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
-		state := upstreamTLSConn.ConnectionState()
-		if err := CheckPin(host, &state); err != nil {
-			logging.Warningf("mitm: certificate pin check failed for %s: %v", host, err)
-			_ = upstreamTLSConn.Close()
-			http.Error(w, "certificate pin verification failed", http.StatusBadGateway)
-			return
-		}
-		// pin 校验通过，恢复为裸 TCP 隧道：关闭 TLS 层但保留底层 TCP 连接供 io.Copy
-		// 这里直接复用已建立的 TLS 连接做双向透传即可
-	}
-
 	targetConn, err := net.DialTimeout("tcp", targetAddr, 30*time.Second)
 	if err != nil {
-		if upstreamTLSConn != nil {
-			_ = upstreamTLSConn.Close()
-		}
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	defer targetConn.Close()
-
-	// 若已建立 pin 校验的 TLS 连接，则使用它替换裸 TCP 连接
-	if upstreamTLSConn != nil {
-		targetConn.Close()
-		targetConn = upstreamTLSConn
-	}
 
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
@@ -332,6 +306,8 @@ func (p *Proxy) interceptRequest(host string, w http.ResponseWriter, r *http.Req
 	// 重写请求目标为本地 gateway
 	r.URL.Scheme = "http"
 	r.URL.Host = p.gatewayURL[7:]
+	// 注入本机访问令牌
+	p.injectAuth(r)
 
 	resp, err := http.DefaultTransport.RoundTrip(r)
 	if err != nil {

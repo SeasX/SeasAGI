@@ -44,6 +44,30 @@ func ParseRequest(body []byte) (*CanonicalRequest, error) {
 	return nil, fmt.Errorf("unsupported request format")
 }
 
+// ParseRequestAs 按指定的源格式解析请求体，跳过自动探测。用于网关为特定协议路径
+// （如 /v1/messages、/v1/responses）注册的专用路由——这些路径的 wire 格式已知，
+// 自动探测可能因 "messages" 字段把 Anthropic 请求误判为 OpenAI Chat。
+func ParseRequestAs(body []byte, format Format) (*CanonicalRequest, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("invalid request body")
+	}
+	switch format {
+	case FormatAnthropic:
+		return anthropicTranslator{}.ToCanonical(payload)
+	case FormatOpenAIResponses:
+		// Responses API 的 input 允许为字符串；归一为数组后再解析。
+		if s, ok := payload["input"].(string); ok {
+			payload["input"] = []any{map[string]any{"role": "user", "content": s}}
+		}
+		return openAIResponsesTranslator{}.ToCanonical(payload)
+	case FormatOpenAIChat:
+		return openAIChatTranslator{}.ToCanonical(payload)
+	default:
+		return ParseRequest(body)
+	}
+}
+
 type openAIChatTranslator struct{}
 
 func (openAIChatTranslator) Match(body map[string]any) bool {

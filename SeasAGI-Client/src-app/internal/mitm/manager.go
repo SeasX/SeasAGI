@@ -283,6 +283,15 @@ func (m *Manager) SetTrustInstaller(ti TrustInstaller) {
 	m.trust = ti
 }
 
+// SetAccessToken 设置拦截转发时注入的本地网关访问令牌。
+func (m *Manager) SetAccessToken(token string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.proxy != nil {
+		m.proxy.SetAccessToken(token)
+	}
+}
+
 // SetSystemProxySetter 注入系统代理设置器。
 func (m *Manager) SetSystemProxySetter(sps SystemProxySetter) {
 	m.mu.Lock()

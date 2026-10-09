@@ -124,15 +124,40 @@ func isFindResult(lines []string) bool {
 	return pathCount >= 3
 }
 
+// isLsResult 收紧判定：仅统计「像 ls 条目」的行 —— 权限位开头的长格式行，
+// 或不含空白的单 token 名称。避免把成段散文（含空格的行）误判为 ls 而改写路径。
 func isLsResult(lines []string) bool {
 	entryCount := 0
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed != "" && !strings.HasPrefix(trimmed, "total") && !strings.HasPrefix(trimmed, "ls:") {
+		if trimmed == "" || strings.HasPrefix(trimmed, "total") || strings.HasPrefix(trimmed, "ls:") {
+			continue
+		}
+		if isPermissionLine(trimmed) || !strings.ContainsAny(trimmed, " \t") {
 			entryCount++
 		}
 	}
 	return entryCount >= 3
+}
+
+// isPermissionLine 判断一行是否为 ls -l 风格的权限位开头（如 -rw-r--r-- / drwxr-xr-x）。
+func isPermissionLine(s string) bool {
+	if len(s) < 10 {
+		return false
+	}
+	switch s[0] {
+	case '-', 'd', 'l', 'b', 'c', 'p', 's':
+	default:
+		return false
+	}
+	for i := 1; i < 10; i++ {
+		switch s[i] {
+		case 'r', 'w', 'x', '-', 's', 'S', 't', 'T':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func isReadNumbered(lines []string) bool {

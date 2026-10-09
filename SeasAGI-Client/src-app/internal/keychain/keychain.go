@@ -2,6 +2,7 @@ package keychain
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
@@ -71,6 +72,39 @@ func GetChannelKey(channelID string) (string, error) {
 
 func DeleteChannelKey(channelID string) error {
 	return deleteKey("channel_" + channelID)
+}
+
+// SaveChannelKeys 将多 key 以 JSON 数组形式存入 keychain，避免明文落盘到 config.json。
+func SaveChannelKeys(channelID string, apiKeys []string) error {
+	if len(apiKeys) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(apiKeys)
+	if err != nil {
+		return err
+	}
+	return saveKey("channel_keys_"+channelID, string(data))
+}
+
+// GetChannelKeys 从 keychain 读取多 key。未配置时返回空切片。
+func GetChannelKeys(channelID string) ([]string, error) {
+	raw, err := getKey("channel_keys_" + channelID)
+	if err != nil {
+		return nil, err
+	}
+	if raw == "" {
+		return nil, nil
+	}
+	var keys []string
+	if err := json.Unmarshal([]byte(raw), &keys); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+// DeleteChannelKeys 删除多 key 的 keychain 条目。
+func DeleteChannelKeys(channelID string) error {
+	return deleteKey("channel_keys_" + channelID)
 }
 
 func generateToken() string {

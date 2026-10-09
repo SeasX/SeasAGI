@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -179,6 +180,7 @@ func (r *LogRotator) cleanRetentionLocked() error {
 	var files []fileInfo
 
 	cutoff := time.Now().AddDate(0, 0, -r.config.RetentionDays)
+	var errs []error
 
 	for _, entry := range entries {
 		name := entry.Name()
@@ -191,7 +193,9 @@ func (r *LogRotator) cleanRetentionLocked() error {
 		}
 		// 按保留天数清理
 		if info.ModTime().Before(cutoff) {
-			os.Remove(filepath.Join(dir, name))
+			if err := os.Remove(filepath.Join(dir, name)); err != nil {
+				errs = append(errs, fmt.Errorf("remove expired log %s: %w", name, err))
+			}
 			continue
 		}
 		files = append(files, fileInfo{Path: filepath.Join(dir, name), ModTime: info.ModTime()})
@@ -204,28 +208,47 @@ func (r *LogRotator) cleanRetentionLocked() error {
 		})
 		excess := len(files) - r.config.MaxFiles
 		for i := 0; i < excess; i++ {
-			os.Remove(files[i].Path)
+			if err := os.Remove(files[i].Path); err != nil {
+				errs = append(errs, fmt.Errorf("remove excess log %s: %w", files[i].Path, err))
+			}
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
-// Start 启动定时检查。
+// Start 启动定时检查。重复调用（在 Stop 之前）不会启动多个 goroutine。
 func (r *LogRotator) Start() {
-	interval := r.Config().CheckInterval
-	if interval <= 0 {
-		interval = DefaultRotationConfig().CheckInterval
+	r.mu.Lock()
+	if r.stopCh != nil { // 已在运行
+		r.mu.Unlock()
+		return
 	}
+	// 每次 Start 都创建新的 stopCh，避免 Stop→Start 后 goroutine 因 nil channel
+	// 永远阻塞而泄漏。
+	r.stopCh = make(chan struct{})
+	stopCh := r.stopCh
+	r.mu.Unlock()
+
 	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
 		for {
+			// 每次循环重新读取间隔，使 UpdateConfig 修改的 CheckInterval 能在
+			// 下一个周期生效。
+			interval := r.Config().CheckInterval
+			if interval <= 0 {
+				interval = DefaultRotationConfig().CheckInterval
+			}
+			timer := time.NewTimer(interval)
 			select {
-			case <-ticker.C:
-				_ = r.CheckAndRotate()
-				_ = r.CleanRetention()
-			case <-r.stopCh:
+			case <-timer.C:
+				if err := r.CheckAndRotate(); err != nil {
+					Errorf("log rotation failed: %v", err)
+				}
+				if err := r.CleanRetention(); err != nil {
+					Errorf("log retention cleanup failed: %v", err)
+				}
+			case <-stopCh:
+				timer.Stop()
 				return
 			}
 		}
