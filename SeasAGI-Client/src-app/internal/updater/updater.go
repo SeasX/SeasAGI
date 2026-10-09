@@ -15,7 +15,7 @@ import (
 
 const (
 	releaseCheckURL = "https://api.github.com/repos/SeasX/seasagi/releases/latest"
-	currentVersion  = "0.1.5"
+	currentVersion  = "0.2.0"
 	checkInterval   = 4 * time.Hour
 )
 

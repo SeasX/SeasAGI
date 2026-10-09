@@ -168,11 +168,10 @@ func TestValidateToken_ChecksTokenExpiry(t *testing.T) {
 func TestClaims_HasAllRequiredFields(t *testing.T) {
 	now := time.Now()
 	claims := Claims{
-		UserID:         "user-field-test",
-		ChannelID:      "channel-field-test",
-		DeviceID:       "device-001",
-		SubscriptionID: "sub-abc",
-		TenantID:       "tenant-xyz",
+		UserID:    "user-field-test",
+		ChannelID: "channel-field-test",
+		DeviceID:  "device-001",
+		TenantID:  "tenant-xyz",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(1 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -199,9 +198,6 @@ func TestClaims_HasAllRequiredFields(t *testing.T) {
 	}
 	if parsed.DeviceID != claims.DeviceID {
 		t.Errorf("DeviceID: expected %q, got %q", claims.DeviceID, parsed.DeviceID)
-	}
-	if parsed.SubscriptionID != claims.SubscriptionID {
-		t.Errorf("SubscriptionID: expected %q, got %q", claims.SubscriptionID, parsed.SubscriptionID)
 	}
 	if parsed.TenantID != claims.TenantID {
 		t.Errorf("TenantID: expected %q, got %q", claims.TenantID, parsed.TenantID)

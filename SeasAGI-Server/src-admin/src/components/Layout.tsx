@@ -15,7 +15,6 @@ const navConfig = [
   { to: "/combos", key: "admin.navCombos" },
   { to: "/relay-gateways", key: "admin.navGateways" },
   { to: "/usage", key: "admin.navUsage" },
-  { to: "/token-market", key: "Token Market" },
 ];
 
 export function Layout() {

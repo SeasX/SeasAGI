@@ -1,4 +1,4 @@
-import type { Channel, DiscoveredModel, RequestLog, RuntimeStatus, AuthState, AppConfig, ModelCombo, CloudUsage, CloudBilling, CloudCombo, OptimizationPlan, OptimizationConfig, ModelStatsEntry, UsageSummary, ProviderHealthMetric, ProviderHealthSummary, BYOKPolicy, QuickStrategy, TaskProfile, MITMStatus, OverageRecord, OAuthProvider } from "../utils/types";
+import type { Channel, DiscoveredModel, RequestLog, RuntimeStatus, AuthState, AppConfig, ModelCombo, CloudUsage, CloudBilling, CloudCombo, OptimizationPlan, OptimizationConfig, ModelStatsEntry, UsageSummary, ProviderHealthMetric, ProviderHealthSummary, BYOKPolicy, QuickStrategy, TaskProfile, MITMStatus, OverageRecord, Invoice, OAuthProvider } from "../utils/types";
 
 type WailsAppApi = {
   StartLocalGateway(): Promise<void>;
@@ -452,6 +452,14 @@ export async function getCloudBilling(): Promise<CloudBilling> {
 
 export async function getOverageUsage(): Promise<OverageRecord | null> {
   return getAppApi().GetOverageUsage();
+}
+
+// getInvoices 经 Go 后端代理平台发票列表接口，返回当前用户的发票记录。
+export async function getInvoices(): Promise<Invoice[]> {
+  const res = await platformRequest("GET", "/invoices");
+  if (res.status !== 200 || !res.body) return [];
+  const data = Array.isArray(res.body) ? res.body : res.body.data;
+  return (data as Invoice[]) || [];
 }
 
 export async function fetchActiveGrants(): Promise<Record<string, any>[]> {

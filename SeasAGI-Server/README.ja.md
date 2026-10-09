@@ -31,7 +31,7 @@ SeasAGI-Server/
 │   ├── ko.json
 │   └── zh-CN.json
 ├── src-admin/
-│   └── src/              # 管理画面フロントエンド（7 ページ）
+│   └── src/              # 管理画面フロントエンド（6 ページ）
 ├── platform-api/
 │   └── cmd/admin_dist/   # 管理画面 SPA を platform-api バイナリに埋め込み
 └── relay-gateway/
@@ -41,7 +41,7 @@ SeasAGI-Server/
 
 - `platform-api`: コミュニティ版クラウドコントロールプレーン — 基本認証、チャンネル管理、Provider リソースプール、モデルカタログ、基本 Combo CRUD、基本使用量統計、SQLite バックアップ/復元、テナント管理 API
 - `relay-gateway`: コミュニティ版中継データプレーン — リレー、マルチモーダル転送、モデルカタログ、ヘルスチェック、トレース、レート制限、Prometheus メトリクス、運用インターフェース
-- `src-admin`: コミュニティ版管理画面フロントエンド（7 ページ）、platform-api バイナリに埋め込まれ `/admin` で提供
+- `src-admin`: コミュニティ版管理画面フロントエンド（6 ページ）、platform-api バイナリに埋め込まれ `/admin` で提供
 - `deploy`: コミュニティ版デプロイ、インストール、systemd、nginx、運用スクリプト
 - `scripts/build.sh`: コミュニティ版統一ビルドエントリポイント
 
@@ -56,10 +56,10 @@ SeasAGI-Server/
 - **基本 Combo**: ユーザーレベル Combo CRUD + 公式テンプレート取得
 - **基本使用量**: ユーザー使用量、モデル/チャンネル別グループ、タイムライン、エラー分布、最近のエラー
 - **基本テナント管理**: メンバー、招待リンク、カスタムチャンネル同期、ポリシー、テンプレート、設定スナップショット
-- **基本 Admin API**: ユーザー / プラン / チャンネル / Combo / Relay Gateway の基本管理
+- **基本 Admin API**: ユーザー / チャンネル / Combo / Relay Gateway の基本管理
 - **SQLite オンラインバックアップ**: `VACUUM INTO` バックアップ、SHA-256 検証、復元、30 日保持
 - **無料チャンネルシード**: `GET /free-channels` で 23 の無料プロバイダを返却（OpenCode、DuckDuckGo、DeepSeek、Tencent 元宝、豆包、iFlytek、Coze、AI Horde など）
-- **組み込み管理画面**: `/admin` SPA、7 ページ — ダッシュボード / ユーザー / 使用量 / 中継ゲートウェイ / チャンネル / Combo / Token マーケット
+- **組み込み管理画面**: `/admin` SPA、6 ページ — ダッシュボード / ユーザー / 使用量 / 中継ゲートウェイ / チャンネル / Combo
 - **i18n**: zh-CN / en / ja / ko のエラーメッセージ（`?lang=` または `Accept-Language` で交渉）
 - **セキュリティ**: AES-256-GCM API Key 暗号化、起動時弱いキー検出（`secpolicy` がランダム JWT キーを自動生成、本番モードでは弱いキーで Fatal）
 - **Relay 基本転送**: リクエスト透過転送、ヘルスチェック、レート制限、トレース、マルチモーダル転送
@@ -131,7 +131,7 @@ export $(grep -v '^#' deploy/.env.example | xargs)
 ### プラットフォーム API（`/api/v1`）
 
 - `auth`: `POST /auth/login` / `POST /auth/register` / `POST /auth/refresh`
-- `user`: `GET/PUT /user/profile` · `GET/PUT /user/optimization`（ルーティング/ヘルスチェック/クールダウン/sticky/preset トグル）
+- `user`: `GET /user/profile` · `GET/PUT /user/optimization`（ルーティング/ヘルスチェック/クールダウン/sticky/preset トグル）
 - `channel`: `GET/POST/PUT/DELETE /channels` · `GET /free-channels`（23 の無料プロバイダ）
 - `providerresource`: `GET/POST/PUT/DELETE /channels/:id/resources[/:resource_id]` · `GET .../resources/resolve`
 - `modelcatalog`: `GET /models` · `GET /models/:name`

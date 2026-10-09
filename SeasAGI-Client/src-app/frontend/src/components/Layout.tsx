@@ -247,7 +247,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <img src={seasagiIcon} alt="SeasAGI" className="sidebar-logo-img" />
                 <div className="sidebar-logo-info">
                   <span className="logo-text">SeasAGI</span>
-                  <span className="logo-version">v0.1.5</span>
+                  <span className="logo-version">v0.2.0</span>
                 </div>
               </div>
               <AppIcon name="chevron" className="title-chevron" />

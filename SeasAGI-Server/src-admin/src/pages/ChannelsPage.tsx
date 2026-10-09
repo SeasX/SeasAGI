@@ -37,7 +37,6 @@ interface CustomChannel {
 interface UserSummary {
   user_id: string;
   email: string;
-  plan: string;
 }
 
 /* ============================================================
@@ -349,7 +348,7 @@ export function ChannelsPage() {
               <option value="">{t("admin.channelSelectUserPlaceholder")}</option>
               {users.map((u) => (
                 <option key={u.user_id} value={u.user_id}>
-                  {u.email} ({u.user_id.slice(0, 8)}…) — {u.plan || t("admin.channelNoPlan")}
+                  {u.email} ({u.user_id.slice(0, 8)}…)
                 </option>
               ))}
             </select>

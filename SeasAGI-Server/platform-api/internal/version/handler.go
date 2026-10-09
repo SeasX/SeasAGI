@@ -9,7 +9,7 @@ import (
 
 func Check(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"version":        "0.1.0",
+		"version":        "0.2.0",
 		"minimum_version": "0.1.0",
 		"force_upgrade":  false,
 	})

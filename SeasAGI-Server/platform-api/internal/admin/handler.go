@@ -32,7 +32,7 @@ func Middleware() gin.HandlerFunc {
 
 func ListUsers(c *gin.Context) {
 	rows, err := database.DB.Query(
-		`SELECT user_id, email, plan, created_at, updated_at FROM users ORDER BY created_at DESC`,
+		`SELECT user_id, email, created_at, updated_at FROM users ORDER BY created_at DESC`,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -43,7 +43,6 @@ func ListUsers(c *gin.Context) {
 	type UserInfo struct {
 		UserID    string `json:"user_id"`
 		Email     string `json:"email"`
-		Plan      string `json:"plan"`
 		CreatedAt string `json:"created_at"`
 		UpdatedAt string `json:"updated_at"`
 	}
@@ -51,7 +50,7 @@ func ListUsers(c *gin.Context) {
 	var users []UserInfo
 	for rows.Next() {
 		var u UserInfo
-		if err := rows.Scan(&u.UserID, &u.Email, &u.Plan, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.UserID, &u.Email, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -70,16 +69,15 @@ func GetUser(c *gin.Context) {
 	type UserInfo struct {
 		UserID    string `json:"user_id"`
 		Email     string `json:"email"`
-		Plan      string `json:"plan"`
 		CreatedAt string `json:"created_at"`
 		UpdatedAt string `json:"updated_at"`
 	}
 
 	var u UserInfo
 	err := database.DB.QueryRow(
-		`SELECT user_id, email, plan, created_at, updated_at FROM users WHERE user_id = ?`,
+		`SELECT user_id, email, created_at, updated_at FROM users WHERE user_id = ?`,
 		userID,
-	).Scan(&u.UserID, &u.Email, &u.Plan, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.UserID, &u.Email, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": i18n.TFromContext(c, "admin.userNotFound")})
 		return
@@ -103,8 +101,6 @@ func DeleteUser(c *gin.Context) {
 		return
 	}
 
-	database.DB.Exec("DELETE FROM subscriptions WHERE user_id = ?", userID)
-	database.DB.Exec("DELETE FROM entitlements WHERE user_id = ?", userID)
 	database.DB.Exec("DELETE FROM usage_records WHERE user_id = ?", userID)
 	c.JSON(http.StatusOK, gin.H{"message": i18n.TFromContext(c, "admin.userDeleted")})
 }

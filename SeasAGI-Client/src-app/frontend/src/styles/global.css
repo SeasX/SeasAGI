@@ -1842,6 +1842,45 @@ body[data-theme="light"] .token-market-stat-card {
   gap: 12px;
 }
 
+.invoice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.invoice-item {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.invoice-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.invoice-id {
+  font-weight: 600;
+}
+
+.invoice-item-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.invoice-cost {
+  margin-left: auto;
+  color: var(--green);
+  font-weight: 700;
+}
+
 .usage-quota-header {
   align-items: center;
   justify-content: space-between;

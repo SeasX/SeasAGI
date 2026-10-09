@@ -131,7 +131,7 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) GetAppInfo() map[string]any {
 	return map[string]any{
 		"name":    "SeasAGI",
-		"version": "0.1.5",
+		"version": "0.2.0",
 	}
 }
 

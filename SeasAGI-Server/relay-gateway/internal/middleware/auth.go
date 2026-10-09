@@ -32,7 +32,6 @@ func AuthRequired() gin.HandlerFunc {
 		c.Set("user_id", claims.UserID)
 		c.Set("channel_id", claims.ChannelID)
 		c.Set("device_id", claims.DeviceID)
-		c.Set("subscription_id", claims.SubscriptionID)
 
 		tenantID := claims.TenantID
 		if tenantID == "" {

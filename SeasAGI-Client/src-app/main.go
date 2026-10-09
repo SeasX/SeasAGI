@@ -268,7 +268,7 @@ func runDesktop() {
 			},
 			About: &mac.AboutInfo{
 				Title:   "SeasAGI",
-				Message: "本地大模型通道切换客户端\nVersion 0.1.5",
+				Message: "本地大模型通道切换客户端\nVersion 0.2.0",
 			},
 			WebviewIsTransparent: false,
 		},
@@ -290,7 +290,7 @@ func buildAppMenu(app *App, gw *gateway.Service) *menu.Menu {
 		runtime.MessageDialog(app.ctx, runtime.MessageDialogOptions{
 			Type:    runtime.InfoDialog,
 			Title:   "关于 SeasAGI",
-			Message: "SeasAGI v0.1.5\n本地大模型通道切换客户端\n\n本地网关: http://127.0.0.1:4318/v1",
+			Message: "SeasAGI v0.2.0\n本地大模型通道切换客户端\n\n本地网关: http://127.0.0.1:4318/v1",
 		})
 	})
 	fileMenu.AddSeparator()

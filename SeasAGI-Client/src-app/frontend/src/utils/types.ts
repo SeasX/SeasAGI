@@ -211,6 +211,18 @@ export interface OverageRecord {
   created_at: string;
 }
 
+export interface Invoice {
+  invoice_id: string;
+  period_start: string;
+  period_end: string;
+  total_requests: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost: number;
+  status: string;
+  created_at: string;
+}
+
 export type PlanTier = "free" | "pro" | "enterprise";
 
 export interface CloudCombo {

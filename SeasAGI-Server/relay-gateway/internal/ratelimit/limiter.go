@@ -52,12 +52,8 @@ func (l *Limiter) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("user_id")
 		deviceID := c.GetString("device_id")
-		subscriptionID := c.GetString("subscription_id")
 
 		keys := []string{}
-		if subscriptionID != "" {
-			keys = append(keys, "subscription:"+subscriptionID)
-		}
 		if userID != "" {
 			keys = append(keys, "user:"+userID)
 		}

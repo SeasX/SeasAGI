@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/i18n"
+	"github.com/gin-gonic/gin"
 )
 
 type Step struct {
@@ -26,7 +26,7 @@ type OfficialTemplate struct {
 }
 
 // ListOfficialTemplates returns platform-level combo templates.
-// Priority: model_combos (scope=platform) > dynamic generation from entitlements.
+// Priority: model_combos (scope=platform) > built-in default templates.
 func ListOfficialTemplates(c *gin.Context) {
 	// Try reading from model_combos main table first
 	platformCombos, err := queryPlatformCombos()
@@ -35,18 +35,11 @@ func ListOfficialTemplates(c *gin.Context) {
 		return
 	}
 
-	// Fallback: dynamic generation from user entitlements
-	userID := c.GetString("user_id")
-	allowedModels, err := loadAllowedModels(userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
+	// Fallback: built-in templates using default models.
 	lang := i18n.GetLangFromRequest(c)
 	c.JSON(http.StatusOK, gin.H{
 		"object": "list",
-		"data":   buildOfficialTemplates(allowedModels, lang),
+		"data":   buildOfficialTemplates(nil, lang),
 	})
 }
 
@@ -104,27 +97,6 @@ func queryPlatformCombos() ([]OfficialTemplate, error) {
 		return nil, nil
 	}
 	return templates, nil
-}
-
-func loadAllowedModels(userID string) ([]string, error) {
-	var rawModels string
-	err := database.DB.QueryRow(
-		`SELECT allowed_models
-		 FROM entitlements
-		 WHERE user_id = ?
-		 ORDER BY generated_at DESC
-		 LIMIT 1`,
-		userID,
-	).Scan(&rawModels)
-	if err != nil {
-		return []string{"gpt-4o-mini"}, nil
-	}
-
-	var models []string
-	if err := json.Unmarshal([]byte(rawModels), &models); err != nil || len(models) == 0 {
-		return []string{"gpt-4o-mini"}, nil
-	}
-	return models, nil
 }
 
 func buildOfficialTemplates(models []string, lang string) []OfficialTemplate {

@@ -28,15 +28,6 @@ export function UsersPage() {
     } catch (e: any) { setError(e.message); }
   };
 
-  const handleUpdatePlan = async (user: User) => {
-    const planId = prompt(t("admin.userPromptPlanId"), user.plan);
-    if (!planId) return;
-    try {
-      await apiFetch(`/users/${user.user_id}/plan`, { method: "PUT", body: JSON.stringify({ plan: planId }) });
-      load();
-    } catch (e: any) { setError(e.message); }
-  };
-
   if (loading) return <div className="loading">{t("admin.userLoading")}</div>;
 
   return (
@@ -58,7 +49,6 @@ export function UsersPage() {
             <tr>
               <th>{t("admin.userIdCol")}</th>
               <th>{t("admin.userEmailCol")}</th>
-              <th>{t("admin.userPlanCol")}</th>
               <th>{t("admin.userRegisteredAtCol")}</th>
               <th>{t("admin.userActionsCol")}</th>
             </tr>
@@ -68,11 +58,9 @@ export function UsersPage() {
               <tr key={u.user_id}>
                 <td style={{ fontFamily: "monospace", fontSize: 12 }}>{u.user_id.slice(0, 12)}</td>
                 <td>{u.email}</td>
-                <td><span className="badge badge-blue">{u.plan}</span></td>
                 <td style={{ fontSize: 13 }}>{new Date(u.created_at).toLocaleString()}</td>
                 <td>
                   <div className="action-bar">
-                    <button className="btn btn-icon" onClick={() => handleUpdatePlan(u)} title={t("admin.userEditPlanTooltip")}>✏️</button>
                     <button className="btn btn-icon danger" onClick={() => handleDelete(u)} title={t("admin.userDeleteTooltip")}>🗑️</button>
                   </div>
                 </td>

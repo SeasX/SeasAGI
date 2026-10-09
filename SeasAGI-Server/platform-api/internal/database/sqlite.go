@@ -966,6 +966,27 @@ func migrate() error {
 				`CREATE INDEX IF NOT EXISTS idx_oauth_identities_provider_email ON oauth_identities(provider, email)`,
 			},
 		},
+		{
+			version: "2026-10-08-026-remove-billing",
+			// Community edition carries no monetization. Drop the plan/subscription,
+			// billing and wallet schema so both fresh and existing installs end up
+			// without any payment tables. Append-only per the migration policy.
+			sqls: []string{
+				`DROP TABLE IF EXISTS overage_records`,
+				`DROP TABLE IF EXISTS checkout_sessions`,
+				`DROP TABLE IF EXISTS recharge_records`,
+				`DROP TABLE IF EXISTS tenant_invoices`,
+				`DROP TABLE IF EXISTS payments`,
+				`DROP TABLE IF EXISTS order_flows`,
+				`DROP TABLE IF EXISTS purchase_orders`,
+				`DROP TABLE IF EXISTS invoices`,
+				`DROP TABLE IF EXISTS entitlements`,
+				`DROP TABLE IF EXISTS subscriptions`,
+				`DROP TABLE IF EXISTS plans`,
+				`ALTER TABLE users DROP COLUMN balance`,
+				`ALTER TABLE users DROP COLUMN plan`,
+			},
+		},
 	}
 
 	if _, err := DB.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {

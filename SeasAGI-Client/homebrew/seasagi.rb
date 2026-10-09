@@ -1,5 +1,5 @@
 cask "seasagi" do
-  version "0.1.5"
+  version "0.2.0"
   sha256 "TBD"
 
   url "https://github.com/SeasX/SeasAGI/releases/download/v#{version}/SeasAGI.dmg"

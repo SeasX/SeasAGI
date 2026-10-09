@@ -9,11 +9,10 @@ import (
 )
 
 type Claims struct {
-	UserID         string `json:"user_id"`
-	ChannelID      string `json:"channel_id"`
-	DeviceID       string `json:"device_id"`
-	SubscriptionID string `json:"subscription_id"`
-	TenantID       string `json:"tenant_id"`
+	UserID    string `json:"user_id"`
+	ChannelID string `json:"channel_id"`
+	DeviceID  string `json:"device_id"`
+	TenantID  string `json:"tenant_id"`
 	jwt.RegisteredClaims
 }
 

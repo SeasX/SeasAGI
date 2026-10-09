@@ -161,7 +161,7 @@ SeasAGI-Client/
 [`scripts/version.txt`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/scripts/version.txt) 是唯一的版本号定义文件：
 
 ```
-0.1.5
+0.2.0
 ```
 
 - 更新版本号只需修改此文件
@@ -179,7 +179,7 @@ SeasAGI-Client/
 客户端界面左上角 Logo 右侧显示版本号徽标：
 
 ```
-[icon] SeasAGI  v0.1.5
+[icon] SeasAGI  v0.2.0
 ```
 
 实现位置：[`Layout.tsx`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/src-app/frontend/src/components/Layout.tsx) 中使用 `import.meta.env.VITE_APP_VERSION` 渲染。

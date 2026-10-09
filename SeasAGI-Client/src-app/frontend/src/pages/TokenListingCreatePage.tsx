@@ -19,7 +19,8 @@ export function TokenListingCreatePage() {
   const [price, setPrice] = useState("");
   const [discountRate, setDiscountRate] = useState("");
   const [availableQuota, setAvailableQuota] = useState("");
-  const [currency, setCurrency] = useState("USD");
+  // 平台余额为单一数值、无币种维度，本期仅支持 USD 结算（C4）。
+  const currency = "USD";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,9 +49,11 @@ export function TokenListingCreatePage() {
           throw new Error(t("tokenMarket.price") + " must be positive");
         }
       }
-      if (availableQuota) {
-        body.available_quota = parseFloat(availableQuota) || 0;
+      const quota = parseFloat(availableQuota);
+      if (!quota || quota <= 0) {
+        throw new Error(t("tokenMarket.availableQuota") + " must be positive");
       }
+      body.available_quota = quota;
 
       const resp = await platformRequest("POST", "/token-market/listings", body);
 
@@ -164,25 +167,13 @@ export function TokenListingCreatePage() {
             className="form-input"
             type="number"
             step="0.01"
-            min="0"
+            min="0.01"
             value={availableQuota}
             onChange={(e) => setAvailableQuota(e.target.value)}
             placeholder="0.00"
+            required
           />
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">{t("tokenMarket.currency")}</label>
-          <select
-            className="form-input"
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
-          >
-            <option value="USD">USD</option>
-            <option value="CNY">CNY</option>
-            <option value="EUR">EUR</option>
-            <option value="JPY">JPY</option>
-          </select>
+          <p className="form-hint">{t("tokenMarket.availableQuotaHint")}</p>
         </div>
 
         {error && <div className="form-error">{error}</div>}

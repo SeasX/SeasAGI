@@ -135,8 +135,8 @@ export function TokenListingDetailPage() {
         </div>
         {listing.available_quota > 0 && (
           <div className="detail-row">
-            <span className="detail-key">{t("tokenMarket.availableQuota")}</span>
-            <span className="detail-value">{listing.available_quota}</span>
+            <span className="detail-key">{t("tokenMarket.quotaYouReceive")}</span>
+            <span className="detail-value">${listing.available_quota.toFixed(2)}</span>
           </div>
         )}
         <div className="detail-row">

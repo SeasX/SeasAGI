@@ -39,7 +39,6 @@ export function SubscriptionPage() {
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"success" | "error">("success");
-  const [teamSeats, setTeamSeats] = useState<Record<string, number>>({});
 
   useEffect(() => {
     (async () => {
@@ -165,8 +164,6 @@ export function SubscriptionPage() {
           const isEnterprise = plan.plan_id === "enterprise";
           const isFree = plan.plan_id === "free";
           const isTeams = plan.plan_id === "teams";
-          const seats = teamSeats[plan.plan_id] || 3;
-          const totalPrice = plan.price * seats;
 
           return (
             <div key={plan.plan_id} className={`plan-card ${isCurrent ? "plan-current" : ""} ${isEnterprise ? "plan-enterprise" : ""}`}>
@@ -217,29 +214,16 @@ export function SubscriptionPage() {
                 </a>
               ) : isTeams ? (
                 <div style={{ width: "100%" }}>
-                  <div className="seat-selector">
-                    <button
-                      className="seat-btn"
-                      onClick={() => setTeamSeats(prev => ({ ...prev, [plan.plan_id]: Math.max(1, (prev[plan.plan_id] || 3) - 1) }))}
-                      disabled={seats <= 1}
-                    >−</button>
-                    <span className="seat-count">{seats} {t("subscription.seats")}</span>
-                    <button
-                      className="seat-btn"
-                      onClick={() => setTeamSeats(prev => ({ ...prev, [plan.plan_id]: Math.min(50, (prev[plan.plan_id] || 3) + 1) }))}
-                      disabled={seats >= 50}
-                    >+</button>
-                  </div>
-                  <div className="seat-total">${totalPrice.toFixed(2)}/mo {t("subscription.total")}</div>
+                  <div className="seat-total">${plan.price}/seat·mo</div>
                   <button
                     className={isCurrent ? "btn-secondary" : "btn-primary"}
-                    onClick={() => handleSubscribe(plan.plan_id, seats)}
+                    onClick={() => handleSubscribe(plan.plan_id)}
                     disabled={subscribing === plan.plan_id || isCurrent}
                     style={{ width: "100%", marginTop: 8 }}
                   >
                     {subscribing === plan.plan_id ? t("subscription.processing") :
                      isCurrent ? t("subscription.currentBadge") :
-                     `${t("subscription.subscribe")} $${totalPrice.toFixed(2)}/mo`}
+                     `${t("subscription.subscribe")} $${plan.price}/mo`}
                   </button>
                 </div>
               ) : (

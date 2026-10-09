@@ -31,7 +31,7 @@ SeasAGI-Server/
 │   ├── ko.json
 │   └── zh-CN.json
 ├── src-admin/
-│   └── src/              # Admin dashboard frontend (7 pages)
+│   └── src/              # Admin dashboard frontend (6 pages)
 ├── platform-api/
 │   └── cmd/admin_dist/   # Admin SPA embedded into platform-api binary
 └── relay-gateway/
@@ -41,7 +41,7 @@ SeasAGI-Server/
 
 - `platform-api`: Community cloud control plane — basic authentication, channel management, provider resource pools, model catalog, basic Combo CRUD, basic usage statistics, SQLite backup/restore, tenant admin APIs
 - `relay-gateway`: Community relay data plane — relay, multimodal forwarding, model catalog, health checks, tracing, rate limiting, Prometheus metrics, O&M interfaces
-- `src-admin`: Community admin dashboard frontend (7 pages), embedded into the platform-api binary and served at `/admin`
+- `src-admin`: Community admin dashboard frontend (6 pages), embedded into the platform-api binary and served at `/admin`
 - `deploy`: Community deployment, installation, systemd, nginx, O&M scripts
 - `scripts/build.sh`: Community unified build entry point
 
@@ -56,10 +56,10 @@ SeasAGI-Server/
 - **Basic Combo**: User-level Combo CRUD + official template pull
 - **Basic usage**: User usage, grouped by model/channel, timeline, error distribution, recent errors
 - **Basic tenant management**: Members, invite links, custom channel sync, policies, templates, configuration snapshots
-- **Basic Admin API**: User / Plan / Channel / Combo / Relay Gateway basic management
+- **Basic Admin API**: User / Channel / Combo / Relay Gateway basic management
 - **SQLite online backup**: `VACUUM INTO` backup, SHA-256 verify, restore, 30-day retention
 - **Free channels seed**: `GET /free-channels` returns 23 free providers (OpenCode, DuckDuckGo, DeepSeek, Tencent Yuanbao, Doubao, iFlytek, Coze, AI Horde, etc.)
-- **Embedded admin dashboard**: `/admin` SPA with 7 pages — Dashboard / Users / Usage / Relay Gateways / Channels / Combos / Token Market
+- **Embedded admin dashboard**: `/admin` SPA with 6 pages — Dashboard / Users / Usage / Relay Gateways / Channels / Combos
 - **i18n**: zh-CN / en / ja / ko error messages (`?lang=` or `Accept-Language` negotiation)
 - **Security**: AES-256-GCM API Key encryption, startup weak-key detection (`secpolicy`, auto-generates random JWT keys, production mode fatals on weak keys)
 - **Relay basic forwarding**: Request passthrough, health checks, rate limiting, tracing, multimodal forwarding
@@ -131,7 +131,7 @@ export $(grep -v '^#' deploy/.env.example | xargs)
 ### Platform API (`/api/v1`)
 
 - `auth`: `POST /auth/login` / `POST /auth/register` / `POST /auth/refresh`
-- `user`: `GET/PUT /user/profile` · `GET/PUT /user/optimization` (routing/healthcheck/cooldown/sticky/preset toggles)
+- `user`: `GET /user/profile` · `GET/PUT /user/optimization` (routing/healthcheck/cooldown/sticky/preset toggles)
 - `channel`: `GET/POST/PUT/DELETE /channels` · `GET /free-channels` (23 free providers)
 - `providerresource`: `GET/POST/PUT/DELETE /channels/:id/resources[/:resource_id]` · `GET .../resources/resolve`
 - `modelcatalog`: `GET /models` · `GET /models/:name`

@@ -53,9 +53,9 @@ The client can **run independently** — all local gateway features work without
 | Basic Combo | User-level Combo CRUD + official template fetch |
 | Basic Usage Statistics | User usage, per-model/channel grouping, timeline, error distribution |
 | Basic Tenant Management | Members, invite links, custom channel sync, config snapshots |
-| Embedded Admin Dashboard | `/admin` SPA — Dashboard / Users / Usage / Relay Gateways / Channels / Combos / Token Market |
+| Embedded Admin Dashboard | `/admin` SPA — Dashboard / Users / Usage / Relay Gateways / Channels / Combos |
 | SQLite Backup | Online backup (`VACUUM INTO`) / SHA-256 verify / restore |
-| Basic Admin API | User / Plan / Channel / Combo / Relay Gateway management |
+| Basic Admin API | User / Channel / Combo / Relay Gateway management |
 | i18n | zh-CN / en / ja / ko |
 | Relay Basic Forwarding | Request passthrough, health check, rate limiting, trace, model catalog |
 

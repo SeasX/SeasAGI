@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
-import { getCloudUsage, getCloudBilling, getUsageSummary, getOverageUsage } from "../utils/commands";
-import type { CloudUsage, CloudBilling, UsageSummary, OverageRecord } from "../utils/types";
+import { getCloudUsage, getCloudBilling, getUsageSummary, getOverageUsage, getInvoices } from "../utils/commands";
+import type { CloudUsage, CloudBilling, UsageSummary, OverageRecord, Invoice } from "../utils/types";
 import { useTranslation } from "../i18n";
 
 export function UsagePage() {
@@ -14,6 +14,7 @@ export function UsagePage() {
   const [billing, setBilling] = useState<CloudBilling | null>(null);
   const [localSummary, setLocalSummary] = useState<UsageSummary | null>(null);
   const [overage, setOverage] = useState<OverageRecord | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [showOverageInfo, setShowOverageInfo] = useState(false);
   const [dismissedSuggestions, setDismissedSuggestions] = useState<string[]>([]);
@@ -35,6 +36,10 @@ export function UsagePage() {
         // 超额用量由 Go 后端代理平台请求，前端不直接持有并外发平台 Token
         const ov = await getOverageUsage().catch(() => null);
         if (ov) setOverage(ov);
+
+        // 发票列表同样经 Go 后端代理平台接口
+        const inv = await getInvoices().catch(() => []);
+        setInvoices(inv);
       } catch {
       } finally {
         setLoading(false);
@@ -282,6 +287,31 @@ export function UsagePage() {
               {t("usage.overageSummary", { requests: overage.overage_requests.toLocaleString(), cost: overage.overage_cost.toFixed(4) })}
             </div>
           )}
+        </div>
+      )}
+
+      {invoices.length > 0 && (
+        <div className="section section-card">
+          <div className="section-heading">
+            <h2>{t("usage.invoices")}</h2>
+            <p className="hint">{t("usage.invoicesHint")}</p>
+          </div>
+          <div className="invoice-list">
+            {invoices.map((inv) => (
+              <div key={inv.invoice_id} className="invoice-item">
+                <div className="invoice-item-head">
+                  <span className="invoice-id">{inv.invoice_id}</span>
+                  <span className={`badge ${inv.status === "paid" ? "badge-blue" : ""}`}>{inv.status}</span>
+                </div>
+                <div className="invoice-item-body">
+                  <span>{t("usage.invoicePeriod", { start: inv.period_start, end: inv.period_end })}</span>
+                  <span>{t("usage.invoiceRequests", { count: inv.total_requests.toLocaleString() })}</span>
+                  <span>{t("usage.invoiceTokens", { input: inv.total_input_tokens.toLocaleString(), output: inv.total_output_tokens.toLocaleString() })}</span>
+                  <span className="invoice-cost">${inv.total_cost.toFixed(2)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

@@ -31,7 +31,7 @@ SeasAGI-Server/
 │   ├── ko.json
 │   └── zh-CN.json
 ├── src-admin/
-│   └── src/              # 管理后台前端（7 个页面）
+│   └── src/              # 管理后台前端（6 个页面）
 ├── platform-api/
 │   └── cmd/admin_dist/   # 管理后台 SPA 内嵌进 platform-api 二进制
 └── relay-gateway/
@@ -41,7 +41,7 @@ SeasAGI-Server/
 
 - `platform-api`：社区版云端控制面，负责基础认证、通道管理、Provider 资源池、模型目录、基础 Combo CRUD、基础用量统计、SQLite 备份/恢复、租户管理员接口
 - `relay-gateway`：社区版中继数据面，负责 relay、多模态转发、模型目录、健康检查、trace、限流、Prometheus 指标、运维接口
-- `src-admin`：社区版管理后台前端（7 个页面），内嵌进 platform-api 二进制，通过 `/admin` 提供访问
+- `src-admin`：社区版管理后台前端（6 个页面），内嵌进 platform-api 二进制，通过 `/admin` 提供访问
 - `deploy`：社区版部署、安装、systemd、nginx、运维脚本
 - `scripts/build.sh`：社区版统一构建入口
 
@@ -56,10 +56,10 @@ SeasAGI-Server/
 - **基础 Combo**：用户级 Combo CRUD + 官方模板拉取
 - **基础用量**：用户用量、按模型/通道分组、时间线、错误分布、近期错误
 - **基础租户管理**：成员、邀请链接、自定义通道同步、策略、模板、配置快照
-- **基础 Admin API**：用户 / 套餐 / 通道 / Combo / Relay Gateway 基础管理
+- **基础 Admin API**：用户 / 通道 / Combo / Relay Gateway 基础管理
 - **SQLite 在线备份**：`VACUUM INTO` 备份、SHA-256 校验、恢复、30 天保留
 - **免费通道种子**：`GET /free-channels` 返回 23 家免费 Provider（OpenCode、DuckDuckGo、DeepSeek、腾讯元宝、豆包、讯飞、Coze、AI Horde 等）
-- **内嵌管理后台**：`/admin` SPA，含 7 个页面 — 仪表盘 / 用户 / 用量 / 中继网关 / 通道 / Combo / Token 市场
+- **内嵌管理后台**：`/admin` SPA，含 6 个页面 — 仪表盘 / 用户 / 用量 / 中继网关 / 通道 / Combo
 - **i18n**：zh-CN / en / ja / ko 错误消息（`?lang=` 或 `Accept-Language` 协商）
 - **安全**：AES-256-GCM API Key 加密、启动弱密钥检测（`secpolicy` 自动生成随机 JWT 密钥，生产模式弱密钥直接 Fatal）
 - **Relay 基础转发**：请求透传、健康检查、限流、trace、多模态转发
@@ -131,7 +131,7 @@ export $(grep -v '^#' deploy/.env.example | xargs)
 ### 平台 API（`/api/v1`）
 
 - `auth`：`POST /auth/login` / `POST /auth/register` / `POST /auth/refresh`
-- `user`：`GET/PUT /user/profile` · `GET/PUT /user/optimization`（路由/健康检查/冷却/sticky/preset 开关）
+- `user`：`GET /user/profile` · `GET/PUT /user/optimization`（路由/健康检查/冷却/sticky/preset 开关）
 - `channel`：`GET/POST/PUT/DELETE /channels` · `GET /free-channels`（23 家免费 Provider）
 - `providerresource`：`GET/POST/PUT/DELETE /channels/:id/resources[/:resource_id]` · `GET .../resources/resolve`
 - `modelcatalog`：`GET /models` · `GET /models/:name`

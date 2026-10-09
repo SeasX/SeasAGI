@@ -1,7 +1,6 @@
 export interface User {
   user_id: string;
   email: string;
-  plan: string;
   created_at: string;
   updated_at: string;
 }

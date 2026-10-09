@@ -14,7 +14,7 @@ init:
   - cmd: cd C:\projects\seasagi-client
 
 environment:
-  SEASAGI_VERSION: 0.1.5
+  SEASAGI_VERSION: 0.2.0
   GOPATH: $(HOME)/go
   GOROOT: /usr/local/go
   # Wails platform override (auto-detected per OS below)

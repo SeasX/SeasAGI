@@ -31,7 +31,7 @@ SeasAGI-Server/
 │   ├── ko.json
 │   └── zh-CN.json
 ├── src-admin/
-│   └── src/              # 관리자 대시보드 프론트엔드 (7개 페이지)
+│   └── src/              # 관리자 대시보드 프론트엔드 (6개 페이지)
 ├── platform-api/
 │   └── cmd/admin_dist/   # 관리자 대시보드 SPA를 platform-api 바이너리에 내장
 └── relay-gateway/
@@ -41,7 +41,7 @@ SeasAGI-Server/
 
 - `platform-api`: 커뮤니티 클라우드 컨트롤 플레인 — 기본 인증, 채널 관리, Provider 리소스 풀, 모델 카탈로그, 기본 Combo CRUD, 기본 사용량 통계, SQLite 백업/복원, 테넌트 관리 API
 - `relay-gateway`: 커뮤니티 릴레이 데이터 플레인 — 릴레이, 멀티모달 전달, 모델 카탈로그, 헬스 체크, 트레이스, 속도 제한, Prometheus 메트릭, 운영 인터페이스
-- `src-admin`: 커뮤니티 관리자 대시보드 프론트엔드 (7개 페이지), platform-api 바이너리에 내장되어 `/admin`에서 제공
+- `src-admin`: 커뮤니티 관리자 대시보드 프론트엔드 (6개 페이지), platform-api 바이너리에 내장되어 `/admin`에서 제공
 - `deploy`: 커뮤니티 배포, 설치, systemd, nginx, 운영 스크립트
 - `scripts/build.sh`: 커뮤니티 통합 빌드 진입점
 
@@ -56,10 +56,10 @@ SeasAGI-Server/
 - **기본 Combo**: 사용자 레벨 Combo CRUD + 공식 템플릿 가져오기
 - **기본 사용량**: 사용자 사용량, 모델/채널별 그룹화, 타임라인, 오류 분포, 최근 오류
 - **기본 테넌트 관리**: 멤버, 초대 링크, 사용자 정의 채널 동기화, 정책, 템플릿, 설정 스냅샷
-- **기본 Admin API**: 사용자 / 플랜 / 채널 / Combo / Relay Gateway 기본 관리
+- **기본 Admin API**: 사용자 / 채널 / Combo / Relay Gateway 기본 관리
 - **SQLite 온라인 백업**: `VACUUM INTO` 백업, SHA-256 검증, 복원, 30일 보관
 - **무료 채널 시드**: `GET /free-channels`로 23개 무료 프로바이더 반환 (OpenCode, DuckDuckGo, DeepSeek, Tencent 원바오, Doubao, iFlytek, Coze, AI Horde 등)
-- **내장 관리자 대시보드**: `/admin` SPA, 7개 페이지 — 대시보드 / 사용자 / 사용량 / 릴레이 게이트웨이 / 채널 / Combo / Token 마켓
+- **내장 관리자 대시보드**: `/admin` SPA, 6개 페이지 — 대시보드 / 사용자 / 사용량 / 릴레이 게이트웨이 / 채널 / Combo
 - **i18n**: zh-CN / en / ja / ko 오류 메시지 (`?lang=` 또는 `Accept-Language` 협상)
 - **보안**: AES-256-GCM API Key 암호화, 시작 시 약한 키 감지 (`secpolicy`가 랜덤 JWT 키 자동 생성, 프로덕션 모드에서는 약한 키로 Fatal)
 - **릴레이 기본 전달**: 요청 투과 전달, 헬스 체크, 속도 제한, 트레이스, 멀티모달 전달
@@ -131,7 +131,7 @@ export $(grep -v '^#' deploy/.env.example | xargs)
 ### 플랫폼 API (`/api/v1`)
 
 - `auth`: `POST /auth/login` / `POST /auth/register` / `POST /auth/refresh`
-- `user`: `GET/PUT /user/profile` · `GET/PUT /user/optimization` (라우팅/헬스체크/쿨다운/sticky/preset 토글)
+- `user`: `GET /user/profile` · `GET/PUT /user/optimization` (라우팅/헬스체크/쿨다운/sticky/preset 토글)
 - `channel`: `GET/POST/PUT/DELETE /channels` · `GET /free-channels` (23개 무료 프로바이더)
 - `providerresource`: `GET/POST/PUT/DELETE /channels/:id/resources[/:resource_id]` · `GET .../resources/resolve`
 - `modelcatalog`: `GET /models` · `GET /models/:name`

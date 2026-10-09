@@ -88,7 +88,6 @@ func Execute() error {
 		authenticated.Use(auth.Middleware())
 		{
 			authenticated.GET("/user/profile", user.GetProfile)
-			authenticated.PUT("/user/profile", user.UpdateProfile)
 			authenticated.GET("/user/optimization", user.GetOptimizationConfig)
 			authenticated.PUT("/user/optimization", user.SetOptimizationConfig)
 
