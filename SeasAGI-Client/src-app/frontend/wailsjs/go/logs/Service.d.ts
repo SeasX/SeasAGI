@@ -11,3 +11,5 @@ export function ListLogs(arg1:number,arg2:number):Promise<Array<logs.RequestLog>
 export function ListLogsFiltered(arg1:number,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string):Promise<Array<logs.RequestLog>>;
 
 export function RecordLog(arg1:logs.RequestLog):Promise<void>;
+
+export function VerifyIntegrity():Promise<number>;

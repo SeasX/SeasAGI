@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
 )
 
 // maxRecords caps how many in-memory records are retained; the oldest are
@@ -171,18 +173,23 @@ func parseJSONL(data []byte) ([]UsageRecord, []ModelPricing, bool) {
 // caller must hold s.mu.
 func (s *Service) appendRecordLocked(record UsageRecord) {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
+		logging.Warningf("usage: create dir for %s failed: %v", s.path, err)
 		return
 	}
 	line, err := json.Marshal(persistLine{Record: &record})
 	if err != nil {
+		logging.Warningf("usage: marshal record failed: %v", err)
 		return
 	}
 	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		logging.Warningf("usage: open %s for append failed: %v", s.path, err)
 		return
 	}
 	defer f.Close()
-	_, _ = f.Write(append(line, '\n'))
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		logging.Warningf("usage: append record to %s failed: %v", s.path, err)
+	}
 }
 
 // persist rewrites the whole log atomically (tmp file + rename). Used on
@@ -192,6 +199,7 @@ func (s *Service) persist() {
 	writeLine := func(pl persistLine) {
 		line, err := json.Marshal(pl)
 		if err != nil {
+			logging.Warningf("usage: marshal persist line failed: %v", err)
 			return
 		}
 		buf.Write(line)
@@ -202,13 +210,17 @@ func (s *Service) persist() {
 		writeLine(persistLine{Record: &s.records[i]})
 	}
 	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
+		logging.Warningf("usage: create dir for %s failed: %v", s.path, err)
 		return
 	}
 	tmpFile := s.path + ".tmp"
 	if err := os.WriteFile(tmpFile, buf.Bytes(), 0644); err != nil {
+		logging.Warningf("usage: write temp file %s failed: %v", tmpFile, err)
 		return
 	}
-	_ = os.Rename(tmpFile, s.path)
+	if err := os.Rename(tmpFile, s.path); err != nil {
+		logging.Warningf("usage: rename %s -> %s failed: %v", tmpFile, s.path, err)
+	}
 }
 
 func (s *Service) GetUsageSummary() UsageSummary {
@@ -582,20 +594,4 @@ func (s *Service) GetModelStats() []ModelStatsEntry {
 		return result[i].TotalRequests > result[j].TotalRequests
 	})
 	return result
-}
-
-func (s *Service) SetModelStatsFromCloud(stats []ModelStatsEntry) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var updated bool
-	for _, st := range stats {
-		for i, p := range s.pricing {
-			if p.Model == st.Model {
-				updated = true
-				break
-			}
-			_ = i
-		}
-		_ = updated
-	}
 }

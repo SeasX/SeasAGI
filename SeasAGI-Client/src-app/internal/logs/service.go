@@ -1,6 +1,8 @@
 package logs
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,6 +11,9 @@ import (
 	"sync"
 	"time"
 )
+
+// genesisHash 是哈希链起点（全 0 十六进制），表示该记录之前没有更早的受保护记录。
+const genesisHash = "0000000000000000000000000000000000000000000000000000000000000000"
 
 type RequestLog struct {
 	RequestID          string      `json:"request_id"`
@@ -30,6 +35,10 @@ type RequestLog struct {
 	IntentScenario     string      `json:"intent_scenario,omitempty"`     // M4.5: 场景化意图（code_logic/image_gen/...）
 	// RequestPayload 失败请求的脱敏请求体快照（敏感字段已 REDACTED），用于排障与审计。
 	RequestPayload string `json:"request_payload,omitempty"`
+	// PrevHash / Hash 构成防篡改哈希链：Hash = SHA256(PrevHash + 规范化记录 JSON)。
+	// 任一字段被改动都会使 Hash 不匹配，从而被 VerifyIntegrity 检出（审计篡改检测）。
+	PrevHash string `json:"prev_hash,omitempty"`
+	Hash     string `json:"hash,omitempty"`
 }
 
 type RouteStep struct {
@@ -79,7 +88,45 @@ func (s *Service) loadFromDisk() {
 	if len(loaded) > maxLogs {
 		loaded = loaded[:maxLogs]
 	}
+	// 历史（未签名）数据补算哈希链，避免旧日志被误报为"链损坏"。
+	if !logsHaveIntegrity(loaded) {
+		backfillHashes(loaded)
+	}
 	s.logs = loaded
+}
+
+// computeLogHash 计算单条记录的哈希：SHA256(prevHash + 规范化 JSON)。规范化时排除
+// Hash 字段自身，使哈希只覆盖记录内容与前序链接。
+func computeLogHash(prevHash string, log RequestLog) string {
+	log.Hash = ""
+	data, err := json.Marshal(log)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(append([]byte(prevHash), data...))
+	return hex.EncodeToString(sum[:])
+}
+
+// logsHaveIntegrity 判断所有记录是否都已带哈希。
+func logsHaveIntegrity(logs []RequestLog) bool {
+	for i := range logs {
+		if logs[i].Hash == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// backfillHashes 从最旧记录向最新记录依次补算哈希链（logs 为最新在前）。
+func backfillHashes(logs []RequestLog) {
+	for i := len(logs) - 1; i >= 0; i-- {
+		prev := genesisHash
+		if i < len(logs)-1 {
+			prev = logs[i+1].Hash
+		}
+		logs[i].PrevHash = prev
+		logs[i].Hash = computeLogHash(prev, logs[i])
+	}
 }
 
 func (s *Service) persistToDisk() {
@@ -103,6 +150,13 @@ func (s *Service) RecordLog(log RequestLog) error {
 	if log.CreatedAt == "" {
 		log.CreatedAt = time.Now().Format(time.RFC3339)
 	}
+
+	// 计算防篡改哈希链：PrevHash 指向当前最新记录的哈希。
+	log.PrevHash = genesisHash
+	if len(s.logs) > 0 {
+		log.PrevHash = s.logs[0].Hash
+	}
+	log.Hash = computeLogHash(log.PrevHash, log)
 
 	s.logs = append([]RequestLog{log}, s.logs...)
 	if len(s.logs) > maxLogs {
@@ -255,4 +309,22 @@ func (s *Service) ClearLogs() error {
 	s.persistToDisk()
 
 	return nil
+}
+
+// VerifyIntegrity 校验哈希链完整性，返回首个校验失败记录的下标；-1 表示链完整。
+// 篡改（修改/删除/替换）任一记录的字段都会使其哈希或链接不匹配而被检出。
+func (s *Service) VerifyIntegrity() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for i, l := range s.logs {
+		if l.Hash == "" || l.Hash != computeLogHash(l.PrevHash, l) {
+			return i
+		}
+		// 相邻链接：当前记录的 PrevHash 应等于下一条（更旧）记录的 Hash。
+		if i+1 < len(s.logs) && l.PrevHash != s.logs[i+1].Hash {
+			return i
+		}
+	}
+	return -1
 }

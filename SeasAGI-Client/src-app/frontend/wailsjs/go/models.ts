@@ -906,6 +906,8 @@ export namespace logs {
 	    applied_constraints?: string;
 	    intent_scenario?: string;
 	    request_payload?: string;
+	    prev_hash?: string;
+	    hash?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RequestLog(source);
@@ -931,6 +933,8 @@ export namespace logs {
 	        this.applied_constraints = source["applied_constraints"];
 	        this.intent_scenario = source["intent_scenario"];
 	        this.request_payload = source["request_payload"];
+	        this.prev_hash = source["prev_hash"];
+	        this.hash = source["hash"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

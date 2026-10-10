@@ -21,3 +21,7 @@ export function ListLogsFiltered(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
 export function RecordLog(arg1) {
   return window['go']['logs']['Service']['RecordLog'](arg1);
 }
+
+export function VerifyIntegrity() {
+  return window['go']['logs']['Service']['VerifyIntegrity']();
+}

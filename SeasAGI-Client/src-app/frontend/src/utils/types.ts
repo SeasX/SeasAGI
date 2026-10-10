@@ -63,6 +63,9 @@ export interface RequestLog {
   error_message: string | null;
   applied_constraints?: string;
   intent_scenario?: string;
+  request_payload?: string;
+  prev_hash?: string;
+  hash?: string;
 }
 
 export interface CandidateProvider {

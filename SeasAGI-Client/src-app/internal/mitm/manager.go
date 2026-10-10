@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	// defaultProxyHost 系统代理指向的本地地址（MITM 代理监听在所有网卡上）。
+	// defaultProxyHost 代理监听地址（仅本机回环）。被接管的 SDK 与网关都运行在同一台机器上，
+	// 绑定回环可避免把"无访问控制的转发代理"暴露到局域网（安全修复）。
 	defaultProxyHost = "127.0.0.1"
 	// defaultProxyPort MITM 代理监听端口，同时也是写入系统代理的端口。
 	defaultProxyPort = 8080
@@ -60,7 +61,7 @@ func isOwnProxyAddr(current string) bool {
 // NewManager 创建 Manager 实例。gatewayURL 为本地网关地址（如 http://127.0.0.1:4318）。
 func NewManager(ca *CertificateAuthority, rules *Rules, gatewayURL string) *Manager {
 	interceptLog := NewInterceptLogger(200)
-	addr := fmt.Sprintf(":%d", defaultProxyPort)
+	addr := fmt.Sprintf("%s:%d", defaultProxyHost, defaultProxyPort)
 	return &Manager{
 		state:        StateStopped,
 		ca:           ca,

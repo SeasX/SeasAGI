@@ -41,7 +41,3 @@ export function RecordUsageV2(arg1) {
 export function SavePricing(arg1) {
   return window['go']['usage']['Service']['SavePricing'](arg1);
 }
-
-export function SetModelStatsFromCloud(arg1) {
-  return window['go']['usage']['Service']['SetModelStatsFromCloud'](arg1);
-}
