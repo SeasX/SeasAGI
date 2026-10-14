@@ -86,6 +86,26 @@ void clearTrayMenu() {
 	});
 }
 
+// P3-23：首次拦截某来源工具时弹出系统通知。
+// 与 addTrayItem 同理，必须在返回前 strdup——Go 侧 C.CString 返回后立即释放，
+// 而 block 稍后执行，直接读入参会 use-after-free。
+void showTrayNotification(const char *title, const char *body) {
+	char *tCopy = (title != NULL) ? strdup(title) : NULL;
+	char *bCopy = (body != NULL) ? strdup(body) : NULL;
+	dispatch_async(dispatch_get_main_queue(), ^{
+		NSString *t = nil;
+		NSString *b = nil;
+		if (tCopy != NULL) { t = [NSString stringWithUTF8String:tCopy]; free(tCopy); }
+		if (bCopy != NULL) { b = [NSString stringWithUTF8String:bCopy]; free(bCopy); }
+		NSUserNotification *n = [[NSUserNotification alloc] init];
+		n.title = (t != nil ? t : @"SeasAGI");
+		if (b != nil) {
+			n.informativeText = b;
+		}
+		[[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:n];
+	});
+}
+
 // ponytail: statusItem 的读写必须全部收敛到主队列——此前在调用线程同步置 nil，
 // 与主队列 block 中的读形成数据竞争；主队列 FIFO 同时保证销毁前已入队的
 // 菜单操作仍能安全执行，销毁后入队的自然 no-op。

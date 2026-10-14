@@ -100,6 +100,14 @@ func (m *Manager) Quit() {
 	}
 }
 
+// Notify 弹出系统托盘通知（P3-23）。平台不支持时静默忽略。
+func (m *Manager) Notify(title, body string) {
+	if title == "" {
+		return
+	}
+	showPlatformNotification(title, body)
+}
+
 func (m *Manager) rebuild() {
 	if !m.running {
 		return

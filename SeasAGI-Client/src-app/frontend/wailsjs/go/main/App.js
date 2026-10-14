@@ -110,6 +110,10 @@ export function FetchFreeChannels() {
   return window['go']['main']['App']['FetchFreeChannels']();
 }
 
+export function FetchMITMRoutingFromEnterprise() {
+  return window['go']['main']['App']['FetchMITMRoutingFromEnterprise']();
+}
+
 export function FetchMITMTargetsFromEnterprise() {
   return window['go']['main']['App']['FetchMITMTargetsFromEnterprise']();
 }
@@ -202,12 +206,20 @@ export function GetMCPGatewayTools() {
   return window['go']['main']['App']['GetMCPGatewayTools']();
 }
 
+export function GetMITMEnterpriseRules() {
+  return window['go']['main']['App']['GetMITMEnterpriseRules']();
+}
+
 export function GetMITMEnvHint() {
   return window['go']['main']['App']['GetMITMEnvHint']();
 }
 
 export function GetMITMRecentIntercepts(arg1) {
   return window['go']['main']['App']['GetMITMRecentIntercepts'](arg1);
+}
+
+export function GetMITMRoutingConfig() {
+  return window['go']['main']['App']['GetMITMRoutingConfig']();
 }
 
 export function GetMITMRules() {
@@ -564,6 +576,10 @@ export function SetLogRotator(arg1) {
 
 export function SetMITMManager(arg1) {
   return window['go']['main']['App']['SetMITMManager'](arg1);
+}
+
+export function SetMITMRoutingConfig(arg1) {
+  return window['go']['main']['App']['SetMITMRoutingConfig'](arg1);
 }
 
 export function SetOptimizationConfig(arg1) {

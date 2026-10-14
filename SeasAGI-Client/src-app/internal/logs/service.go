@@ -33,6 +33,13 @@ type RequestLog struct {
 	ErrorMessage       *string     `json:"error_message"`
 	AppliedConstraints string      `json:"applied_constraints,omitempty"` // JSON of constraint conditions applied
 	IntentScenario     string      `json:"intent_scenario,omitempty"`     // M4.5: 场景化意图（code_logic/image_gen/...）
+	// MITM 路由可观测字段：记录「来源工具 → 目标」的改写全过程。
+	MITMTarget     string `json:"mitm_target,omitempty"`     // 来源工具（如 cursor）
+	MITMRuleID     string `json:"mitm_rule_id,omitempty"`    // 命中的规则 ID
+	RequestedModel string `json:"requested_model,omitempty"` // 工具发出的原始模型名
+	ResolvedTarget string `json:"resolved_target,omitempty"` // 最终映射到的 Combo 名或模型名
+	// MITMHeaderMismatch 表示 Target 与 Original-Host 反查不一致（lenient 模式下仅审计）。
+	MITMHeaderMismatch bool `json:"mitm_header_mismatch,omitempty"`
 	// RequestPayload 失败请求的脱敏请求体快照（敏感字段已 REDACTED），用于排障与审计。
 	RequestPayload string `json:"request_payload,omitempty"`
 	// PrevHash / Hash 构成防篡改哈希链：Hash = SHA256(PrevHash + 规范化记录 JSON)。

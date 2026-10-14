@@ -5,6 +5,7 @@ import { useTeamStore } from "../stores/teamStore";
 import * as cmd from "../utils/commands";
 import { useTranslation } from "../i18n";
 import { formatPlanTier, normalizePlanTier } from "../utils/plan";
+import { getErrorMessage } from "../utils/errors";
 
 /* --- Team Cost Snapshot (local store) --- */
 function TeamCostSnapshot() {
@@ -122,6 +123,29 @@ export function HomePage() {
   const handleClearGrant = async () => {
     await cmd.clearSelectedGrant();
     setSelectedGrant(null);
+  };
+
+  // P2-14：将市场资产「快捷应用」为一条含 grant:// 步骤的 Combo（弱化全局选择器的迁移路径）。
+  const handleGrantToCombo = async (grantID: string) => {
+    const model = window.prompt("输入该市场资产要路由到的模型名（如 claude-sonnet-4）：");
+    if (!model || !model.trim()) return;
+    const comboName = window.prompt("Combo 名称：", `Market-Grant-${grantID.slice(0, 8)}`);
+    if (!comboName || !comboName.trim()) return;
+    const name = comboName.trim();
+    try {
+      await cmd.saveModelCombo({
+        name,
+        display_name: name,
+        strategy: "fallback",
+        sticky_uses: 1,
+        // P3-21：默认开启市场优先（先试市场资产）。
+        market_priority: true,
+        steps: [{ channel_id: `grant://${grantID}`, model: model.trim() }],
+      });
+      window.alert(`已生成 Combo「${name}」，可在「组合」页查看与应用。`);
+    } catch (e) {
+      window.alert(`生成失败：${getErrorMessage(e, "未知错误")}`);
+    }
   };
 
   const handleToggleGateway = async () => {
@@ -323,6 +347,14 @@ export function HomePage() {
           <div className="section-heading">
             <h2>Token Grants</h2>
             <p className="hint">Active grants from token market purchases</p>
+            {/* P4-27：全局 Grant 选择器为兼容保留（deprecated）；推荐改用 Create Combo 内嵌市场资产。 */}
+            <p className="hint" style={{ color: "var(--text-muted, #999)" }}>
+              Global selection is kept for compatibility; prefer
+              {" "}
+              <strong>Create Combo</strong>
+              {" "}
+              to embed a grant into a combo (supports MITM routing &amp; fallback).
+            </p>
           </div>
           {selectedGrant && (
             <div className="snapshot-item" style={{ marginBottom: 12, padding: 8, background: "var(--color-bg-secondary, #f5f5f5)", borderRadius: 8 }}>
@@ -348,6 +380,14 @@ export function HomePage() {
                   disabled={!cloudBilling?.relay_gateways?.length}
                 >
                   {selectedGrant?.grant_id === g.grant_id ? "Selected" : "Select"}
+                </button>
+                <button
+                  className="btn-secondary btn-sm"
+                  style={{ marginTop: 4 }}
+                  onClick={() => handleGrantToCombo(g.grant_id)}
+                  title="Create a combo that embeds this grant (grant://)"
+                >
+                  Create Combo
                 </button>
               </div>
             ))}

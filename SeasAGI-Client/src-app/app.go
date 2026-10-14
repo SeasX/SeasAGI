@@ -985,6 +985,17 @@ func (a *App) afterPlatformLogin() error {
 	// Sync local data to cloud (best-effort)
 	_ = a.syncLocalDataToCloud()
 
+	// P4-24：登录成功后立即同步企业下发的 MITM 路由规则（best-effort）。
+	go func() {
+		token := ""
+		if a.authSvc.IsLoggedIn() {
+			token = a.authSvc.GetPlatformToken()
+		}
+		if err := mitm.FetchRoutingRulesFromEnterprise(a.ctx, token); err != nil {
+			logging.Debugf("fetch enterprise mitm routing rules after login: %v", err)
+		}
+	}()
+
 	if !a.gatewaySvc.IsRunning() {
 		go a.gatewaySvc.Start(a.ctx)
 	}
@@ -3018,6 +3029,131 @@ func (a *App) SetRateLimitConfig(cfg map[string]any) error {
 		}
 	}
 	return a.configSvc.SetRateLimitConfig(parsed)
+}
+
+// GetMITMRoutingConfig 返回 MITM 接管请求的路由映射配置。
+func (a *App) GetMITMRoutingConfig() map[string]any {
+	cfg := a.configSvc.GetMITMRoutingConfig()
+	rules := make([]map[string]any, 0, len(cfg.Rules))
+	for _, r := range cfg.Rules {
+		rules = append(rules, map[string]any{
+			"id":            r.ID,
+			"enabled":       r.Enabled,
+			"priority":      r.Priority,
+			"target_id":     r.TargetID,
+			"endpoint_path": r.EndpointPath,
+			"request_model": r.RequestModel,
+			"action":        r.Action,
+			"combo_name":    r.ComboName,
+			"model":         r.Model,
+			"constraints":   r.Constraints,
+			"source":        r.Source,
+		})
+	}
+	return map[string]any{
+		"enabled":            cfg.Enabled,
+		"default_action":     cfg.DefaultAction,
+		"default_combo_name": cfg.DefaultCombo,
+		"default_model":      cfg.DefaultModel,
+		"security_mode":      cfg.SecurityMode,
+		"rules":              rules,
+	}
+}
+
+// GetMITMEnterpriseRules 返回企业端下发的 MITM 路由规则（只读、置底）。
+func (a *App) GetMITMEnterpriseRules() []map[string]any {
+	entRules := mitm.EnterpriseRoutingRules()
+	rules := make([]map[string]any, 0, len(entRules))
+	for _, r := range entRules {
+		rules = append(rules, map[string]any{
+			"id":            r.ID,
+			"enabled":       r.Enabled,
+			"priority":      r.Priority,
+			"target_id":     r.TargetID,
+			"endpoint_path": r.EndpointPath,
+			"request_model": r.RequestModel,
+			"action":        r.Action,
+			"combo_name":    r.ComboName,
+			"model":         r.Model,
+			"constraints":   r.Constraints,
+			"source":        r.Source,
+		})
+	}
+	return rules
+}
+
+// FetchMITMRoutingFromEnterprise 从企业服务端拉取默认 MITM 路由规则（与 FetchMITMTargetsFromEnterprise 同风格）。
+func (a *App) FetchMITMRoutingFromEnterprise() map[string]any {
+	token := ""
+	if a.authSvc.IsLoggedIn() {
+		token = a.authSvc.GetPlatformToken()
+	}
+	if err := mitm.FetchRoutingRulesFromEnterprise(a.ctx, token); err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}
+	}
+	return map[string]any{"ok": true, "count": len(mitm.EnterpriseRoutingRules())}
+}
+
+// SetMITMRoutingConfig 设置 MITM 接管请求的路由映射配置（校验失败返回错误，不落盘）。
+func (a *App) SetMITMRoutingConfig(cfg map[string]any) error {
+	parsed := config.MITMRoutingConfig{}
+	if v, ok := cfg["enabled"]; ok {
+		parsed.Enabled, _ = v.(bool)
+	}
+	if v, ok := cfg["default_action"].(string); ok {
+		parsed.DefaultAction = v
+	}
+	if v, ok := cfg["default_combo_name"].(string); ok {
+		parsed.DefaultCombo = v
+	}
+	if v, ok := cfg["default_model"].(string); ok {
+		parsed.DefaultModel = v
+	}
+	if v, ok := cfg["security_mode"].(string); ok {
+		parsed.SecurityMode = v
+	}
+	if raw, ok := cfg["rules"].([]any); ok {
+		parsed.Rules = make([]config.MITMRoutingRule, 0, len(raw))
+		for _, item := range raw {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			rule := config.MITMRoutingRule{}
+			if v, ok := m["id"].(string); ok {
+				rule.ID = v
+			}
+			if v, ok := m["enabled"].(bool); ok {
+				rule.Enabled = v
+			}
+			if v, ok := m["priority"]; ok {
+				rule.Priority, _ = toInt(v)
+			}
+			if v, ok := m["target_id"].(string); ok {
+				rule.TargetID = v
+			}
+			if v, ok := m["endpoint_path"].(string); ok {
+				rule.EndpointPath = v
+			}
+			if v, ok := m["request_model"].(string); ok {
+				rule.RequestModel = v
+			}
+			if v, ok := m["action"].(string); ok {
+				rule.Action = v
+			}
+			if v, ok := m["combo_name"].(string); ok {
+				rule.ComboName = v
+			}
+			if v, ok := m["model"].(string); ok {
+				rule.Model = v
+			}
+			if v, ok := m["constraints"].(map[string]any); ok {
+				rule.Constraints = v
+			}
+			parsed.Rules = append(parsed.Rules, rule)
+		}
+	}
+	return a.configSvc.SetMITMRoutingConfig(parsed)
 }
 
 // SetMITMManager 注入 MITM Manager 实例。

@@ -1,4 +1,4 @@
-import type { Channel, DiscoveredModel, RequestLog, RuntimeStatus, AuthState, AppConfig, ModelCombo, CloudUsage, CloudBilling, CloudCombo, OptimizationPlan, OptimizationConfig, ModelStatsEntry, UsageSummary, ProviderHealthMetric, ProviderHealthSummary, BYOKPolicy, QuickStrategy, TaskProfile, MITMStatus, OverageRecord, Invoice, OAuthProvider } from "../utils/types";
+import type { Channel, DiscoveredModel, RequestLog, RuntimeStatus, AuthState, AppConfig, ModelCombo, CloudUsage, CloudBilling, CloudCombo, OptimizationPlan, OptimizationConfig, ModelStatsEntry, UsageSummary, ProviderHealthMetric, ProviderHealthSummary, BYOKPolicy, QuickStrategy, TaskProfile, MITMStatus, MITMRoutingConfig, OverageRecord, Invoice, OAuthProvider } from "../utils/types";
 
 type WailsAppApi = {
   StartLocalGateway(): Promise<void>;
@@ -115,6 +115,10 @@ type WailsAppApi = {
   GetPluginHooks(): Promise<Record<string, any>[]>;
   GetPluginAuditLog(): Promise<Record<string, any>[]>;
   GetMITMTargets(): Promise<Record<string, any>[]>;
+  GetMITMRoutingConfig(): Promise<Record<string, any>>;
+  SetMITMRoutingConfig(cfg: Record<string, any>): Promise<void>;
+  GetMITMEnterpriseRules(): Promise<Record<string, any>[]>;
+  FetchMITMRoutingFromEnterprise(): Promise<Record<string, any>>;
   SearchNotion(apiKey: string, query: string): Promise<Record<string, any>>;
   SearchObsidian(apiKey: string, baseURL: string, query: string): Promise<Record<string, any>[]>;
   GetPerfAuditReport(): Promise<Record<string, any>>;
@@ -652,6 +656,30 @@ export async function getMITMTargets(): Promise<Record<string, any>[]> {
 
 export async function fetchMITMTargetsFromEnterprise(): Promise<Record<string, any>> {
   return getAppApi().FetchMITMTargetsFromEnterprise();
+}
+
+export async function getMITMRoutingConfig(): Promise<MITMRoutingConfig> {
+  const raw = await getAppApi().GetMITMRoutingConfig();
+  return {
+    enabled: !!raw?.enabled,
+    default_action: (raw?.default_action || "passthrough") as MITMRoutingConfig["default_action"],
+    default_combo_name: raw?.default_combo_name || "",
+    default_model: raw?.default_model || "",
+    security_mode: (raw?.security_mode || "lenient") as MITMRoutingConfig["security_mode"],
+    rules: (raw?.rules || []) as MITMRoutingConfig["rules"],
+  };
+}
+
+export async function setMITMRoutingConfig(cfg: MITMRoutingConfig): Promise<void> {
+  return getAppApi().SetMITMRoutingConfig(cfg as unknown as Record<string, any>);
+}
+
+export async function getMITMEnterpriseRules(): Promise<Record<string, any>[]> {
+  return getAppApi().GetMITMEnterpriseRules();
+}
+
+export async function fetchMITMRoutingFromEnterprise(): Promise<Record<string, any>> {
+  return getAppApi().FetchMITMRoutingFromEnterprise();
 }
 
 export async function searchNotion(apiKey: string, query: string): Promise<Record<string, any>> {

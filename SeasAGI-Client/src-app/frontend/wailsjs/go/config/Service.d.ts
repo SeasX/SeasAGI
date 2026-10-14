@@ -22,6 +22,8 @@ export function GetConfig():Promise<config.AppConfig>;
 
 export function GetDefaultComboName():Promise<string>;
 
+export function GetMITMRoutingConfig():Promise<config.MITMRoutingConfig>;
+
 export function GetModelCombo(arg1:string):Promise<config.ModelCombo|boolean>;
 
 export function GetOptimizationConfig():Promise<config.OptimizationConfig>;
@@ -69,6 +71,8 @@ export function SetCavemanConfig(arg1:boolean,arg2:string):Promise<void>;
 export function SetDefaultComboName(arg1:string):Promise<void>;
 
 export function SetDefaultModel(arg1:string,arg2:string):Promise<void>;
+
+export function SetMITMRoutingConfig(arg1:config.MITMRoutingConfig):Promise<void>;
 
 export function SetOptimizationConfig(arg1:config.OptimizationConfig):Promise<void>;
 

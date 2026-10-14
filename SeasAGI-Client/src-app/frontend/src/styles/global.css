@@ -2928,6 +2928,42 @@ body[data-theme="light"] .modal {
   margin: 12px 0 8px;
 }
 
+/* P1-9：Combo 编辑器中的 Token 市场资产分组 */
+.combo-market-assets {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+.combo-market-assets .section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 6px;
+}
+.market-asset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.market-asset-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated);
+}
+.market-asset-name {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text, inherit);
+}
+
 /* 步骤卡：拖拽微动效（浮起 + 投影） */
 .combo-step-card {
   display: flex;

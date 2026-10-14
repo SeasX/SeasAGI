@@ -68,6 +68,8 @@ export function FetchEnterpriseChannels():Promise<Array<Record<string, any>>>;
 
 export function FetchFreeChannels():Promise<Array<Record<string, any>>>;
 
+export function FetchMITMRoutingFromEnterprise():Promise<Record<string, any>>;
+
 export function FetchMITMTargetsFromEnterprise():Promise<Record<string, any>>;
 
 export function FetchModelCatalog():Promise<Array<Record<string, any>>>;
@@ -114,9 +116,13 @@ export function GetMCPAuditLog():Promise<Array<Record<string, any>>>;
 
 export function GetMCPGatewayTools():Promise<Array<Record<string, any>>>;
 
+export function GetMITMEnterpriseRules():Promise<Array<Record<string, any>>>;
+
 export function GetMITMEnvHint():Promise<Record<string, string>>;
 
 export function GetMITMRecentIntercepts(arg1:number):Promise<Array<Record<string, any>>>;
+
+export function GetMITMRoutingConfig():Promise<Record<string, any>>;
 
 export function GetMITMRules():Promise<Array<string>>;
 
@@ -295,6 +301,8 @@ export function SetLogRotationConfig(arg1:Record<string, any>):Promise<void>;
 export function SetLogRotator(arg1:logging.LogRotator):Promise<void>;
 
 export function SetMITMManager(arg1:mitm.Manager):Promise<void>;
+
+export function SetMITMRoutingConfig(arg1:Record<string, any>):Promise<void>;
 
 export function SetOptimizationConfig(arg1:Record<string, any>):Promise<void>;
 

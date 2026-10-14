@@ -142,6 +142,13 @@ func runDesktop() {
 	// 拦截转发时注入本机访问令牌，保证被接管 SDK 的请求能通过网关鉴权。
 	mitmMgr.SetAccessToken(accessToken)
 	app.SetLogRotator(logRotator)
+	// P4-24：后台定期同步企业下发的 MITM 路由规则（未配置企业服务端时自动跳过）。
+	mitm.StartEnterpriseRulesRefresher(lifecycleCtx, func() string {
+		if authSvc.IsLoggedIn() {
+			return authSvc.GetPlatformToken()
+		}
+		return ""
+	})
 
 	trayMgr := tray.NewManager(
 		func(channelID string) {
@@ -155,6 +162,14 @@ func runDesktop() {
 			runtime.Quit(app.ctx)
 		},
 	)
+	// P3-23：首次拦截某来源工具时弹出托盘气泡提醒。
+	mitmMgr.SetInterceptNotifier(func(target, host string) {
+		name := target
+		if name == "" {
+			name = host
+		}
+		trayMgr.Notify("SeasAGI 已接管 "+name, host)
+	})
 
 	shutdownDeps := func() {
 		shutdownOnce.Do(func() {

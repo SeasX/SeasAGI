@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useSearchParams } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import * as cmd from "../utils/commands";
 import { useTranslation } from "../i18n";
 import { SUPPORTED_LOCALES, type Locale } from "../i18n/index";
 import { getErrorMessage } from "../utils/errors";
 import type { MITMStatus } from "../utils/types";
+import { MITMRoutingPanel } from "../components/MITMRoutingPanel";
 
 export function SettingsPage() {
   const auth = useAppStore((s) => s.auth);
@@ -14,6 +15,7 @@ export function SettingsPage() {
   const setAppConfig = useAppStore((s) => s.setAppConfig);
   const { t, locale, setLocale } = useTranslation();
 
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"account" | "routing" | "rtk" | "caveman" | "mitm" | "rate-limit" | "performance" | "mcp-gateway" | "advanced">("account");
   const [routingStrategy, setRoutingStrategy] = useState(appConfig?.routing_strategy || "fallback");
   const [stickyUses, setStickyUses] = useState(appConfig?.sticky_channel_use || 3);
@@ -51,6 +53,15 @@ export function SettingsPage() {
   useEffect(() => {
     void loadMITMState();
   }, []);
+
+  // P3-16：支持 ?tab=mitm 深链（从日志页「创建映射规则」跳转）。
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const valid = ["account", "routing", "rtk", "caveman", "mitm", "rate-limit", "performance", "mcp-gateway", "advanced"];
+    if (tab && valid.includes(tab)) {
+      setActiveTab(tab as typeof activeTab);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (activeTab !== "mitm") return undefined;
@@ -571,6 +582,9 @@ export function SettingsPage() {
               })}
             </div>
           </div>
+
+          {/* 路由映射编辑器 + 接管概览 */}
+          <MITMRoutingPanel />
 
           {/* 拦截日志 */}
           {mitmStatus?.state === "running" && (

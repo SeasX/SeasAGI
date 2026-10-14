@@ -420,8 +420,29 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 
 	cfg := s.configSvc.GetConfig()
 
+	// 工具发出的原始模型名（在任何改写之前），用于 MITM 匹配与日志。
+	requestedModel := req.Model
+
 	if cfg.DefaultComboName != "" && req.Model == cfg.DefaultModel {
 		req.Model = cfg.DefaultComboName
+	}
+
+	// MITM 路由决策：命中「改写」动作后覆盖 req.Model（优先级高于默认 Combo 兜底，
+	// 与「MITM 规则 > DefaultModel→DefaultComboName」的优先级链一致）。
+	mitm := mitmDecision{}
+	if cfg.MITMRouting != nil {
+		mitm = resolveMITMRoute(r.Header, effectiveMITMRouting(*cfg.MITMRouting), requestedModel)
+		// 头部一致性校验（P2-13）：strict 模式拒绝，lenient 模式仅告警放行。
+		if mitm.HeaderMismatch {
+			if cfg.MITMRouting.SecurityMode == config.MITMSecurityStrict {
+				writeJSONError(w, http.StatusForbidden, "MITM header mismatch: target does not match original host")
+				return
+			}
+			logging.Warningf("mitm header mismatch: target=%s host=%s (lenient, passthrough)", mitm.Target, r.Header.Get(config.HeaderMITMHost))
+		}
+		if mitm.Matched {
+			req.Model = mitm.ResolvedTarget
+		}
 	}
 
 	if rawBody != nil {
@@ -494,6 +515,12 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 		}
 		if v, ok := rawBody["data_policy"]; ok {
 			appliedConstraints["data_policy"] = v
+		}
+	}
+	// 合并 MITM 映射注入的请求级约束（规则显式配置优先于请求体）。
+	if len(mitm.Constraints) > 0 {
+		for k, v := range mitm.Constraints {
+			appliedConstraints[k] = v
 		}
 	}
 
@@ -584,6 +611,14 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 		if status != "success" && rawBody != nil {
 			requestPayload = logging.ProtectPayloadForLog(rawBody)
 		}
+		// MITM 可观测：仅在请求带 MITM 标记时记录来源与改写链路。
+		mitmTarget, mitmRuleID, mitmRequested, mitmResolved := "", "", "", ""
+		if mitm.Intercepted {
+			mitmTarget = mitm.Target
+			mitmRuleID = mitm.RuleID
+			mitmRequested = requestedModel
+			mitmResolved = mitm.ResolvedTarget
+		}
 		_ = s.logSvc.RecordLog(logs.RequestLog{
 			RequestID:          fmt.Sprintf("req_%d", time.Now().UnixNano()),
 			CreatedAt:          time.Now().UTC().Format(time.RFC3339),
@@ -602,6 +637,11 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 			ErrorMessage:       errMessage,
 			AppliedConstraints: constraintsJSON,
 			IntentScenario:     intentScenario,
+			MITMTarget:         mitmTarget,
+			MITMRuleID:         mitmRuleID,
+			RequestedModel:     mitmRequested,
+			ResolvedTarget:     mitmResolved,
+			MITMHeaderMismatch: mitm.HeaderMismatch,
 			RequestPayload:     requestPayload,
 		})
 		s.recordUsageAndTokens(capture, usageMeta{
@@ -627,10 +667,12 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 		logging.Warningf("prompt injection detected: severity=%s model=%s", injection.Severity, req.Model)
 	}
 
-	// P8: Grant routing — if user has an active grant, route through enterprise relay
+	// P8: Grant routing — if user has an active grant, route through enterprise relay.
+	// 优先级统一（§4.9-4）：MITM 规则命中改写时，跳过全局 Grant 短路，改用改写后的
+	// Combo/模型路由，避免改写被全局开关绕过。
 	grantRelayURL := s.configSvc.GetSelectedGrantRelayURL()
 	grantID := s.configSvc.GetSelectedGrantID()
-	if grantRelayURL != "" && grantID != "" {
+	if grantRelayURL != "" && grantID != "" && !mitm.Matched {
 		resp, err := s.forwardViaGrant(r.Context(), grantRelayURL, grantID, bodyBytes)
 		if err == nil {
 			status = "success"
@@ -641,6 +683,47 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 			return
 		}
 		// Grant routing failed, fall through to normal BYOK routing
+	}
+
+	// Combo 内嵌 Token 市场资产：将计划中的 grant:// 虚拟渠道经企业 relay 转发；
+	// 全部失败时回退到其余（自有 Key）步骤。市场优先（P3-21）可关闭：
+	// 显式 market_priority=false 时忽略市场资产，直接走自有 Key 步骤。
+	if grantSteps, rest := splitMarketGrantSteps(plan); len(grantSteps) > 0 {
+		combo, ok := s.configSvc.GetModelCombo(normalizedModel)
+		marketFirst := marketFirstForCombo(combo, ok)
+		if marketFirst {
+			for _, step := range grantSteps {
+				gid := grantIDFromChannelID(step.Channel.ChannelID)
+				if gid == "" || step.Channel.BaseURL == "" {
+					continue
+				}
+				resp, gerr := s.forwardViaGrant(r.Context(), step.Channel.BaseURL, gid, bodyBytes)
+				if gerr != nil {
+					continue
+				}
+				status = "success"
+				selectedChannelID = step.Channel.ChannelID
+				selectedChannelName = "Token Market Relay"
+				selectedUpstreamModel = step.UpstreamModel
+				defer resp.Body.Close()
+				s.proxyResponse(w, resp)
+				return
+			}
+		}
+		// 未启用市场优先（或全部 grant 步骤失败）→ 回退到自有 Key 步骤。
+		plan = rest
+		if len(plan) == 0 {
+			status = "failure"
+			code := "grant_relay_error"
+			message := "all token market grant routes failed"
+			if !marketFirst {
+				message = "market assets disabled for this combo and no fallback channel available"
+			}
+			errCode = &code
+			errMessage = &message
+			writeJSONError(w, http.StatusBadGateway, message)
+			return
+		}
 	}
 
 	resp, usedStep, attempts, forwardErr := s.forwardRequest(r.Context(), plan, req, sessionKey)

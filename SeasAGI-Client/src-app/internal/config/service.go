@@ -39,6 +39,7 @@ type AppConfig struct {
 	DefaultComboName      string              `json:"default_combo_name,omitempty"`
 	RateLimit             *RateLimitConfig    `json:"rate_limit,omitempty"`
 	Security              *SecurityConfig     `json:"security,omitempty"`
+	MITMRouting           *MITMRoutingConfig  `json:"mitm_routing,omitempty"`
 	SelectedGrantID       string              `json:"selected_grant_id,omitempty"`
 	SelectedGrantRelayURL string              `json:"selected_grant_relay_url,omitempty"`
 }
@@ -75,6 +76,74 @@ type SecurityConfig struct {
 	PIIMaskingEnabled     bool   `json:"pii_masking_enabled"`     // 对请求 messages 做 PII/DLP 脱敏（默认关闭）
 	PromptInjectionAction string `json:"prompt_injection_action"` // off | log | block（默认 log）
 	ErrorSanitizeEnabled  bool   `json:"error_sanitize_enabled"`  // 对外错误信息脱敏（默认开启）
+}
+
+// MITM 路由动作。
+const (
+	MITMActionPassThrough = "passthrough" // 不改写（默认）
+	MITMActionCombo       = "combo"       // 改写为 Combo 名
+	MITMActionModel       = "model"       // 改写为逻辑模型名
+)
+
+// MITM 规则来源：本地规则（可编辑、置顶）与企业下发规则（只读、置底）。
+const (
+	MITMRuleSourceLocal      = "local"
+	MITMRuleSourceEnterprise = "enterprise"
+)
+
+// MITM 头部一致性校验模式：
+//   - lenient（默认）：仅记审计日志，不阻断请求；
+//   - strict：`Target` 与 `Original-Host` 不一致时拒绝并返回 4xx。
+const (
+	MITMSecurityLenient = "lenient"
+	MITMSecurityStrict  = "strict"
+)
+
+// MarketGrantChannelPrefix 是 Combo 步骤中引用 Token 市场资产（Grant）的虚拟渠道前缀，
+// 形如 `grant://{grant_id}`。由 resolver 识别为虚拟渠道并经企业 relay 转发。
+const MarketGrantChannelPrefix = "grant://"
+
+// MITM 来源标记头：由 MITM proxy 注入，gateway 侧据此做「来源 → 目标」路由映射。
+const (
+	HeaderMITMSource   = "X-SeasAGI-MITM"
+	HeaderMITMTarget   = "X-SeasAGI-MITM-Target"
+	HeaderMITMHost     = "X-SeasAGI-MITM-Original-Host"
+	HeaderMITMEndpoint = "X-SeasAGI-MITM-Endpoint"
+)
+
+// IsMarketGrantChannelID 判断渠道 ID 是否为 Token 市场 Grant 引用。
+func IsMarketGrantChannelID(channelID string) bool {
+	return strings.HasPrefix(channelID, MarketGrantChannelPrefix)
+}
+
+// MITMRoutingConfig MITM 接管请求的路由映射策略。默认（nil / Enabled=false）行为与未启用
+// 时完全一致。
+type MITMRoutingConfig struct {
+	Enabled bool `json:"enabled"`
+	// DefaultAction 未命中任何规则时的动作：passthrough（默认）| combo | model。
+	DefaultAction string `json:"default_action"`
+	DefaultCombo  string `json:"default_combo_name,omitempty"`
+	DefaultModel  string `json:"default_model,omitempty"`
+	// SecurityMode 头部一致性校验模式：lenient（默认，仅审计）| strict（拒绝 4xx）。
+	SecurityMode string            `json:"security_mode,omitempty"`
+	Rules        []MITMRoutingRule `json:"rules,omitempty"`
+}
+
+// MITMRoutingRule 单条「来源 → 目标」映射规则。
+type MITMRoutingRule struct {
+	ID           string `json:"id"`
+	Enabled      bool   `json:"enabled"`
+	Priority     int    `json:"priority"`                // 小者优先；同级按配置顺序
+	TargetID     string `json:"target_id,omitempty"`     // 来源工具；空/`*` = 任意
+	EndpointPath string `json:"endpoint_path,omitempty"` // 路径前缀；空 = 任意
+	RequestModel string `json:"request_model,omitempty"` // 请求模型；空 = 任意；支持 `*` 后缀通配
+	Action       string `json:"action"`                  // combo | model | passthrough
+	ComboName    string `json:"combo_name,omitempty"`    // action=combo
+	Model        string `json:"model,omitempty"`         // action=model（逻辑模型名）
+	// Constraints 随映射注入的请求级约束（复用 FilterCandidatesByConstraints）。
+	Constraints map[string]any `json:"constraints,omitempty"`
+	// Source 规则来源：local（默认，可编辑、置顶）| enterprise（企业下发、只读、置底）。
+	Source string `json:"source,omitempty"`
 }
 
 type OptimizationConfig struct {
@@ -126,6 +195,9 @@ type ModelCombo struct {
 	Status        string           `json:"status,omitempty"`
 	Source        string           `json:"source,omitempty"`
 	Version       int              `json:"version,omitempty"`
+	// MarketPriority 控制 grant:// 市场资产步骤的优先级（P3-21）：
+	// nil/true = 市场优先（先试市场资产，枯竭回退自有 Key）；显式 false = 忽略市场资产，仅用自有 Key。
+	MarketPriority *bool `json:"market_priority,omitempty"`
 }
 
 type RetryConfig struct {
@@ -460,6 +532,98 @@ func (s *Service) SetSecurityConfig(cfg SecurityConfig) error {
 	}
 	s.config.Security = &cfg
 	return s.saveLocked()
+}
+
+// GetMITMRoutingConfig 返回 MITM 路由映射配置。未配置时返回 passthrough 默认值。
+func (s *Service) GetMITMRoutingConfig() MITMRoutingConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.config.MITMRouting == nil {
+		return MITMRoutingConfig{DefaultAction: MITMActionPassThrough}
+	}
+	return *s.config.MITMRouting
+}
+
+// SetMITMRoutingConfig 校验并持久化 MITM 路由映射配置。
+func (s *Service) SetMITMRoutingConfig(cfg MITMRoutingConfig) error {
+	normalized, err := normalizeMITMRoutingConfig(cfg)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.MITMRouting = &normalized
+	return s.saveLocked()
+}
+
+func isValidMITMAction(action string) bool {
+	switch action {
+	case MITMActionPassThrough, MITMActionCombo, MITMActionModel:
+		return true
+	}
+	return false
+}
+
+func normalizeMITMRoutingConfig(cfg MITMRoutingConfig) (MITMRoutingConfig, error) {
+	cfg.DefaultAction = strings.ToLower(strings.TrimSpace(cfg.DefaultAction))
+	if cfg.DefaultAction == "" {
+		cfg.DefaultAction = MITMActionPassThrough
+	}
+	if !isValidMITMAction(cfg.DefaultAction) {
+		return cfg, fmt.Errorf("invalid mitm default_action: %s", cfg.DefaultAction)
+	}
+	cfg.DefaultCombo = strings.TrimSpace(cfg.DefaultCombo)
+	cfg.DefaultModel = strings.TrimSpace(cfg.DefaultModel)
+	if cfg.DefaultAction == MITMActionCombo && cfg.DefaultCombo == "" {
+		return cfg, errors.New("mitm default_action=combo requires default_combo_name")
+	}
+	if cfg.DefaultAction == MITMActionModel && cfg.DefaultModel == "" {
+		return cfg, errors.New("mitm default_action=model requires default_model")
+	}
+
+	cfg.SecurityMode = strings.ToLower(strings.TrimSpace(cfg.SecurityMode))
+	if cfg.SecurityMode == "" {
+		cfg.SecurityMode = MITMSecurityLenient
+	}
+	if cfg.SecurityMode != MITMSecurityLenient && cfg.SecurityMode != MITMSecurityStrict {
+		return cfg, fmt.Errorf("invalid mitm security_mode: %s", cfg.SecurityMode)
+	}
+
+	seen := make(map[string]struct{}, len(cfg.Rules))
+	rules := make([]MITMRoutingRule, 0, len(cfg.Rules))
+	for _, rule := range cfg.Rules {
+		rule.ID = strings.TrimSpace(rule.ID)
+		if rule.ID == "" {
+			rule.ID = generateComboID()
+		}
+		if _, dup := seen[rule.ID]; dup {
+			continue
+		}
+		seen[rule.ID] = struct{}{}
+		rule.TargetID = strings.TrimSpace(rule.TargetID)
+		rule.EndpointPath = strings.TrimSpace(rule.EndpointPath)
+		rule.RequestModel = strings.TrimSpace(rule.RequestModel)
+		rule.ComboName = strings.TrimSpace(rule.ComboName)
+		rule.Model = strings.TrimSpace(rule.Model)
+		// 持久化的始终为本地规则（企业规则另存于内存，不落盘）。
+		rule.Source = MITMRuleSourceLocal
+		rule.Action = strings.ToLower(strings.TrimSpace(rule.Action))
+		if rule.Action == "" {
+			rule.Action = MITMActionPassThrough
+		}
+		if !isValidMITMAction(rule.Action) {
+			return cfg, fmt.Errorf("invalid mitm rule action: %s", rule.Action)
+		}
+		if rule.Action == MITMActionCombo && rule.ComboName == "" {
+			return cfg, fmt.Errorf("mitm rule %s action=combo requires combo_name", rule.ID)
+		}
+		if rule.Action == MITMActionModel && rule.Model == "" {
+			return cfg, fmt.Errorf("mitm rule %s action=model requires model", rule.ID)
+		}
+		rules = append(rules, rule)
+	}
+	cfg.Rules = rules
+	return cfg, nil
 }
 
 // SetRTKConfig 设置并持久化 RTK Token 压缩配置。

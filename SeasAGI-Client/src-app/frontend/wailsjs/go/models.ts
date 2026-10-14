@@ -382,6 +382,78 @@ export namespace auth {
 
 export namespace config {
 	
+	export class MITMRoutingRule {
+	    id: string;
+	    enabled: boolean;
+	    priority: number;
+	    target_id?: string;
+	    endpoint_path?: string;
+	    request_model?: string;
+	    action: string;
+	    combo_name?: string;
+	    model?: string;
+	    constraints?: Record<string, any>;
+	    source?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MITMRoutingRule(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.enabled = source["enabled"];
+	        this.priority = source["priority"];
+	        this.target_id = source["target_id"];
+	        this.endpoint_path = source["endpoint_path"];
+	        this.request_model = source["request_model"];
+	        this.action = source["action"];
+	        this.combo_name = source["combo_name"];
+	        this.model = source["model"];
+	        this.constraints = source["constraints"];
+	        this.source = source["source"];
+	    }
+	}
+	export class MITMRoutingConfig {
+	    enabled: boolean;
+	    default_action: string;
+	    default_combo_name?: string;
+	    default_model?: string;
+	    security_mode?: string;
+	    rules?: MITMRoutingRule[];
+	
+	    static createFrom(source: any = {}) {
+	        return new MITMRoutingConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.default_action = source["default_action"];
+	        this.default_combo_name = source["default_combo_name"];
+	        this.default_model = source["default_model"];
+	        this.security_mode = source["security_mode"];
+	        this.rules = this.convertValues(source["rules"], MITMRoutingRule);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class SecurityConfig {
 	    pii_masking_enabled: boolean;
 	    prompt_injection_action: string;
@@ -572,6 +644,7 @@ export namespace config {
 	    status?: string;
 	    source?: string;
 	    version?: number;
+	    market_priority?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ModelCombo(source);
@@ -594,6 +667,7 @@ export namespace config {
 	        this.status = source["status"];
 	        this.source = source["source"];
 	        this.version = source["version"];
+	        this.market_priority = source["market_priority"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -636,6 +710,7 @@ export namespace config {
 	    default_combo_name?: string;
 	    rate_limit?: RateLimitConfig;
 	    security?: SecurityConfig;
+	    mitm_routing?: MITMRoutingConfig;
 	    selected_grant_id?: string;
 	    selected_grant_relay_url?: string;
 	
@@ -666,6 +741,7 @@ export namespace config {
 	        this.default_combo_name = source["default_combo_name"];
 	        this.rate_limit = this.convertValues(source["rate_limit"], RateLimitConfig);
 	        this.security = this.convertValues(source["security"], SecurityConfig);
+	        this.mitm_routing = this.convertValues(source["mitm_routing"], MITMRoutingConfig);
 	        this.selected_grant_id = source["selected_grant_id"];
 	        this.selected_grant_relay_url = source["selected_grant_relay_url"];
 	    }
@@ -777,6 +853,8 @@ export namespace config {
 		    return a;
 		}
 	}
+	
+	
 	
 	
 	
@@ -905,6 +983,11 @@ export namespace logs {
 	    error_message?: string;
 	    applied_constraints?: string;
 	    intent_scenario?: string;
+	    mitm_target?: string;
+	    mitm_rule_id?: string;
+	    requested_model?: string;
+	    resolved_target?: string;
+	    mitm_header_mismatch?: boolean;
 	    request_payload?: string;
 	    prev_hash?: string;
 	    hash?: string;
@@ -932,6 +1015,11 @@ export namespace logs {
 	        this.error_message = source["error_message"];
 	        this.applied_constraints = source["applied_constraints"];
 	        this.intent_scenario = source["intent_scenario"];
+	        this.mitm_target = source["mitm_target"];
+	        this.mitm_rule_id = source["mitm_rule_id"];
+	        this.requested_model = source["requested_model"];
+	        this.resolved_target = source["resolved_target"];
+	        this.mitm_header_mismatch = source["mitm_header_mismatch"];
 	        this.request_payload = source["request_payload"];
 	        this.prev_hash = source["prev_hash"];
 	        this.hash = source["hash"];

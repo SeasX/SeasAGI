@@ -77,6 +77,13 @@ func NewManager(ca *CertificateAuthority, rules *Rules, gatewayURL string) *Mana
 	}
 }
 
+// SetInterceptNotifier 设置首次拦截来源工具时的回调（P3-23 托盘提醒）。
+func (m *Manager) SetInterceptNotifier(fn func(target, host string)) {
+	if m.proxy != nil {
+		m.proxy.SetInterceptNotifier(fn)
+	}
+}
+
 // Start 按 StartupStep 顺序逐步启动。任一步失败时逆序回滚已完成步骤，
 // 并返回具体错误，供上层（前端）感知真实失败原因。
 func (m *Manager) Start(ctx context.Context) error {

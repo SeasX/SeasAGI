@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import * as cmd from "../utils/commands";
 import type { RequestLog } from "../utils/types";
@@ -37,7 +38,10 @@ export function LogPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [search, setSearch] = useState("");
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const mitmOnly = searchParams.get("mitm") === "1";
+  const [search, setSearch] = useState(searchParams.get("q") || "");
   const [statusFilter, setStatusFilter] = useState("");
   const [channelFilter, setChannelFilter] = useState("");
   const [sortOrder, setSortOrder] = useState("newest");
@@ -76,11 +80,15 @@ export function LogPage() {
   };
   const filtered = logs
     .filter((l) => {
+      if (mitmOnly && !l.mitm_target) return false;
       if (
         search &&
         !l.logical_model_name?.toLowerCase().includes(search.toLowerCase()) &&
         !l.channel_id?.toLowerCase().includes(search.toLowerCase()) &&
-        !l.error_message?.toLowerCase().includes(search.toLowerCase())
+        !l.error_message?.toLowerCase().includes(search.toLowerCase()) &&
+        !l.mitm_target?.toLowerCase().includes(search.toLowerCase()) &&
+        !l.resolved_target?.toLowerCase().includes(search.toLowerCase()) &&
+        !l.requested_model?.toLowerCase().includes(search.toLowerCase())
       ) {
         return false;
       }
@@ -142,6 +150,14 @@ export function LogPage() {
     const newPresets = presets.filter((p) => p.name !== name);
     setPresets(newPresets);
     savePresets(newPresets);
+  };
+
+  // P3-16：Log-to-Rule——按日志来源元数据回填并跳转到 MITM 路由编辑器。
+  const handleCreateRule = (log: RequestLog) => {
+    const params = new URLSearchParams({ tab: "mitm" });
+    if (log.mitm_target) params.set("rule_target", log.mitm_target);
+    if (log.requested_model) params.set("rule_model", log.requested_model);
+    navigate(`/settings?${params.toString()}`);
   };
 
   const handleCopyError = (log: RequestLog, format: "text" | "json" | "markdown") => {
@@ -358,6 +374,14 @@ export function LogPage() {
                         <span className="log-channel-badge" style={{ color: channelTypeColors[channelType], borderColor: channelTypeColors[channelType] }}>
                           {getChannelTypeLabel(channelType)}
                         </span>
+                        {log.mitm_target && (
+                          <span
+                            className="badge badge-blue"
+                            title={`来源工具: ${log.mitm_target}｜请求模型: ${log.requested_model || "-"}｜改写目标: ${log.resolved_target || "直连"}｜规则: ${log.mitm_rule_id || "默认动作"}`}
+                          >
+                            [MITM] {log.mitm_target}
+                          </span>
+                        )}
                       </div>
                       <div className="log-list-meta">
                         <span>{formatDateTime(log.created_at)}</span>
@@ -373,6 +397,16 @@ export function LogPage() {
                     <div className="log-list-side">
                       <span className="log-duration-pill">{formatDuration(log.duration_ms)}</span>
                       <div className="log-card-actions">
+                        {/* P3-16：未命中规则的接管请求可一键创建映射规则 */}
+                        {log.mitm_target && !log.resolved_target && (
+                          <button
+                            onClick={() => handleCreateRule(log)}
+                            className="btn-secondary btn-sm"
+                            title="按该请求的来源工具与模型创建一条 MITM 路由映射规则"
+                          >
+                            {t("log.createRule")}
+                          </button>
+                        )}
                         <button onClick={() => setExpandedRoute(isExpanded ? null : log.request_id)} className="btn-secondary btn-sm">
                           {isExpanded ? t("log.hideRoute") : t("log.route")}
                         </button>

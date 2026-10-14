@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/SeasAGI/SeasAGI-Client/internal/config"
 )
 
 // Proxy 是 MITM 拦截代理服务器。它监听本地端口，对命中规则的 HTTPS 请求进行拦截（动态签发证书），
@@ -23,6 +25,9 @@ type Proxy struct {
 	accessToken  string // 本地网关访问令牌，拦截转发前注入
 	interceptLog InterceptLogger
 	addr         string
+	// P3-23：首次拦截某个来源工具时回调（用于托盘气泡提醒）。
+	notifier        func(target, host string)
+	notifiedTargets map[string]bool
 }
 
 // NewProxy 创建 Proxy 实例。addr 为监听地址（如 ":8080"），gatewayURL 为本地网关地址。
@@ -55,6 +60,49 @@ func (p *Proxy) injectAuth(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	// Anthropic SDK 使用 x-api-key；网关只校验 Authorization，清除以避免歧义。
 	req.Header.Del("x-api-key")
+}
+
+// injectMITMHeaders 注入来源标记头，供 gateway 识别被接管请求的来源工具与端点。
+// 不读取、不修改请求体，保持流式与大请求体的既有性能特征。
+func (p *Proxy) injectMITMHeaders(req *http.Request, originalHost string) {
+	req.Header.Set(config.HeaderMITMSource, "1")
+	req.Header.Set(config.HeaderMITMHost, originalHost)
+	req.Header.Set(config.HeaderMITMEndpoint, req.URL.Path)
+	if target := ResolveTarget(originalHost); target != nil {
+		req.Header.Set(config.HeaderMITMTarget, target.ID)
+	}
+}
+
+// SetInterceptNotifier 设置「首次拦截某来源工具」时的回调（P3-23）。
+func (p *Proxy) SetInterceptNotifier(fn func(target, host string)) {
+	p.mu.Lock()
+	p.notifier = fn
+	p.mu.Unlock()
+}
+
+// notifyNewIntercept 在首次拦截某个来源工具时触发一次回调，避免同一工具反复打扰。
+func (p *Proxy) notifyNewIntercept(originalHost string) {
+	p.mu.Lock()
+	fn := p.notifier
+	if fn == nil {
+		p.mu.Unlock()
+		return
+	}
+	target := ResolveTarget(originalHost)
+	key := originalHost
+	if target != nil {
+		key = target.ID
+	}
+	if p.notifiedTargets == nil {
+		p.notifiedTargets = make(map[string]bool)
+	}
+	if p.notifiedTargets[key] {
+		p.mu.Unlock()
+		return
+	}
+	p.notifiedTargets[key] = true
+	p.mu.Unlock()
+	fn(key, originalHost)
 }
 
 // Start 启动代理服务器。
@@ -200,6 +248,10 @@ func (p *Proxy) serveInterceptedTLS(tlsConn net.Conn, originalHost string) {
 		req.URL.Host = p.gatewayURL[7:] // 去掉 "http://" 前缀
 		// 注入本机访问令牌：被接管 SDK 携带的是厂商 key，网关校验的是本机令牌。
 		p.injectAuth(req)
+		// 注入来源标记头（来源工具/原始域名/端点），供网关做路由映射。
+		p.injectMITMHeaders(req, originalHost)
+		// P3-23：首次拦截该来源工具时提醒一次。
+		p.notifyNewIntercept(originalHost)
 
 		// 记录拦截日志
 		startTime := time.Now()
@@ -308,6 +360,10 @@ func (p *Proxy) interceptRequest(host string, w http.ResponseWriter, r *http.Req
 	r.URL.Host = p.gatewayURL[7:]
 	// 注入本机访问令牌
 	p.injectAuth(r)
+	// 注入来源标记头
+	p.injectMITMHeaders(r, host)
+	// P3-23：首次拦截该来源工具时提醒一次。
+	p.notifyNewIntercept(host)
 
 	resp, err := http.DefaultTransport.RoundTrip(r)
 	if err != nil {

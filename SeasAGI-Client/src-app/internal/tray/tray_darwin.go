@@ -12,6 +12,7 @@ void createTray(void *iconData, int iconLen);
 void addTrayItem(const char *title, int tag, int isSeparator, int isChecked);
 void clearTrayMenu();
 void destroyTray();
+void showTrayNotification(const char *title, const char *body);
 */
 import "C"
 import (
@@ -148,4 +149,13 @@ func setActiveChannel(id string) {
 	menuMu.Lock()
 	activeChanID = id
 	menuMu.Unlock()
+}
+
+// showPlatformNotification 通过 NSUserNotification 弹出系统通知（P3-23）。
+func showPlatformNotification(title, body string) {
+	cTitle := C.CString(title)
+	cBody := C.CString(body)
+	C.showTrayNotification(cTitle, cBody)
+	C.free(unsafe.Pointer(cTitle))
+	C.free(unsafe.Pointer(cBody))
 }
