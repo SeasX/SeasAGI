@@ -196,18 +196,7 @@ export function ModelIndexPage() {
                     {e.rank <= 3 ? (
                       <span
                         className="mi-rank-badge"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          width: "26px",
-                          height: "26px",
-                          borderRadius: "50%",
-                          color: "#0f172a",
-                          fontWeight: 700,
-                          fontSize: "13px",
-                          background: RANK_COLORS[e.rank],
-                        }}
+                        style={{ background: RANK_COLORS[e.rank] }}
                       >
                         {e.rank}
                       </span>

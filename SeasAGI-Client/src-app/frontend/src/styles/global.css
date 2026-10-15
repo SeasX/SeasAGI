@@ -3804,3 +3804,35 @@ body[data-theme="light"] .modal {
   color: var(--text-muted);
   text-align: center;
 }
+
+/* ===== AI 模型指数（AI Index） ===== */
+.model-index-page .token-market-hero {
+  margin-bottom: 16px;
+}
+
+.model-index-page .token-market-filters {
+  flex-wrap: wrap;
+}
+
+/* 前三名奖牌徽标（背景色由名次动态设置，布局与字号收敛到此处） */
+.mi-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+:root[data-theme="light"] .mi-rank-badge,
+body[data-theme="light"] .mi-rank-badge {
+  border: 1px solid rgba(15, 23, 42, 0.18);
+}
+
+:root[data-theme="light"] .model-index-page .token-market-table td,
+body[data-theme="light"] .model-index-page .token-market-table td {
+  border-color: rgba(15, 23, 42, 0.08);
+}
