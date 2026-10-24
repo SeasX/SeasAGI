@@ -146,7 +146,7 @@ One-click interception is built on the system proxy (HTTP/HTTPS over TCP) and a 
 ### Experience
 
 - Playground instant test page
-- Token Market: list unused API keys for sale (fixed price / discount), browse marketplace, QR code scan trading, order management, settlement & earnings
+- Token Market: weekly subscription sharing for unused quota — model-level pricing + weekly quota, capacity slots, native protocol passthrough (OpenAI Chat / Anthropic / Responses / Gemini), subscription management, provider earnings, and an A-side node mode that keeps credentials local
 - RTK Token compression (9 output types auto-detection)
 - Caveman concise output (4 styles)
 - Reasoning Content injection

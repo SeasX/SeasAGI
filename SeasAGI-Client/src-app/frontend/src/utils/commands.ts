@@ -70,6 +70,9 @@ type WailsAppApi = {
   VideoGeneration(prompt: string, model: string, params: Record<string, any>): Promise<Record<string, any>>;
   VideoGenerationForChannel(channelId: string, prompt: string, model: string, params: Record<string, any>): Promise<Record<string, any>>;
   SyncCustomChannelsToCloud(channels: Record<string, any>[]): Promise<{ message: string; count: number }>;
+  ExportLocalAssets(): Promise<Record<string, any>[]>;
+  SyncAssetsToCloud(assets: Record<string, any>[]): Promise<Record<string, any>>;
+  ListMyAssets(): Promise<Record<string, any>[]>;
   GetOfficialComboTemplates(): Promise<ModelCombo[]>;
   FetchCloudCombos(): Promise<Record<string, any>[]>;
   PushCloudCombo(logicalName: string, displayName: string, description: string, strategy: string, stickyUses: number, quickStrategy: string, taskProfile: Record<string, any>, stepsJSON: string): Promise<Record<string, any>>;
@@ -134,6 +137,9 @@ type WailsAppApi = {
   FetchMITMTargetsFromEnterprise(): Promise<Record<string, any>>;
   GetRateLimitConfig(): Promise<Record<string, any>>;
   SetRateLimitConfig(config: Record<string, any>): Promise<void>;
+  RegisterMarketNode(nodeURL: string, models: string[], protocols: string[]): Promise<Record<string, any>>;
+  GetMarketNodeStatus(): Promise<Record<string, any>>;
+  DisableMarketNode(): Promise<void>;
 };
 
 function getAppApi(): WailsAppApi {
@@ -200,6 +206,21 @@ export async function syncPlatformChannels(): Promise<void> {
 
 export async function syncCustomChannelsToCloud(channels: Record<string, any>[]): Promise<{ message: string; count: number }> {
   return getAppApi().SyncCustomChannelsToCloud(channels);
+}
+
+// exportLocalAssets 从本地通道生成可上架资产（含凭证与指纹）。
+export async function exportLocalAssets(): Promise<Record<string, any>[]> {
+  return getAppApi().ExportLocalAssets();
+}
+
+// syncAssetsToCloud 把资产注册到企业端（企业端 KMS 加密落库）。
+export async function syncAssetsToCloud(assets: Record<string, any>[]): Promise<Record<string, any>> {
+  return getAppApi().SyncAssetsToCloud(assets);
+}
+
+// listMyAssets 拉取企业端资产注册表（不含凭证）。
+export async function listMyAssets(): Promise<Record<string, any>[]> {
+  return getAppApi().ListMyAssets();
 }
 
 export async function getPlans(): Promise<Record<string, any>[]> {
@@ -736,4 +757,20 @@ export async function getRateLimitConfig(): Promise<Record<string, any>> {
 
 export async function setRateLimitConfig(config: Record<string, any>): Promise<void> {
   return getAppApi().SetRateLimitConfig(config);
+}
+
+export async function registerMarketNode(
+  nodeURL: string,
+  models: string[],
+  protocols: string[],
+): Promise<Record<string, any>> {
+  return getAppApi().RegisterMarketNode(nodeURL, models, protocols);
+}
+
+export async function getMarketNodeStatus(): Promise<Record<string, any>> {
+  return getAppApi().GetMarketNodeStatus();
+}
+
+export async function disableMarketNode(): Promise<void> {
+  return getAppApi().DisableMarketNode();
 }

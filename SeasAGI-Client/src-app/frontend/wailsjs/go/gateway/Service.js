@@ -18,6 +18,10 @@ export function IsRunning() {
   return window['go']['gateway']['Service']['IsRunning']();
 }
 
+export function NodeProxy(arg1, arg2) {
+  return window['go']['gateway']['Service']['NodeProxy'](arg1, arg2);
+}
+
 export function ResetComboRouteMetrics() {
   return window['go']['gateway']['Service']['ResetComboRouteMetrics']();
 }

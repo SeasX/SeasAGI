@@ -16,7 +16,7 @@ export function SettingsPage() {
   const { t, locale, setLocale } = useTranslation();
 
   const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<"account" | "routing" | "rtk" | "caveman" | "mitm" | "rate-limit" | "performance" | "mcp-gateway" | "advanced">("account");
+  const [activeTab, setActiveTab] = useState<"account" | "routing" | "rtk" | "caveman" | "mitm" | "rate-limit" | "performance" | "mcp-gateway" | "market-node" | "advanced">("account");
   const [routingStrategy, setRoutingStrategy] = useState(appConfig?.routing_strategy || "fallback");
   const [stickyUses, setStickyUses] = useState(appConfig?.sticky_channel_use || 3);
   const [platformApiURL, setPlatformApiURL] = useState("");
@@ -57,7 +57,7 @@ export function SettingsPage() {
   // P3-16：支持 ?tab=mitm 深链（从日志页「创建映射规则」跳转）。
   useEffect(() => {
     const tab = searchParams.get("tab");
-    const valid = ["account", "routing", "rtk", "caveman", "mitm", "rate-limit", "performance", "mcp-gateway", "advanced"];
+    const valid = ["account", "routing", "rtk", "caveman", "mitm", "rate-limit", "performance", "mcp-gateway", "market-node", "advanced"];
     if (tab && valid.includes(tab)) {
       setActiveTab(tab as typeof activeTab);
     }
@@ -159,6 +159,7 @@ export function SettingsPage() {
         <button className={activeTab === "rate-limit" ? "active" : ""} onClick={() => setActiveTab("rate-limit")}>{t("settings.rateLimit")}</button>
         <button className={activeTab === "performance" ? "active" : ""} onClick={() => setActiveTab("performance")}>{t("settings.performance")}</button>
         <button className={activeTab === "mcp-gateway" ? "active" : ""} onClick={() => setActiveTab("mcp-gateway")}>{t("settings.mcpGateway")}</button>
+        <button className={activeTab === "market-node" ? "active" : ""} onClick={() => setActiveTab("market-node")}>{t("settings.marketNode")}</button>
         <button className={activeTab === "advanced" ? "active" : ""} onClick={() => setActiveTab("advanced")}>{t("settings.advanced")}</button>
       </div>
 
@@ -633,6 +634,12 @@ export function SettingsPage() {
       {activeTab === "mcp-gateway" && (
         <div className="settings-stack">
           <MCPGatewayPanel />
+        </div>
+      )}
+
+      {activeTab === "market-node" && (
+        <div className="settings-stack">
+          <MarketNodePanel />
         </div>
       )}
 
@@ -1142,5 +1149,163 @@ function MITMEnvHint({ running }: { running: boolean }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// MarketNodePanel 是 A 端节点（Inbound Relay）设置面板（P2-1）。
+// 凭证留在本机，企业 relay 仅经签名请求把流量转发到该节点。
+function MarketNodePanel() {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<Record<string, any> | null>(null);
+  const [nodeURL, setNodeURL] = useState("");
+  const [models, setModels] = useState("");
+  const [protocols, setProtocols] = useState("openai-chat");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const splitList = (value: string) =>
+    value
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+  const load = async () => {
+    try {
+      const s = await cmd.getMarketNodeStatus();
+      setStatus(s);
+      setNodeURL(String(s.node_url || ""));
+      setModels(Array.isArray(s.models) ? s.models.join(", ") : "");
+      const proto = Array.isArray(s.wire_protocols) && s.wire_protocols.length > 0 ? s.wire_protocols : ["openai-chat"];
+      setProtocols(proto.join(", "));
+    } catch (e) {
+      setStatus(null);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const handleEnable = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const next = await cmd.registerMarketNode(
+        nodeURL.trim(),
+        splitList(models),
+        splitList(protocols),
+      );
+      setStatus(next);
+      setNodeURL(String(next.node_url || nodeURL));
+      setMessage({ ok: true, text: t("settings.marketNodeSaved") });
+    } catch (e) {
+      setMessage({ ok: false, text: getErrorMessage(e, t("settings.marketNodeSaveFailed")) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDisable = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await cmd.disableMarketNode();
+      await load();
+      setMessage({ ok: true, text: t("settings.marketNodeDisabled") });
+    } catch (e) {
+      setMessage({ ok: false, text: getErrorMessage(e, t("settings.marketNodeSaveFailed")) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enabled = Boolean(status?.enabled);
+  const remote = (status?.remote || {}) as Record<string, any>;
+
+  return (
+    <>
+      <div className="tab-content section-card">
+        <div className="section-heading">
+          <h2>{t("settings.marketNode")}</h2>
+          <p className="hint">{t("settings.marketNodeHint")}</p>
+        </div>
+        <div className="settings-inline-actions" style={{ marginBottom: 12 }}>
+          <span className={`badge ${enabled ? "badge-green" : "badge-gray"}`}>
+            {enabled ? t("settings.marketNodeStatusEnabled") : t("settings.marketNodeStatusDisabled")}
+          </span>
+          <span className="hint" style={{ marginBottom: 0 }}>
+            {t("settings.marketNodeListenPort", { port: String(status?.listen_port ?? "-") })}
+            {" · "}
+            {status?.gateway_running ? t("settings.marketNodeGatewayRunning") : t("settings.marketNodeGatewayStopped")}
+          </span>
+        </div>
+        {enabled && (
+          <div className="hint" style={{ marginBottom: 12 }}>
+            <div>{t("settings.marketNodeId")}: <code>{String(status?.node_id || remote.node_id || "-")}</code></div>
+            <div>{t("settings.marketNodeUrl")}: <code>{String(status?.node_url || remote.node_url || "-")}</code></div>
+            {remote.last_seen_at && (
+              <div>{t("settings.marketNodeLastSeen")}: {String(remote.last_seen_at)}</div>
+            )}
+          </div>
+        )}
+        <div className="form-group">
+          <label>{t("settings.marketNodeUrlLabel")}</label>
+          <input
+            className="form-input"
+            value={nodeURL}
+            onChange={(e) => setNodeURL(e.target.value)}
+            placeholder="https://your-node.example.com"
+          />
+          <p className="hint">{t("settings.marketNodeUrlHint")}</p>
+        </div>
+        <div className="form-group">
+          <label>{t("settings.marketNodeModels")}</label>
+          <input
+            className="form-input"
+            value={models}
+            onChange={(e) => setModels(e.target.value)}
+            placeholder="claude-sonnet-4-5, gpt-5"
+          />
+          <p className="hint">{t("settings.marketNodeModelsHint")}</p>
+        </div>
+        <div className="form-group">
+          <label>{t("settings.marketNodeProtocols")}</label>
+          <input
+            className="form-input"
+            value={protocols}
+            onChange={(e) => setProtocols(e.target.value)}
+            placeholder="openai-chat, anthropic, openai-responses, gemini"
+          />
+          <p className="hint">{t("settings.marketNodeProtocolsHint")}</p>
+        </div>
+        {message && (
+          <div className={message.ok ? "form-success" : "form-error"} style={{ marginBottom: 12 }}>
+            {message.text}
+          </div>
+        )}
+        <div className="settings-inline-actions">
+          <button className="btn-primary btn-sm" onClick={handleEnable} disabled={busy || !nodeURL.trim()}>
+            {busy ? t("common.loading") : t("settings.marketNodeEnable")}
+          </button>
+          {enabled && (
+            <button className="btn-danger btn-sm" onClick={handleDisable} disabled={busy}>
+              {t("settings.marketNodeDisable")}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="tab-content section-card">
+        <div className="section-heading">
+          <h2>{t("settings.marketNodeGatewayTitle")}</h2>
+          <p className="hint">{t("settings.marketNodeGatewayHint")}</p>
+        </div>
+        <ul className="hint" style={{ margin: 0, paddingLeft: 20, lineHeight: 1.9 }}>
+          <li>{t("settings.marketNodeTip1")}</li>
+          <li>{t("settings.marketNodeTip2")}</li>
+          <li>{t("settings.marketNodeTip3")}</li>
+        </ul>
+      </div>
+    </>
   );
 }

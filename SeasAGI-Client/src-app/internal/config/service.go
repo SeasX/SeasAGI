@@ -42,6 +42,18 @@ type AppConfig struct {
 	MITMRouting           *MITMRoutingConfig  `json:"mitm_routing,omitempty"`
 	SelectedGrantID       string              `json:"selected_grant_id,omitempty"`
 	SelectedGrantRelayURL string              `json:"selected_grant_relay_url,omitempty"`
+	// MarketNode 是 A 端节点（Inbound Relay）配置；共享密钥只存系统钥匙串，不落配置文件。
+	MarketNode *MarketNodeConfig `json:"market_node,omitempty"`
+}
+
+// MarketNodeConfig 描述 A 端节点的注册信息与监听端口。
+type MarketNodeConfig struct {
+	NodeID        string   `json:"node_id,omitempty"`
+	NodeURL       string   `json:"node_url,omitempty"`
+	ListenPort    int      `json:"listen_port,omitempty"`
+	Models        []string `json:"models,omitempty"`
+	WireProtocols []string `json:"wire_protocols,omitempty"`
+	Enabled       bool     `json:"enabled"`
 }
 
 // RateLimitConfig 全局速率限制配置，借鉴 OmniRoute per-connection rateLimitOverrides。
@@ -80,9 +92,10 @@ type SecurityConfig struct {
 
 // MITM 路由动作。
 const (
-	MITMActionPassThrough = "passthrough" // 不改写（默认）
-	MITMActionCombo       = "combo"       // 改写为 Combo 名
-	MITMActionModel       = "model"       // 改写为逻辑模型名
+	MITMActionPassThrough = "passthrough"  // 不改写（默认）
+	MITMActionCombo       = "combo"        // 改写为 Combo 名
+	MITMActionModel       = "model"        // 改写为逻辑模型名
+	MITMActionMarketAsset = "market_asset" // 直选 Token 市场订阅资产（grant_id）
 )
 
 // MITM 规则来源：本地规则（可编辑、置顶）与企业下发规则（只读、置底）。
@@ -137,9 +150,11 @@ type MITMRoutingRule struct {
 	TargetID     string `json:"target_id,omitempty"`     // 来源工具；空/`*` = 任意
 	EndpointPath string `json:"endpoint_path,omitempty"` // 路径前缀；空 = 任意
 	RequestModel string `json:"request_model,omitempty"` // 请求模型；空 = 任意；支持 `*` 后缀通配
-	Action       string `json:"action"`                  // combo | model | passthrough
+	Action       string `json:"action"`                  // combo | model | market_asset | passthrough
 	ComboName    string `json:"combo_name,omitempty"`    // action=combo
 	Model        string `json:"model,omitempty"`         // action=model（逻辑模型名）
+	// GrantID 用于 action=market_asset：直选某个 Token 市场订阅资产。
+	GrantID string `json:"grant_id,omitempty"`
 	// Constraints 随映射注入的请求级约束（复用 FilterCandidatesByConstraints）。
 	Constraints map[string]any `json:"constraints,omitempty"`
 	// Source 规则来源：local（默认，可编辑、置顶）| enterprise（企业下发、只读、置底）。
@@ -558,7 +573,7 @@ func (s *Service) SetMITMRoutingConfig(cfg MITMRoutingConfig) error {
 
 func isValidMITMAction(action string) bool {
 	switch action {
-	case MITMActionPassThrough, MITMActionCombo, MITMActionModel:
+	case MITMActionPassThrough, MITMActionCombo, MITMActionModel, MITMActionMarketAsset:
 		return true
 	}
 	return false
@@ -605,6 +620,7 @@ func normalizeMITMRoutingConfig(cfg MITMRoutingConfig) (MITMRoutingConfig, error
 		rule.RequestModel = strings.TrimSpace(rule.RequestModel)
 		rule.ComboName = strings.TrimSpace(rule.ComboName)
 		rule.Model = strings.TrimSpace(rule.Model)
+		rule.GrantID = strings.TrimSpace(rule.GrantID)
 		// 持久化的始终为本地规则（企业规则另存于内存，不落盘）。
 		rule.Source = MITMRuleSourceLocal
 		rule.Action = strings.ToLower(strings.TrimSpace(rule.Action))
@@ -619,6 +635,9 @@ func normalizeMITMRoutingConfig(cfg MITMRoutingConfig) (MITMRoutingConfig, error
 		}
 		if rule.Action == MITMActionModel && rule.Model == "" {
 			return cfg, fmt.Errorf("mitm rule %s action=model requires model", rule.ID)
+		}
+		if rule.Action == MITMActionMarketAsset && rule.GrantID == "" {
+			return cfg, fmt.Errorf("mitm rule %s action=market_asset requires grant_id", rule.ID)
 		}
 		rules = append(rules, rule)
 	}
@@ -702,6 +721,25 @@ func (s *Service) SetSelectedGrant(grantID, relayURL string) error {
 	defer s.mu.Unlock()
 	s.config.SelectedGrantID = grantID
 	s.config.SelectedGrantRelayURL = relayURL
+	return s.saveLocked()
+}
+
+// GetMarketNodeConfig 返回 A 端节点配置（副本）；未配置时返回零值。
+func (s *Service) GetMarketNodeConfig() MarketNodeConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.config.MarketNode == nil {
+		return MarketNodeConfig{}
+	}
+	return *s.config.MarketNode
+}
+
+// SetMarketNodeConfig 持久化 A 端节点配置。共享密钥不在此处，仅存于系统钥匙串。
+func (s *Service) SetMarketNodeConfig(cfg MarketNodeConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copied := cfg
+	s.config.MarketNode = &copied
 	return s.saveLocked()
 }
 
@@ -816,6 +854,11 @@ func (s *Service) DeleteCustomChannel(channelID string) error {
 	if s.config.DefaultChannelID == channelID {
 		s.config.DefaultChannelID = ""
 	}
+	// 同步清理系统安全存储中的渠道凭证，避免残留可用的孤立密钥。
+	_ = keychain.DeleteChannelKey(channelID)
+	_ = keychain.DeleteChannelKeys(channelID)
+	_ = keychain.DeleteSecret(oauthRefreshKeyName(channelID))
+	_ = keychain.DeleteSecret(oauthClientSecretKeyName(channelID))
 	return s.saveLocked()
 }
 
@@ -1461,23 +1504,34 @@ func (s *Service) load() error {
 	return nil
 }
 
-// restoreChannelSecretsLocked 恢复渠道多 key 到内存。config.json 不再持久化明文 key，
-// 因此多 key 统一存放在 keychain；同时兼容旧配置里残留的明文 key（迁移进 keychain）。
+// restoreChannelSecretsLocked 恢复渠道密钥到内存。config.json 不再持久化明文凭证，
+// 单/多 API Key 与 OAuth 令牌统一存放在 keychain；同时兼容旧配置里残留的明文（迁移进 keychain）。
 // 调用方需持有 s.mu。
 func (s *Service) restoreChannelSecretsLocked() {
 	for i := range s.channels {
-		if len(s.channels[i].APIKeys) > 0 {
-			// 旧配置里的明文多 key：迁移到 keychain，后续保存不再落盘。
-			_ = keychain.SaveChannelKeys(s.channels[i].ChannelID, s.channels[i].APIKeys)
-			continue
+		ch := &s.channels[i]
+		if len(ch.APIKeys) > 0 {
+			_ = keychain.SaveChannelKeys(ch.ChannelID, ch.APIKeys)
+		} else if keys, err := keychain.GetChannelKeys(ch.ChannelID); err == nil && len(keys) > 0 {
+			ch.APIKeys = keys
 		}
-		keys, err := keychain.GetChannelKeys(s.channels[i].ChannelID)
-		if err != nil || len(keys) == 0 {
-			continue
+
+		// OAuth 刷新令牌与客户端密钥同样是敏感凭证，迁移到系统安全存储。
+		if token := strings.TrimSpace(ch.OAuthRefreshToken); token != "" {
+			_ = keychain.SaveSecret(oauthRefreshKeyName(ch.ChannelID), token)
+		} else if token, err := keychain.GetSecret(oauthRefreshKeyName(ch.ChannelID)); err == nil {
+			ch.OAuthRefreshToken = token
 		}
-		s.channels[i].APIKeys = keys
+		if secret := strings.TrimSpace(ch.OAuthClientSecret); secret != "" {
+			_ = keychain.SaveSecret(oauthClientSecretKeyName(ch.ChannelID), secret)
+		} else if secret, err := keychain.GetSecret(oauthClientSecretKeyName(ch.ChannelID)); err == nil {
+			ch.OAuthClientSecret = secret
+		}
 	}
 }
+
+func oauthRefreshKeyName(channelID string) string      { return "oauth_refresh_" + channelID }
+func oauthClientSecretKeyName(channelID string) string { return "oauth_client_secret_" + channelID }
 
 func (s *Service) saveLocked() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
@@ -1486,7 +1540,15 @@ func (s *Service) saveLocked() error {
 
 	channels := make([]Channel, 0, len(s.channels))
 	for _, ch := range s.channels {
-		// 明文凭证不落盘：单 key 与多 key 都在 keychain 中保存。
+		// 明文凭证不落盘：单 key、多 key 与 OAuth 令牌都在 keychain 中保存。
+		if ch.OAuthRefreshToken != "" {
+			_ = keychain.SaveSecret(oauthRefreshKeyName(ch.ChannelID), ch.OAuthRefreshToken)
+			ch.OAuthRefreshToken = ""
+		}
+		if ch.OAuthClientSecret != "" {
+			_ = keychain.SaveSecret(oauthClientSecretKeyName(ch.ChannelID), ch.OAuthClientSecret)
+			ch.OAuthClientSecret = ""
+		}
 		ch.APIKey = ""
 		ch.APIKeys = nil
 		channels = append(channels, ch)

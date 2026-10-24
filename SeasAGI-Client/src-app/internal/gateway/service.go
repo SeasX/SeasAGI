@@ -200,6 +200,7 @@ func (s *Service) Start(ctx context.Context) error {
 	mux.HandleFunc("/v1/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("/v1/messages", s.handleAnthropicMessages)
 	mux.HandleFunc("/v1/responses", s.handleResponses)
+	mux.HandleFunc("/v1beta/", s.handleGemini)
 	mux.HandleFunc("/v1/embeddings", s.handleEmbeddings)
 	mux.HandleFunc("/v1/images/generations", s.handleImageGenerations)
 	mux.HandleFunc("/v1/audio/speech", s.handleTTS)
@@ -210,6 +211,10 @@ func (s *Service) Start(ctx context.Context) error {
 		s.wsBridge = NewWSBridge(s)
 	}
 	mux.HandleFunc("/v1/ws", s.wsBridge.HandleWS)
+
+	// A 端节点入口（P2-1）：仅接受企业 relay 的签名请求，不暴露本地 /v1/* 匿名访问。
+	mux.HandleFunc("/node/", s.NodeProxy)
+	mux.HandleFunc("/node", s.NodeProxy)
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", s.listenPort),
@@ -358,13 +363,26 @@ func (s *Service) handleResponses(w http.ResponseWriter, r *http.Request) {
 	s.handleChat(w, r, protocol.FormatOpenAIResponses)
 }
 
+// handleGemini 处理 Gemini / AI Studio 原生路径（/v1beta/models/*），
+// 供被接管的 Gemini SDK 走订阅授权转发。
+func (s *Service) handleGemini(w http.ResponseWriter, r *http.Request) {
+	s.handleChat(w, r, protocol.FormatGemini)
+}
+
 // handleChat 是聊天补全主链路。forcedSourceFormat 为空时按请求体自动探测协议；
 // 非空时按指定协议解析（用于 /v1/messages、/v1/responses 专用路由）。
 func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourceFormat protocol.Format) {
-	if !s.validateToken(r) {
-		writeJSONError(w, http.StatusUnauthorized, "Invalid access token")
-		return
+	authorized := s.validateToken(r)
+	if !authorized {
+		// A 端节点入口已在 NodeProxy 校验 HMAC 签名，无需本地访问令牌。
+		if v, _ := r.Context().Value(nodeAuthCtxKey{}).(bool); !v {
+			writeJSONError(w, http.StatusUnauthorized, "Invalid access token")
+			return
+		}
 	}
+
+	// 把调用方请求头注入 context，供 Grant 转发透传协议版本头（anthropic-version 等）。
+	r = r.WithContext(context.WithValue(r.Context(), grantHeaderCtxKey{}, r.Header))
 
 	// 请求级限流预检：月度成本硬上限 / RPM / TPM / 最小间隔 / 全局并发。
 	release, allowed := s.checkRateLimits(w)
@@ -440,7 +458,7 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 			}
 			logging.Warningf("mitm header mismatch: target=%s host=%s (lenient, passthrough)", mitm.Target, r.Header.Get(config.HeaderMITMHost))
 		}
-		if mitm.Matched {
+		if mitm.Matched && mitm.GrantID == "" {
 			req.Model = mitm.ResolvedTarget
 		}
 	}
@@ -667,13 +685,32 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 		logging.Warningf("prompt injection detected: severity=%s model=%s", injection.Severity, req.Model)
 	}
 
+	// MITM 规则直选订阅资产（market_asset）：命中后直接经企业 relay 转发该 Grant。
+	if mitm.GrantID != "" {
+		relayURL := s.configSvc.GetSelectedGrantRelayURL()
+		if relayURL == "" {
+			writeJSONError(w, http.StatusBadGateway, "token market relay url is not configured")
+			return
+		}
+		resp, gerr := s.forwardViaGrant(r.Context(), relayURL, mitm.GrantID, req.SourceFormat, "", r.URL.Path, bodyBytes)
+		if gerr == nil {
+			status = "success"
+			selectedChannelID = config.MarketGrantChannelPrefix + mitm.GrantID
+			selectedChannelName = "Token Market Relay"
+			defer resp.Body.Close()
+			s.proxyResponse(w, resp)
+			return
+		}
+		logging.Warningf("mitm market_asset relay failed: %v; falling back to normal routing", gerr)
+	}
+
 	// P8: Grant routing — if user has an active grant, route through enterprise relay.
 	// 优先级统一（§4.9-4）：MITM 规则命中改写时，跳过全局 Grant 短路，改用改写后的
 	// Combo/模型路由，避免改写被全局开关绕过。
 	grantRelayURL := s.configSvc.GetSelectedGrantRelayURL()
 	grantID := s.configSvc.GetSelectedGrantID()
 	if grantRelayURL != "" && grantID != "" && !mitm.Matched {
-		resp, err := s.forwardViaGrant(r.Context(), grantRelayURL, grantID, bodyBytes)
+		resp, err := s.forwardViaGrant(r.Context(), grantRelayURL, grantID, req.SourceFormat, "", r.URL.Path, bodyBytes)
 		if err == nil {
 			status = "success"
 			selectedChannelID = "grant_" + grantID
@@ -697,7 +734,8 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 				if gid == "" || step.Channel.BaseURL == "" {
 					continue
 				}
-				resp, gerr := s.forwardViaGrant(r.Context(), step.Channel.BaseURL, gid, bodyBytes)
+				resp, gerr := s.forwardViaGrant(r.Context(), step.Channel.BaseURL, gid, req.SourceFormat,
+					step.UpstreamModel, r.URL.Path, bodyBytes)
 				if gerr != nil {
 					continue
 				}
@@ -1421,34 +1459,86 @@ func flattenMessagesContent(messages []map[string]any) []map[string]any {
 	return messages
 }
 
-// forwardViaGrant routes a chat completions request through the enterprise relay gateway
-// using the user's active Token Market grant. The relay gateway resolves the grant's
-// escrow API key and forwards the request to the upstream provider.
-func (s *Service) forwardViaGrant(ctx context.Context, relayURL, grantID string, bodyBytes []byte) (*http.Response, error) {
+// forwardViaGrant routes a request through the enterprise relay gateway using the
+// user's active Token Market grant.
+//
+// 协议与模型处理：
+//   - 按请求来源协议选择 relay 端点（/relay/messages、/relay/responses、/relay/gemini/*、
+//     /relay/chat/completions），由 relay 透传到 A 的上游；响应保持同一协议，客户端无需转换。
+//   - upstreamModel 非空时改写请求体 model，并附 X-Upstream-Model 供 relay 记账与覆盖。
+func (s *Service) forwardViaGrant(ctx context.Context, relayURL, grantID string, sourceFormat protocol.Format,
+	upstreamModel, requestedPath string, bodyBytes []byte) (*http.Response, error) {
 	if s.grantHTTPClient == nil {
-		s.grantHTTPClient = &http.Client{Timeout: 120 * time.Second}
+		s.grantHTTPClient = &http.Client{Timeout: 300 * time.Second}
 	}
 
-	url := strings.TrimRight(relayURL, "/") + "/relay/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
+	body := bodyBytes
+	if upstreamModel != "" {
+		var payload map[string]any
+		if err := json.Unmarshal(bodyBytes, &payload); err == nil {
+			payload["model"] = upstreamModel
+			if out, err := json.Marshal(payload); err == nil {
+				body = out
+			}
+		}
+	}
+
+	url := strings.TrimRight(relayURL, "/") + grantRelayPath(sourceFormat, requestedPath)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+s.authSvc.GetPlatformToken())
 	req.Header.Set("X-Grant-Id", grantID)
+	if upstreamModel != "" {
+		req.Header.Set("X-Upstream-Model", upstreamModel)
+	}
+	// 透传 SDK 依赖的协议版本头。
+	for _, h := range []string{"anthropic-version", "anthropic-beta", "openai-beta", "x-goog-user-project"} {
+		if v := reqHeaderValue(ctx, h); v != "" {
+			req.Header.Set(h, v)
+		}
+	}
 
 	resp, err := s.grantHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		bodyBytes, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("grant relay returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("grant relay returned %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 	return resp, nil
 }
+
+// grantRelayPath 按来源协议选择 relay 端点。
+func grantRelayPath(sourceFormat protocol.Format, requestedPath string) string {
+	switch sourceFormat {
+	case protocol.FormatAnthropic:
+		return "/relay/messages"
+	case protocol.FormatOpenAIResponses:
+		return "/relay/responses"
+	case protocol.FormatGemini:
+		if requestedPath != "" {
+			return "/relay/gemini" + requestedPath
+		}
+		return "/relay/gemini"
+	default:
+		return "/relay/chat/completions"
+	}
+}
+
+// reqHeaderValue 从 context 中取调用方请求头（由 handleChat 注入）。
+func reqHeaderValue(ctx context.Context, key string) string {
+	if h, ok := ctx.Value(grantHeaderCtxKey{}).(http.Header); ok {
+		return h.Get(key)
+	}
+	return ""
+}
+
+type grantHeaderCtxKey struct{}
 
 // proxyResponse copies an upstream HTTP response to the client ResponseWriter.
 func (s *Service) proxyResponse(w http.ResponseWriter, resp *http.Response) {

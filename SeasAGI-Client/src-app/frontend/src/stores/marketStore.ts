@@ -7,10 +7,13 @@ export interface MarketListing {
   seller_username: string;
   token_label: string;
   token_fingerprint: string;
-  sale_type: "discount" | "fixed_price";
+  sale_type: "discount" | "fixed_price" | "subscription";
   price: number;
   discount_rate: number;
   available_quota: number;
+  capacity?: number;
+  active_subscriptions?: number;
+  quota_per_slot_usd?: number;
   currency: string;
   status: "active" | "locked" | "sold" | "cancelled";
   created_at: string;

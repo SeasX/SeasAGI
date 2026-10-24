@@ -24,6 +24,8 @@ export function GetDefaultComboName():Promise<string>;
 
 export function GetMITMRoutingConfig():Promise<config.MITMRoutingConfig>;
 
+export function GetMarketNodeConfig():Promise<config.MarketNodeConfig>;
+
 export function GetModelCombo(arg1:string):Promise<config.ModelCombo|boolean>;
 
 export function GetOptimizationConfig():Promise<config.OptimizationConfig>;
@@ -73,6 +75,8 @@ export function SetDefaultComboName(arg1:string):Promise<void>;
 export function SetDefaultModel(arg1:string,arg2:string):Promise<void>;
 
 export function SetMITMRoutingConfig(arg1:config.MITMRoutingConfig):Promise<void>;
+
+export function SetMarketNodeConfig(arg1:config.MarketNodeConfig):Promise<void>;
 
 export function SetOptimizationConfig(arg1:config.OptimizationConfig):Promise<void>;
 

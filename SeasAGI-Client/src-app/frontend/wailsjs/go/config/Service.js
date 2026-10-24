@@ -46,6 +46,10 @@ export function GetMITMRoutingConfig() {
   return window['go']['config']['Service']['GetMITMRoutingConfig']();
 }
 
+export function GetMarketNodeConfig() {
+  return window['go']['config']['Service']['GetMarketNodeConfig']();
+}
+
 export function GetModelCombo(arg1) {
   return window['go']['config']['Service']['GetModelCombo'](arg1);
 }
@@ -144,6 +148,10 @@ export function SetDefaultModel(arg1, arg2) {
 
 export function SetMITMRoutingConfig(arg1) {
   return window['go']['config']['Service']['SetMITMRoutingConfig'](arg1);
+}
+
+export function SetMarketNodeConfig(arg1) {
+  return window['go']['config']['Service']['SetMarketNodeConfig'](arg1);
 }
 
 export function SetOptimizationConfig(arg1) {

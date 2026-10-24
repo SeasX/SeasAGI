@@ -38,7 +38,7 @@ The client can **run independently** — all local gateway features work without
 | **Auto Health-check & Fault Tolerance** | Key health check (5min probe + auto-disable) + per-key Cooldown + circuit breaker + exponential backoff |
 | **Local-first · Privacy Secure** | API Keys stored only in Keychain, constant-time comparison prevents timing attacks, requests go direct to Provider |
 | **Combo Optimization Workbench** | My Plans / Optimization Suggestions / Template Center / Execution Analysis — four tabs, Combo drag-and-drop sorting |
-| **Token Market** | Peer-to-peer API Key marketplace: list unused keys at fixed price or discount, QR code scan trading, 10% platform commission, seller earnings display |
+| **Token Market** | Weekly subscription marketplace for unused subscription quota: model-level pricing + weekly quota, capacity-based sharing, platform-collected fees with weekly seller payout (5% relay service fee), native protocol passthrough (OpenAI Chat / Anthropic / Responses / Gemini), upstream usage metering, breach refunds & disputes, and an A-side node mode that keeps OAuth credentials on the seller's machine |
 | **Playground Instant Test** | Built-in chat test UI, Combo selector + execution chain visualization + step fallback status |
 | **i18n** | Chinese / English / Japanese / Korean |
 

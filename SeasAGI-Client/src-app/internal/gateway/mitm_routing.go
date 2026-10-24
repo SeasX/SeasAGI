@@ -24,6 +24,8 @@ type mitmDecision struct {
 	RequestedModel string
 	// ResolvedTarget 改写后的目标（Combo 名或逻辑模型名）；未改写时为空。
 	ResolvedTarget string
+	// GrantID 命中 market_asset 时指定的订阅授权 ID。
+	GrantID string
 	// Constraints 随映射注入的请求级约束。
 	Constraints map[string]any
 	// HeaderMismatch 表示 X-SeasAGI-MITM-Target 与 Original-Host 反查结果不一致（疑似伪造）。
@@ -68,16 +70,16 @@ func resolveMITMRoute(header http.Header, cfg config.MITMRoutingConfig, requeste
 		if !mitmRuleMatches(rule, target, path, requestedModel) {
 			continue
 		}
-		applyMITMAction(&decision, rule.Action, rule.ComboName, rule.Model, rule.Constraints, rule.ID)
+		applyMITMAction(&decision, rule.Action, rule.ComboName, rule.Model, rule.GrantID, rule.Constraints, rule.ID)
 		return decision
 	}
 
-	applyMITMAction(&decision, cfg.DefaultAction, cfg.DefaultCombo, cfg.DefaultModel, nil, "")
+	applyMITMAction(&decision, cfg.DefaultAction, cfg.DefaultCombo, cfg.DefaultModel, "", nil, "")
 	return decision
 }
 
-// applyMITMAction 将动作结果写入决策。仅 combo/model 视为「命中改写」。
-func applyMITMAction(decision *mitmDecision, action, comboName, model string, constraints map[string]any, ruleID string) {
+// applyMITMAction 将动作结果写入决策。combo/model/market_asset 视为「命中改写」。
+func applyMITMAction(decision *mitmDecision, action, comboName, model, grantID string, constraints map[string]any, ruleID string) {
 	decision.RuleID = ruleID
 	switch action {
 	case config.MITMActionCombo:
@@ -87,6 +89,11 @@ func applyMITMAction(decision *mitmDecision, action, comboName, model string, co
 	case config.MITMActionModel:
 		decision.Matched = true
 		decision.ResolvedTarget = model
+		decision.Constraints = constraints
+	case config.MITMActionMarketAsset:
+		// 直选订阅资产：不改写模型名，转发时以 grant 为准。
+		decision.Matched = true
+		decision.GrantID = grantID
 		decision.Constraints = constraints
 	default: // passthrough
 		decision.Matched = false

@@ -107,6 +107,28 @@ func DeleteChannelKeys(channelID string) error {
 	return deleteKey("channel_keys_" + channelID)
 }
 
+// SaveSecret 保存任意命名密钥（如 A 端节点共享密钥、OAuth 刷新令牌）。
+func SaveSecret(name, value string) error {
+	if name == "" {
+		return fmt.Errorf("secret name is required")
+	}
+	return saveKey("secret_"+name, value)
+}
+
+// GetSecret 读取任意命名密钥；不存在时返回空字符串。
+func GetSecret(name string) (string, error) {
+	v, err := getKey("secret_" + name)
+	if err != nil {
+		return "", nil
+	}
+	return v, nil
+}
+
+// DeleteSecret 删除命名密钥。
+func DeleteSecret(name string) error {
+	return deleteKey("secret_" + name)
+}
+
 func generateToken() string {
 	const charset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	result := make([]byte, tokenLength)

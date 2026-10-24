@@ -3,8 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -126,6 +133,7 @@ func NewApp(
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	auth.SetPlatformAPIBaseURL(a.configSvc.GetPlatformAPIBaseURL())
+	a.restoreMarketNode()
 }
 
 func (a *App) GetAppInfo() map[string]any {
@@ -1350,6 +1358,353 @@ func (a *App) SyncCustomChannelsToCloud(channels []map[string]any) (map[string]a
 	}
 
 	return result, nil
+}
+
+// SyncAssetsToCloud 把本地可上架资产（含凭证）同步到企业端资产注册表。
+// 企业端立即用 KMS 信封加密落库，客户端不保留额外副本。
+func (a *App) SyncAssetsToCloud(assets []map[string]any) (map[string]any, error) {
+	if !a.authSvc.IsLoggedIn() {
+		return nil, fmt.Errorf("not logged in")
+	}
+
+	baseURL := a.configSvc.GetPlatformAPIBaseURL()
+	token := a.authSvc.GetPlatformToken()
+
+	bodyBytes, err := json.Marshal(map[string]any{"assets": assets})
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode assets: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(a.ctx, http.MethodPost,
+		baseURL+"/user-assets/sync", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		errMsg, _ := result["error"].(string)
+		return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, errMsg)
+	}
+	return result, nil
+}
+
+// ListMyAssets 拉取企业端资产注册表（不返回凭证）。
+func (a *App) ListMyAssets() ([]map[string]any, error) {
+	if !a.authSvc.IsLoggedIn() {
+		return nil, fmt.Errorf("not logged in")
+	}
+
+	baseURL := a.configSvc.GetPlatformAPIBaseURL()
+	token := a.authSvc.GetPlatformToken()
+
+	req, err := http.NewRequestWithContext(a.ctx, http.MethodGet, baseURL+"/user-assets", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var payload struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("server returned %d", resp.StatusCode)
+	}
+	return payload.Data, nil
+}
+
+// ExportLocalAssets 从本地通道生成可上架资产清单（含凭证与指纹）。
+//
+// 指纹 = SHA-256(api_key) 前 16 字节十六进制，不可逆，仅用于企业端识别同一凭证；
+// 这样企业端无需知道明文即可完成「同一资产的唯一注册与所有权校验」。
+// 凭证默认走平台 RSA-OAEP 公钥信封（api_key_enc）；OAuth 会话类通道不含凭证，
+// 仅登记资产元数据，实际请求由 A 端节点（P2-1）执行。
+func (a *App) ExportLocalAssets() ([]map[string]any, error) {
+	channels, err := a.configSvc.ListChannels()
+	if err != nil {
+		return nil, err
+	}
+
+	assets := make([]map[string]any, 0, len(channels))
+	pubKey, _ := a.fetchAssetPublicKey()
+	for _, ch := range channels {
+		key := strings.TrimSpace(ch.APIKey)
+		if strings.TrimSpace(ch.BaseURL) == "" || !ch.Enabled {
+			continue
+		}
+		// OAuth 会话类通道没有 API Key：仅能通过 A 端节点模式交付，凭证不出本机。
+		if key == "" {
+			if strings.TrimSpace(ch.OAuthRefreshToken) == "" {
+				continue
+			}
+			sum := sha256.Sum256([]byte("oauth:" + ch.ChannelID))
+			assets = append(assets, map[string]any{
+				"token_fingerprint": hex.EncodeToString(sum[:16]),
+				"label":             ch.DisplayName,
+				"provider_type":     ch.ProviderType,
+				"wire_protocol":     wireProtocolForChannel(ch),
+				"auth_type":         "oauth",
+				"base_url":          strings.TrimRight(ch.BaseURL, "/"),
+				"models":            ch.Models,
+			})
+			continue
+		}
+		sum := sha256.Sum256([]byte(key))
+		entry := map[string]any{
+			"token_fingerprint": hex.EncodeToString(sum[:16]),
+			"label":             ch.DisplayName,
+			"provider_type":     ch.ProviderType,
+			"wire_protocol":     wireProtocolForChannel(ch),
+			"auth_type":         "api_key",
+			"base_url":          strings.TrimRight(ch.BaseURL, "/"),
+			"models":            ch.Models,
+		}
+		// 有平台公钥时走 RSA-OAEP 信封，明文凭证不经过业务 JSON；无公钥时退回明文（内网/TLS）。
+		if enc, err := encryptWithPublicKey(pubKey, key); err == nil && enc != "" {
+			entry["api_key_enc"] = enc
+		} else {
+			entry["api_key"] = key
+		}
+		assets = append(assets, entry)
+	}
+	return assets, nil
+}
+
+// fetchAssetPublicKey 获取企业端资产公钥（RSA-OAEP-SHA256）。
+func (a *App) fetchAssetPublicKey() (*rsa.PublicKey, error) {
+	status, body, err := a.authSvc.DoPlatformRequest(http.MethodGet, "/user-assets/pubkey", nil)
+	if err != nil || status >= 400 {
+		return nil, fmt.Errorf("asset public key unavailable")
+	}
+	var payload struct {
+		Data struct {
+			PublicKey string `json:"public_key"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode([]byte(payload.Data.PublicKey))
+	if block == nil {
+		return nil, fmt.Errorf("invalid public key pem")
+	}
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	pub, ok := parsed.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("unexpected public key type")
+	}
+	return pub, nil
+}
+
+func encryptWithPublicKey(pub *rsa.PublicKey, plain string) (string, error) {
+	if pub == nil || plain == "" {
+		return "", fmt.Errorf("public key unavailable")
+	}
+	ciphertext, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, pub, []byte(plain), nil)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// wireProtocolForChannel 依据 provider 与 base_url 推断线协议。
+func wireProtocolForChannel(ch config.Channel) string {
+	provider := strings.ToLower(ch.ProviderType)
+	base := strings.ToLower(ch.BaseURL)
+	switch {
+	case strings.Contains(provider, "anthropic") || strings.Contains(base, "anthropic.com"):
+		return "anthropic"
+	case strings.Contains(provider, "gemini") || strings.Contains(provider, "vertex") ||
+		strings.Contains(provider, "google") || strings.Contains(base, "generativelanguage"):
+		return "gemini"
+	case strings.Contains(provider, "responses"):
+		return "openai-responses"
+	default:
+		return "openai-chat"
+	}
+}
+
+// marketNodeSecretName 是 A 端节点共享密钥在系统钥匙串中的键名（不落配置文件）。
+const marketNodeSecretName = "market_node_secret"
+
+// nodeHeartbeatRunning 保证同一进程只有一个节点心跳协程。
+var nodeHeartbeatRunning int32
+
+// RegisterMarketNode 注册（或更新）A 端节点并开启心跳。
+//
+// 节点地址需由用户填写可被企业 relay 访问的地址（Tunnel 公网地址或内网反代）；
+// 共享密钥仅写入系统钥匙串，企业端只保存 node_id 与哈希后的转发密钥。
+func (a *App) RegisterMarketNode(nodeURL string, models, protocols []string) (map[string]any, error) {
+	nodeURL = strings.TrimRight(strings.TrimSpace(nodeURL), "/")
+	if nodeURL == "" {
+		return nil, fmt.Errorf("node URL is required")
+	}
+	if !strings.HasPrefix(nodeURL, "http://") && !strings.HasPrefix(nodeURL, "https://") {
+		return nil, fmt.Errorf("node URL must start with http:// or https://")
+	}
+
+	data, err := a.registerNodeOnPlatform(nodeURL, models, protocols)
+	if err != nil {
+		return nil, err
+	}
+	if nodeID, _ := data["node_id"].(string); nodeID != "" {
+		cfg := config.MarketNodeConfig{
+			NodeID:        nodeID,
+			NodeURL:       nodeURL,
+			ListenPort:    a.gatewaySvc.GetListenPort(),
+			Models:        models,
+			WireProtocols: protocols,
+			Enabled:       true,
+		}
+		if err := a.configSvc.SetMarketNodeConfig(cfg); err != nil {
+			return nil, err
+		}
+	}
+	a.startNodeHeartbeat()
+	return a.GetMarketNodeStatus(), nil
+}
+
+// GetMarketNodeStatus 返回本地节点配置与平台侧注册状态。
+func (a *App) GetMarketNodeStatus() map[string]any {
+	cfg := a.configSvc.GetMarketNodeConfig()
+	out := map[string]any{
+		"enabled":         cfg.Enabled && gateway.NodeSecretConfigured(),
+		"node_id":         cfg.NodeID,
+		"node_url":        cfg.NodeURL,
+		"models":          cfg.Models,
+		"wire_protocols":  cfg.WireProtocols,
+		"listen_port":     a.gatewaySvc.GetListenPort(),
+		"gateway_running": a.gatewaySvc.IsRunning(),
+	}
+	if a.authSvc.IsLoggedIn() {
+		if status, body, err := a.authSvc.DoPlatformRequest(http.MethodGet, "/nodes/me", nil); err == nil && status < 400 {
+			var payload struct {
+				Data map[string]any `json:"data"`
+			}
+			if json.Unmarshal(body, &payload) == nil && payload.Data != nil {
+				out["registered"] = true
+				out["remote"] = payload.Data
+			}
+		}
+	}
+	return out
+}
+
+// DisableMarketNode 注销节点：停止心跳、清空本地密钥与配置。
+func (a *App) DisableMarketNode() error {
+	if a.authSvc.IsLoggedIn() {
+		// 平台侧注销失败不阻断本地关闭，避免残留密钥继续可用。
+		_, _, _ = a.authSvc.DoPlatformRequest(http.MethodDelete, "/nodes/me", nil)
+	}
+	_ = keychain.DeleteSecret(marketNodeSecretName)
+	gateway.SetNodeSecret("")
+	cfg := a.configSvc.GetMarketNodeConfig()
+	cfg.NodeID = ""
+	cfg.Enabled = false
+	return a.configSvc.SetMarketNodeConfig(cfg)
+}
+
+// restoreMarketNode 在启动时恢复节点密钥并继续心跳；密钥缺失时尝试重新注册。
+func (a *App) restoreMarketNode() {
+	cfg := a.configSvc.GetMarketNodeConfig()
+	if !cfg.Enabled || strings.TrimSpace(cfg.NodeURL) == "" {
+		return
+	}
+	if secret, err := keychain.GetSecret(marketNodeSecretName); err == nil && secret != "" {
+		gateway.SetNodeSecret(secret)
+		a.startNodeHeartbeat()
+		return
+	}
+	go func() {
+		if !a.authSvc.IsLoggedIn() {
+			return
+		}
+		if _, err := a.registerNodeOnPlatform(cfg.NodeURL, cfg.Models, cfg.WireProtocols); err == nil {
+			a.startNodeHeartbeat()
+		}
+	}()
+}
+
+func (a *App) startNodeHeartbeat() {
+	if !atomic.CompareAndSwapInt32(&nodeHeartbeatRunning, 0, 1) {
+		return
+	}
+	go func() {
+		defer atomic.StoreInt32(&nodeHeartbeatRunning, 0)
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-ticker.C:
+				cfg := a.configSvc.GetMarketNodeConfig()
+				if !cfg.Enabled || strings.TrimSpace(cfg.NodeURL) == "" {
+					return
+				}
+				_, _ = a.registerNodeOnPlatform(cfg.NodeURL, cfg.Models, cfg.WireProtocols)
+			}
+		}
+	}()
+}
+
+// registerNodeOnPlatform 调用平台注册接口，并把返回的共享密钥写入钥匙串与网关。
+func (a *App) registerNodeOnPlatform(nodeURL string, models, protocols []string) (map[string]any, error) {
+	if !a.authSvc.IsLoggedIn() {
+		return nil, fmt.Errorf("not logged in")
+	}
+	payload, err := json.Marshal(map[string]any{
+		"node_url":       nodeURL,
+		"display_name":   "SeasAGI Client Node",
+		"models":         models,
+		"wire_protocols": protocols,
+	})
+	if err != nil {
+		return nil, err
+	}
+	status, body, err := a.authSvc.DoPlatformRequest(http.MethodPost, "/nodes/register", payload)
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Data  map[string]any `json:"data"`
+		Error string         `json:"error"`
+	}
+	_ = json.Unmarshal(body, &parsed)
+	if status >= 400 {
+		return nil, fmt.Errorf("register node failed (%d): %s", status, parsed.Error)
+	}
+	if parsed.Data == nil {
+		return nil, fmt.Errorf("empty node registration response")
+	}
+	if secret, ok := parsed.Data["node_secret"].(string); ok && secret != "" {
+		_ = keychain.SaveSecret(marketNodeSecretName, secret)
+		gateway.SetNodeSecret(secret)
+	}
+	return parsed.Data, nil
 }
 
 func (a *App) ListLogs(limit, offset int) ([]logs.RequestLog, error) {

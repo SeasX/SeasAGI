@@ -56,9 +56,13 @@ export function DeletePromptPreset(arg1:string,arg2:string):Promise<void>;
 
 export function DeleteSession(arg1:string,arg2:string):Promise<void>;
 
+export function DisableMarketNode():Promise<void>;
+
 export function DiscoverModels(arg1:string):Promise<Array<discovery.DiscoveredModel>>;
 
 export function ExportConfig():Promise<string>;
+
+export function ExportLocalAssets():Promise<Array<Record<string, any>>>;
 
 export function FetchActiveGrants():Promise<Array<Record<string, any>>>;
 
@@ -129,6 +133,8 @@ export function GetMITMRules():Promise<Array<string>>;
 export function GetMITMStatus():Promise<Record<string, any>>;
 
 export function GetMITMTargets():Promise<Array<Record<string, any>>>;
+
+export function GetMarketNodeStatus():Promise<Record<string, any>>;
 
 export function GetOAuthProviders():Promise<Array<auth.OAuthProvider>>;
 
@@ -220,6 +226,8 @@ export function ListModelCombos():Promise<Array<config.ModelCombo>>;
 
 export function ListModelPricing():Promise<Array<usage.ModelPricing>>;
 
+export function ListMyAssets():Promise<Array<Record<string, any>>>;
+
 export function ListPlugins():Promise<Array<Record<string, any>>>;
 
 export function ListPresetsByCategory(arg1:string):Promise<Array<presets.ProviderPreset>>;
@@ -253,6 +261,8 @@ export function ReadCurrentPrompt(arg1:string):Promise<string>;
 export function RecordUsage(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number):Promise<void>;
 
 export function Register(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function RegisterMarketNode(arg1:string,arg2:Array<string>,arg3:Array<string>):Promise<Record<string, any>>;
 
 export function RemoveMITMRule(arg1:string):Promise<void>;
 
@@ -331,6 +341,8 @@ export function StopLocalGateway():Promise<void>;
 export function StopMITM():Promise<void>;
 
 export function StopTunnel():Promise<void>;
+
+export function SyncAssetsToCloud(arg1:Array<Record<string, any>>):Promise<Record<string, any>>;
 
 export function SyncCustomChannelsToCloud(arg1:Array<Record<string, any>>):Promise<Record<string, any>>;
 

@@ -86,12 +86,20 @@ export function DeleteSession(arg1, arg2) {
   return window['go']['main']['App']['DeleteSession'](arg1, arg2);
 }
 
+export function DisableMarketNode() {
+  return window['go']['main']['App']['DisableMarketNode']();
+}
+
 export function DiscoverModels(arg1) {
   return window['go']['main']['App']['DiscoverModels'](arg1);
 }
 
 export function ExportConfig() {
   return window['go']['main']['App']['ExportConfig']();
+}
+
+export function ExportLocalAssets() {
+  return window['go']['main']['App']['ExportLocalAssets']();
 }
 
 export function FetchActiveGrants() {
@@ -232,6 +240,10 @@ export function GetMITMStatus() {
 
 export function GetMITMTargets() {
   return window['go']['main']['App']['GetMITMTargets']();
+}
+
+export function GetMarketNodeStatus() {
+  return window['go']['main']['App']['GetMarketNodeStatus']();
 }
 
 export function GetOAuthProviders() {
@@ -414,6 +426,10 @@ export function ListModelPricing() {
   return window['go']['main']['App']['ListModelPricing']();
 }
 
+export function ListMyAssets() {
+  return window['go']['main']['App']['ListMyAssets']();
+}
+
 export function ListPlugins() {
   return window['go']['main']['App']['ListPlugins']();
 }
@@ -480,6 +496,10 @@ export function RecordUsage(arg1, arg2, arg3, arg4, arg5) {
 
 export function Register(arg1, arg2, arg3) {
   return window['go']['main']['App']['Register'](arg1, arg2, arg3);
+}
+
+export function RegisterMarketNode(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RegisterMarketNode'](arg1, arg2, arg3);
 }
 
 export function RemoveMITMRule(arg1) {
@@ -636,6 +656,10 @@ export function StopMITM() {
 
 export function StopTunnel() {
   return window['go']['main']['App']['StopTunnel']();
+}
+
+export function SyncAssetsToCloud(arg1) {
+  return window['go']['main']['App']['SyncAssetsToCloud'](arg1);
 }
 
 export function SyncCustomChannelsToCloud(arg1) {

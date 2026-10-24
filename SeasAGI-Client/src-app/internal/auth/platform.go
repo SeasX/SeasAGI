@@ -205,24 +205,43 @@ func (s *Service) DoPlatformRequest(method, path string, body []byte) (int, []by
 		return 0, nil, fmt.Errorf("invalid platform path %q", path)
 	}
 
-	var reader *bytes.Reader
-	if len(body) > 0 {
-		reader = bytes.NewReader(body)
-	} else {
-		reader = bytes.NewReader(nil)
-	}
-	req, err := http.NewRequest(method, platformAPIBaseURL()+path, reader)
-	if err != nil {
-		return 0, nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+s.GetPlatformToken())
-	if len(body) > 0 {
-		req.Header.Set("Content-Type", "application/json")
+	doOnce := func(payload []byte, clientPub string) (*http.Response, error) {
+		req, err := http.NewRequest(method, platformAPIBaseURL()+path, bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+s.GetPlatformToken())
+		if len(payload) > 0 {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		if clientPub != "" {
+			req.Header.Set(envelopeHeader, "v1")
+			req.Header.Set(envelopeClientPub, clientPub)
+		}
+		return http.DefaultClient.Do(req)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	// P2-2：有请求体时优先走 ECDH 信封；平台不支持则回退明文（TLS + JWT）。
+	payload := body
+	clientPub := ""
+	if len(body) > 0 {
+		if ciphertext, pub, ok := encryptPlatformBody(body); ok {
+			payload, clientPub = []byte(ciphertext), pub
+		}
+	}
+
+	resp, err := doOnce(payload, clientPub)
 	if err != nil {
 		return 0, nil, err
+	}
+	// 平台重启可能轮换临时密钥：清缓存后按明文重试一次，避免影响业务。
+	if clientPub != "" && resp.StatusCode == http.StatusBadRequest {
+		resp.Body.Close()
+		resetEnvelopeCache()
+		resp, err = doOnce(body, "")
+		if err != nil {
+			return 0, nil, err
+		}
 	}
 	defer resp.Body.Close()
 
