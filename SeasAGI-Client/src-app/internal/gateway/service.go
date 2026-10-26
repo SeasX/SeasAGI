@@ -271,8 +271,11 @@ func (s *Service) Start(ctx context.Context) error {
 	mux.HandleFunc("/node", s.NodeProxy)
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", s.listenPort),
-		Handler: mux,
+		Addr:              fmt.Sprintf("127.0.0.1:%d", s.listenPort),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	s.mu.Lock()
@@ -1248,7 +1251,8 @@ func (s *Service) forwardRequest(ctx context.Context, candidates []routing.PlanS
 		if cooldownSkipped > 0 {
 			errMsg = fmt.Sprintf("%s (%d key(s) skipped on cooldown)", errMsg, cooldownSkipped)
 		}
-		attempt.Error = errMsg
+		// 上游错误体可能回显 key，落库/回前端前统一脱敏（CL-S13）。
+		attempt.Error = s.sanitizeClientError(errMsg)
 		lastErr = execErr
 
 		err = execErr

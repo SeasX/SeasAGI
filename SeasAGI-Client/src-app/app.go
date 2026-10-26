@@ -17,7 +17,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +54,7 @@ import (
 	"github.com/SeasAGI/SeasAGI-Client/internal/sync"
 	"github.com/SeasAGI/SeasAGI-Client/internal/tunnel"
 	"github.com/SeasAGI/SeasAGI-Client/internal/updater"
+	"github.com/SeasAGI/SeasAGI-Client/internal/urlguard"
 	"github.com/SeasAGI/SeasAGI-Client/internal/usage"
 )
 
@@ -190,7 +191,7 @@ func (a *App) TestMITMDomain(domain string) map[string]any {
 
 	// 通过本地代理发起 HTTPS 请求测试连通性
 	// 使用 MITM CA 证书池验证 TLS，避免 "tls: failed to verify certificate" 错误
-	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", status.ProxyPort))
+	proxyURL, _ := neturl.Parse(fmt.Sprintf("http://127.0.0.1:%d", status.ProxyPort))
 
 	tlsConfig := &tls.Config{}
 	if caPool := a.mitmMgr.CertPool(); caPool != nil {
@@ -841,13 +842,18 @@ func (a *App) GetPlatformAPIBaseURL() string {
 	return a.configSvc.GetPlatformAPIBaseURL()
 }
 
-func (a *App) GetPlatformToken() string {
-	return a.authSvc.GetPlatformToken()
-}
-
 func (a *App) SetPlatformAPIBaseURL(url string) error {
 	if url == "" {
 		return fmt.Errorf("platform API base URL cannot be empty")
+	}
+	// 平台令牌会随每个请求发出，必须限制为 HTTPS（仅回环允许 http）且不得指向链路本地（CL-S19）。
+	if err := urlguard.ValidateSecureURL(url, true); err != nil {
+		return err
+	}
+	if u, err := neturl.Parse(url); err != nil {
+		return fmt.Errorf("invalid platform API base URL: %w", err)
+	} else if err := urlguard.RejectLinkLocalHost(u.Host); err != nil {
+		return err
 	}
 	if err := a.configSvc.SetPlatformAPIBaseURL(url); err != nil {
 		return err
@@ -1287,13 +1293,22 @@ func (a *App) DiscoverModels(channelID string) ([]discovery.DiscoveredModel, err
 }
 
 func (a *App) FetchModelsFromURL(modelsURL, apiKey string) (map[string]any, error) {
+	// 用户填写的地址会附带渠道 Key：限制协议与目标，并禁止跨主权重定向（CL-S19）。
+	if err := urlguard.ValidateSecureURL(modelsURL, true); err != nil {
+		return nil, err
+	}
+	if u, err := neturl.Parse(modelsURL); err != nil {
+		return nil, fmt.Errorf("invalid models URL: %w", err)
+	} else if err := urlguard.RejectLinkLocalHost(u.Host); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(a.ctx, http.MethodGet, modelsURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: urlguard.SecureRedirect}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch models: %w", err)

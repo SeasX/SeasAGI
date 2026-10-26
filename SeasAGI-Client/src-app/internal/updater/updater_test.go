@@ -1,8 +1,11 @@
 package updater
 
 import (
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseChecksumManifest(t *testing.T) {
@@ -41,14 +44,55 @@ func TestLookupChecksumByBaseName(t *testing.T) {
 }
 
 func TestValidateHTTPSURLRejectsPlainHTTP(t *testing.T) {
-	if err := validateHTTPSURL("http://example.com/pkg.dmg"); err == nil {
+	if err := validateHTTPSURL("http://github.com/pkg.dmg"); err == nil {
 		t.Fatal("http url should be rejected")
 	}
-	if err := validateHTTPSURL("https://example.com/pkg.dmg"); err != nil {
-		t.Fatalf("https url should be accepted: %v", err)
+	if err := validateHTTPSURL("https://github.com/SeasX/seasagi/releases/download/v1.0.0/pkg.dmg"); err != nil {
+		t.Fatalf("github https url should be accepted: %v", err)
 	}
 	if err := validateHTTPSURL("file:///etc/passwd"); err == nil {
 		t.Fatal("file url should be rejected")
+	}
+}
+
+// TestValidateHTTPSURLRejectsUntrustedHost 验证发布域白名单（CL-S11）：
+// 即使协议正确，未知主机的清单/安装包也必须拒绝。
+func TestValidateHTTPSURLRejectsUntrustedHost(t *testing.T) {
+	for _, raw := range []string{
+		"https://example.com/pkg.dmg",
+		"https://github.com.evil.example/pkg.dmg",
+		"https://raw.githubusercontent.com.evil.example/pkg.dmg",
+		"https://api.github.com@evil.example/pkg.dmg",
+	} {
+		if err := validateHTTPSURL(raw); err == nil {
+			t.Errorf("expected %q to be rejected", raw)
+		}
+	}
+	for _, raw := range []string{
+		"https://api.github.com/repos/SeasX/seasagi/releases/latest",
+		"https://objects.githubusercontent.com/github-production-release-asset/pkg.dmg",
+		"https://raw.githubusercontent.com/SeasX/seasagi/main/checksums.txt",
+	} {
+		if err := validateHTTPSURL(raw); err != nil {
+			t.Errorf("expected %q to be accepted, got %v", raw, err)
+		}
+	}
+}
+
+// TestSecureHTTPClientRejectsCrossHostRedirect 验证重定向每一跳都重新校验发布域。
+func TestSecureHTTPClientRejectsCrossHostRedirect(t *testing.T) {
+	client := newSecureHTTPClient(time.Second)
+	target, err := url.Parse("https://evil.example/pkg.dmg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &http.Request{URL: target}
+	if err := client.CheckRedirect(req, nil); err == nil {
+		t.Fatal("expected redirect to untrusted host to be rejected")
+	}
+	okURL, _ := url.Parse("https://github.com/SeasX/seasagi/releases/download/v1.0.0/pkg.dmg")
+	if err := client.CheckRedirect(&http.Request{URL: okURL}, nil); err != nil {
+		t.Fatalf("expected redirect within release hosts to be allowed: %v", err)
 	}
 }
 

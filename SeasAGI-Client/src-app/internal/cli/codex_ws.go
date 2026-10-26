@@ -10,13 +10,13 @@ import (
 
 // CodexWSConfig Codex WebSocket 配置参数。
 type CodexWSConfig struct {
-	BaseURL           string // OmniRoute 本地 base URL
-	Model             string // 纯模型 ID（去除 provider 前缀）
-	ProviderName      string // model_provider 名称
-	APIKeyEnvName     string // API key 的环境变量名
-	APIKey            string // API key 值
-	CodexHome         string // CODEX_HOME 隔离目录
-	TrustDir          string // 信任目录
+	BaseURL           string            // OmniRoute 本地 base URL
+	Model             string            // 纯模型 ID（去除 provider 前缀）
+	ProviderName      string            // model_provider 名称
+	APIKeyEnvName     string            // API key 的环境变量名
+	APIKey            string            // API key 值
+	CodexHome         string            // CODEX_HOME 隔离目录
+	TrustDir          string            // 信任目录
 	ExtraProviderOpts map[string]string // 额外的 provider 选项
 }
 
@@ -64,8 +64,8 @@ func GenerateCodexWSConfig(config CodexWSConfig) (string, error) {
 		return "", fmt.Errorf("CODEX_HOME 不能为空")
 	}
 
-	// 确保隔离目录存在
-	if err := os.MkdirAll(config.CodexHome, 0755); err != nil {
+	// 确保隔离目录存在；其中包含 API key，仅限当前用户访问。
+	if err := os.MkdirAll(config.CodexHome, 0o700); err != nil {
 		return "", fmt.Errorf("创建 CODEX_HOME 失败: %w", err)
 	}
 
@@ -76,14 +76,21 @@ func GenerateCodexWSConfig(config CodexWSConfig) (string, error) {
 	}
 
 	configPath := filepath.Join(config.CodexHome, "config.toml")
-	f, err := os.Create(configPath)
+	f, err := os.OpenFile(configPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("创建配置文件失败: %w", err)
 	}
-	defer f.Close()
 
 	if err := tmpl.Execute(f, config); err != nil {
+		f.Close()
 		return "", fmt.Errorf("模板渲染失败: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("写入配置文件失败: %w", err)
+	}
+	// 既有配置文件可能是旧版本以 0644 写入的，显式收紧权限。
+	if err := os.Chmod(configPath, 0o600); err != nil {
+		return "", fmt.Errorf("设置配置文件权限失败: %w", err)
 	}
 
 	// 写入环境变量文件（供 source 使用）
@@ -92,8 +99,11 @@ func GenerateCodexWSConfig(config CodexWSConfig) (string, error) {
 export %s="%s"
 export CODEX_HOME="%s"
 `, config.APIKeyEnvName, config.APIKey, config.CodexHome)
-	if err := os.WriteFile(envPath, []byte(envContent), 0644); err != nil {
+	if err := os.WriteFile(envPath, []byte(envContent), 0o600); err != nil {
 		return "", fmt.Errorf("写入 env.sh 失败: %w", err)
+	}
+	if err := os.Chmod(envPath, 0o600); err != nil {
+		return "", fmt.Errorf("设置 env.sh 权限失败: %w", err)
 	}
 
 	return configPath, nil

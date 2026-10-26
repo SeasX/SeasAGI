@@ -7,10 +7,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/config"
+	"github.com/SeasAGI/SeasAGI-Client/internal/urlguard"
 )
 
 // Proxy 是 MITM 拦截代理服务器。它监听本地端口，对命中规则的 HTTPS 请求进行拦截（动态签发证书），
@@ -184,6 +186,11 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	p.handleHTTP(w, r)
 }
 
+// gatewayAddr 返回本地网关的 host:port，避免硬编码切片导致的越界 panic。
+func (p *Proxy) gatewayAddr() string {
+	return strings.TrimPrefix(p.gatewayURL, "http://")
+}
+
 // handleConnect 处理 HTTPS CONNECT 隧道请求。
 // 命中规则的域名：拦截（动态签发证书 + TLS 拦截后转发到 gateway）。
 // 未命中的域名：透传（建立 TCP 隧道，双向 io.Copy）。
@@ -196,6 +203,15 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// 去掉端口号
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
+	}
+	// 禁止把本地代理当作访问回环/链路本地（含云元数据）目标的跳板（CL-S18）。
+	targetAddr := r.Host
+	if targetAddr == "" {
+		targetAddr = host
+	}
+	if err := urlguard.ValidateProxyTarget(targetAddr); err != nil {
+		http.Error(w, "proxy target not allowed", http.StatusForbidden)
+		return
 	}
 	if p.rules.Match(host) {
 		p.interceptConnect(w, r, host)
@@ -249,7 +265,7 @@ func (p *Proxy) serveInterceptedTLS(tlsConn net.Conn, originalHost string) {
 
 		// 重写请求目标为本地 gateway
 		req.URL.Scheme = "http"
-		req.URL.Host = p.gatewayURL[7:] // 去掉 "http://" 前缀
+		req.URL.Host = p.gatewayAddr()
 		// 注入本机访问令牌：被接管 SDK 携带的是厂商 key，网关校验的是本机令牌。
 		p.injectAuth(req)
 		// 注入来源标记头（来源工具/原始域名/端点），供网关做路由映射。
@@ -361,7 +377,7 @@ func (p *Proxy) interceptRequest(host string, w http.ResponseWriter, r *http.Req
 
 	// 重写请求目标为本地 gateway
 	r.URL.Scheme = "http"
-	r.URL.Host = p.gatewayURL[7:]
+	r.URL.Host = p.gatewayAddr()
 	// 注入本机访问令牌
 	p.injectAuth(r)
 	// 注入来源标记头

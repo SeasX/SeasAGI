@@ -2,12 +2,44 @@ package skills
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 )
+
+// skillNamePattern 限制技能名只能是单段安全文件名，禁止路径分隔符与隐藏前缀。
+var skillNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
+// validateSkillName 校验技能名，拒绝 "."、".." 以及任何可用作路径穿越的名称。
+func validateSkillName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "." || name == ".." || !skillNamePattern.MatchString(name) {
+		return fmt.Errorf("invalid skill name: %q", name)
+	}
+	return nil
+}
+
+// resolveInstallPath 在 skillsDir 下解析安装路径，并复核结果不会逃逸出该目录。
+func resolveInstallPath(skillsDir, name string) (string, error) {
+	if err := validateSkillName(name); err != nil {
+		return "", err
+	}
+	name = strings.TrimSpace(name)
+	p := filepath.Join(skillsDir, name)
+	rel, err := filepath.Rel(skillsDir, p)
+	if err != nil {
+		return "", fmt.Errorf("resolve install path: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("install path escapes skills dir: %q", name)
+	}
+	return p, nil
+}
 
 type Skill struct {
 	Name        string `json:"name"`
@@ -53,9 +85,15 @@ func (s *Service) persist() {
 	if err != nil {
 		return
 	}
-	os.MkdirAll(filepath.Dir(s.path), 0755)
+	// 技能清单可能包含本地路径等隐私信息，目录/文件仅限当前用户访问。
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return
+	}
 	tmpFile := s.path + ".tmp"
-	_ = os.WriteFile(tmpFile, data, 0644)
+	if err := os.WriteFile(tmpFile, data, 0o600); err != nil {
+		return
+	}
+	_ = os.Chmod(tmpFile, 0o600)
 	_ = os.Rename(tmpFile, s.path)
 }
 
@@ -67,18 +105,64 @@ func (s *Service) ListSkills() []Skill {
 	return result
 }
 
+// validateGitHubRepoURL 只接受 https://github.com/<owner>/<repo>[.git] 形式的仓库地址，
+// 拒绝其它协议、主机与 userinfo，避免把任意输入交给 git 或触发凭证泄露。
+func validateGitHubRepoURL(rawURL string) error {
+	if rawURL == "" {
+		return fmt.Errorf("repo url is empty")
+	}
+	if strings.HasPrefix(rawURL, "-") {
+		return fmt.Errorf("invalid repo url: %q", rawURL)
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid repo url: %w", err)
+	}
+	if u.User != nil {
+		return fmt.Errorf("repo url must not contain userinfo")
+	}
+	if !strings.EqualFold(u.Scheme, "https") {
+		return fmt.Errorf("repo url must use https: %s", rawURL)
+	}
+	if !strings.EqualFold(u.Host, "github.com") {
+		return fmt.Errorf("only github.com repositories are allowed: %s", u.Host)
+	}
+	path := strings.TrimSuffix(strings.Trim(u.Path, "/"), ".git")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 {
+		return fmt.Errorf("repo url must contain owner and repo: %s", rawURL)
+	}
+	for _, part := range parts {
+		if part == "" {
+			return fmt.Errorf("invalid repo url path: %s", rawURL)
+		}
+	}
+	return nil
+}
+
 func (s *Service) InstallFromGitHub(repoURL, name string) error {
+	repoURL = strings.TrimSpace(repoURL)
+	if err := validateGitHubRepoURL(repoURL); err != nil {
+		return err
+	}
+
 	homeDir, _ := os.UserHomeDir()
 	skillsDir := filepath.Join(homeDir, ".claude", "skills")
-	os.MkdirAll(skillsDir, 0755)
-
-	installPath := filepath.Join(skillsDir, name)
+	// 先完成名称/路径校验，校验失败时不得创建技能目录。
+	installPath, err := resolveInstallPath(skillsDir, name)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		return err
+	}
 
 	if _, err := os.Stat(installPath); err == nil {
 		_ = os.RemoveAll(installPath)
 	}
 
-	cmd := exec.Command("git", "clone", "--depth", "1", repoURL, installPath)
+	// "--" 终止选项解析，防止仓库地址或路径被 git 当作参数。
+	cmd := exec.Command("git", "clone", "--depth", "1", "--", repoURL, installPath)
 	if err := cmd.Run(); err != nil {
 		return err
 	}
@@ -107,15 +191,33 @@ func (s *Service) InstallFromGitHub(repoURL, name string) error {
 }
 
 func (s *Service) InstallFromLocal(srcPath, name string) error {
+	srcPath = strings.TrimSpace(srcPath)
+	if !filepath.IsAbs(srcPath) {
+		return fmt.Errorf("local skill path must be absolute: %q", srcPath)
+	}
+	info, err := os.Stat(srcPath)
+	if err != nil {
+		return fmt.Errorf("stat local skill path: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("local skill path is not a directory: %s", srcPath)
+	}
+
 	homeDir, _ := os.UserHomeDir()
 	skillsDir := filepath.Join(homeDir, ".claude", "skills")
-	os.MkdirAll(skillsDir, 0755)
+	// 先完成名称/路径校验，校验失败时不得创建技能目录。
+	installPath, err := resolveInstallPath(skillsDir, name)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		return err
+	}
 
-	installPath := filepath.Join(skillsDir, name)
-
-	cmd := exec.Command("ln", "-sf", srcPath, installPath)
+	// "--" 终止选项解析，防止源路径或目标被当作命令行选项。
+	cmd := exec.Command("ln", "-sf", "--", srcPath, installPath)
 	if err := cmd.Run(); err != nil {
-		cmd2 := exec.Command("cp", "-r", srcPath, installPath)
+		cmd2 := exec.Command("cp", "-r", "--", srcPath, installPath)
 		if err2 := cmd2.Run(); err2 != nil {
 			return err2
 		}

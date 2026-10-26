@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/keychain"
 	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
+	"github.com/SeasAGI/SeasAGI-Client/internal/urlguard"
 	"github.com/SeasAGI/SeasAGI-Client/internal/usage"
 )
 
@@ -827,11 +829,41 @@ func (s *Service) GetPlatformAPIBaseURL() string {
 	return s.config.PlatformAPIBaseURL
 }
 
-func (s *Service) SetPlatformAPIBaseURL(url string) error {
+func (s *Service) SetPlatformAPIBaseURL(rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	// 平台 API 地址会携带访问令牌，仅允许 https（本机回环可用 http）且不得指向链路本地地址。
+	if err := urlguard.ValidateSecureURL(rawURL, true); err != nil {
+		return fmt.Errorf("invalid platform api base url: %w", err)
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid platform api base url: %w", err)
+	}
+	if err := urlguard.RejectLinkLocalHost(u.Host); err != nil {
+		return fmt.Errorf("invalid platform api base url: %w", err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.config.PlatformAPIBaseURL = url
+	s.config.PlatformAPIBaseURL = rawURL
 	return s.saveLocked()
+}
+
+// validateChannelBaseURL 校验渠道 BaseURL；空值表示沿用渠道默认端点，直接跳过。
+func validateChannelBaseURL(rawURL string) error {
+	if strings.TrimSpace(rawURL) == "" {
+		return nil
+	}
+	if err := urlguard.ValidateSecureURL(rawURL, true); err != nil {
+		return fmt.Errorf("invalid base_url: %w", err)
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid base_url: %w", err)
+	}
+	if err := urlguard.RejectLinkLocalHost(u.Host); err != nil {
+		return fmt.Errorf("invalid base_url: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) GetSelectedGrantID() string {
@@ -978,6 +1010,10 @@ func (s *Service) ValidateChannelWeights() error {
 }
 
 func (s *Service) SaveCustomChannel(ch Channel) (string, error) {
+	// 渠道地址会被用于携带 API Key 的出站请求，先校验再落盘，避免 SSRF/明文传输。
+	if err := validateChannelBaseURL(ch.BaseURL); err != nil {
+		return "", err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1491,6 +1527,13 @@ func (s *Service) UpsertPlatformChannels(channels []Channel) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// 平台下发的渠道同样会携带凭证出站，逐条校验 BaseURL（空值跳过）。
+	for _, ch := range channels {
+		if err := validateChannelBaseURL(ch.BaseURL); err != nil {
+			return fmt.Errorf("platform channel %s: %w", ch.ChannelID, err)
+		}
+	}
+
 	customChannels := make([]Channel, 0, len(s.channels))
 	for _, ch := range s.channels {
 		if ch.ChannelType != "platform" {
@@ -1708,6 +1751,15 @@ func (s *Service) restoreChannelSecretsLocked() {
 			ch.APIKeys = keys
 		}
 
+		// 仅配置了单 key 的旧渠道同样要迁移进安全存储：否则签名已含该 key，
+		// 后续 saveLocked 会因签名一致而跳过写入，明文被清空后钥匙串却没有值。
+		if ch.APIKey != "" {
+			if err := store.SaveChannelKey(ch.ChannelID, ch.APIKey); err != nil {
+				migrationFailed = true
+				logging.Warningf("config: migrate channel key for %s failed: %v", ch.ChannelID, err)
+			}
+		}
+
 		// OAuth 刷新令牌与客户端密钥同样是敏感凭证，迁移到系统安全存储。
 		if token := strings.TrimSpace(ch.OAuthRefreshToken); token != "" {
 			if err := store.SaveSecret(oauthRefreshKeyName(ch.ChannelID), token); err != nil {
@@ -1806,7 +1858,8 @@ func (s *Service) flushPendingSecretsLocked(store credentialStore) error {
 }
 
 func (s *Service) saveLocked() error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	// 配置目录/文件包含渠道与令牌元数据，仅限当前用户访问。
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
 
@@ -1847,7 +1900,39 @@ func (s *Service) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o644)
+	if err := writeFileAtomic(s.path, data, 0o600); err != nil {
+		return err
+	}
+	// 既有配置文件可能是旧版本以 0644 写入的，显式收紧权限。
+	return os.Chmod(s.path, 0o600)
+}
+
+// writeFileAtomic 在同目录写临时文件后 rename，避免崩溃时留下半截配置；
+// 临时文件与最终文件权限均固定为 perm。
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 func (s *Service) UpdateSetting(key string, value interface{}) error {

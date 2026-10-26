@@ -11,7 +11,7 @@ import (
 type ConcurrencyLimiter struct {
 	mu       sync.RWMutex
 	limits   map[string]int    // channelID → max concurrent (0=unlimited)
-	inflight map[string]*int32  // channelID → current in-flight count
+	inflight map[string]*int32 // channelID → current in-flight count
 }
 
 // NewConcurrencyLimiter creates a new limiter with empty state.

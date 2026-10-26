@@ -14,7 +14,7 @@ func (g *GrokExecutor) Name() string {
 }
 
 func (g *GrokExecutor) ChatCompletions(ctx context.Context, config *ProviderConfig, req *UpstreamRequest) (*UpstreamResponse, error) {
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: 120 * time.Second, CheckRedirect: secureRedirectPolicy}
 
 	body := map[string]any{
 		"model":    req.Model,
@@ -61,7 +61,7 @@ func (g *GrokExecutor) ChatCompletions(ctx context.Context, config *ProviderConf
 }
 
 func (g *GrokExecutor) ListModels(ctx context.Context, config *ProviderConfig) ([]ModelInfo, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: secureRedirectPolicy}
 
 	baseURL := config.BaseURL
 	if baseURL == "" {

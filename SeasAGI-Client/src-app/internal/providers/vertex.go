@@ -94,7 +94,7 @@ func (v *VertexExecutor) ChatCompletions(ctx context.Context, config *ProviderCo
 }
 
 func (v *VertexExecutor) ListModels(ctx context.Context, config *ProviderConfig) ([]ModelInfo, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: secureRedirectPolicy}
 
 	projectID := config.ProviderSpecificConfig["project_id"]
 	location := config.ProviderSpecificConfig["location"]

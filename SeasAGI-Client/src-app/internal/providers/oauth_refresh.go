@@ -64,9 +64,13 @@ func NewOAuthTokenRefresher(margin time.Duration) *OAuthTokenRefresher {
 		margin = 60 * time.Second
 	}
 	return &OAuthTokenRefresher{
-		tokens:     make(map[string]*OAuthTokenInfo),
-		margin:     margin,
-		httpClient: &http.Client{Timeout: 15 * time.Second},
+		tokens: make(map[string]*OAuthTokenInfo),
+		margin: margin,
+		httpClient: &http.Client{
+			Timeout: 15 * time.Second,
+			// 刷新请求体含 refresh_token/client_secret，307/308 会被重放，因此不跟随任何重定向（CL-S10）。
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 		refreshing: make(map[string]*refreshCall),
 	}
 }

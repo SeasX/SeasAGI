@@ -8,21 +8,21 @@ import (
 type ErrorClass string
 
 const (
-	ErrorClassRetryable    ErrorClass = "retryable"
-	ErrorClassRateLimit    ErrorClass = "rate_limit"
-	ErrorClassAuth         ErrorClass = "auth"
-	ErrorClassModel        ErrorClass = "model"
-	ErrorClassContext      ErrorClass = "context_length"
-	ErrorClassServer       ErrorClass = "server"
-	ErrorClassPermanent    ErrorClass = "permanent"
-	ErrorClassUnknown      ErrorClass = "unknown"
+	ErrorClassRetryable ErrorClass = "retryable"
+	ErrorClassRateLimit ErrorClass = "rate_limit"
+	ErrorClassAuth      ErrorClass = "auth"
+	ErrorClassModel     ErrorClass = "model"
+	ErrorClassContext   ErrorClass = "context_length"
+	ErrorClassServer    ErrorClass = "server"
+	ErrorClassPermanent ErrorClass = "permanent"
+	ErrorClassUnknown   ErrorClass = "unknown"
 )
 
 type ErrorRule struct {
-	StatusCodes  []int
-	Substrings   []string
-	Class        ErrorClass
-	Retryable    bool
+	StatusCodes []int
+	Substrings  []string
+	Class       ErrorClass
+	Retryable   bool
 }
 
 var defaultErrorRules = []ErrorRule{

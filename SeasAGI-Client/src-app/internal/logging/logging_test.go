@@ -201,6 +201,53 @@ func TestPayloadProtectForLog(t *testing.T) {
 	}
 }
 
+// TestRedactBearerTokenRedactsAll 验证同一字符串中的多个凭证形态都会被脱敏（CL-S13）。
+func TestRedactBearerTokenRedactsAll(t *testing.T) {
+	input := "first Bearer aaaaaaaa-bbbbbbbb then Bearer cccccccc-dddddddd key sk-1234567890abcdefghij"
+	result := RedactBearerToken(input)
+	for _, leak := range []string{"aaaaaaaa-bbbbbbbb", "cccccccc-dddddddd", "sk-1234567890abcdefghij"} {
+		if strings.Contains(result, leak) {
+			t.Errorf("RedactBearerToken(%q) = %q, still contains %q", input, result, leak)
+		}
+	}
+	if strings.Count(result, "[REDACTED]") != 3 {
+		t.Errorf("expected 3 redactions, got %q", result)
+	}
+}
+
+// TestIsSensitiveKeyTokenCounters 验证计数字段不会被当作凭证误脱敏。
+func TestIsSensitiveKeyTokenCounters(t *testing.T) {
+	for _, key := range []string{"max_tokens", "max_completion_tokens", "prompt_tokens", "completion_tokens", "total_tokens", "input_tokens", "output_tokens", "tokens"} {
+		if IsSensitiveKey(key) {
+			t.Errorf("%q should not be treated as credential", key)
+		}
+	}
+	for _, key := range []string{"token", "access_token", "refresh-token", "user_token", "api_key", "x-api-key", "client_secret", "authorization"} {
+		if !IsSensitiveKey(key) {
+			t.Errorf("%q should be treated as credential", key)
+		}
+	}
+}
+
+func TestPayloadRedactKeepsTokenCounters(t *testing.T) {
+	data := map[string]interface{}{
+		"max_tokens":        4096,
+		"prompt_tokens":     12,
+		"completion_tokens": 34,
+		"access_token":      "secret-value",
+	}
+	result := RedactPayload(data).(map[string]interface{})
+	if result["max_tokens"] != 4096 {
+		t.Errorf("max_tokens should be preserved, got %v", result["max_tokens"])
+	}
+	if result["prompt_tokens"] != 12 {
+		t.Errorf("prompt_tokens should be preserved, got %v", result["prompt_tokens"])
+	}
+	if result["access_token"] != "[REDACTED]" {
+		t.Errorf("access_token should be redacted, got %v", result["access_token"])
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
 }

@@ -86,7 +86,6 @@ type WailsAppApi = {
   CreateCheckoutSession(planId: string, quantity?: number): Promise<Record<string, any>>;
   GetPlatformAPIBaseURL(): Promise<string>;
   SetPlatformAPIBaseURL(url: string): Promise<void>;
-  GetPlatformToken(): Promise<string>;
   StartTunnel(tunnelType: string): Promise<void>;
   StopTunnel(): Promise<void>;
   IsTunnelRunning(): Promise<boolean>;
@@ -322,10 +321,6 @@ export async function platformRequest(method: string, path: string, body?: unkno
 
 export async function getPlatformAPIBaseURL(): Promise<string> {
   return getAppApi().GetPlatformAPIBaseURL();
-}
-
-export async function getPlatformToken(): Promise<string> {
-  return getAppApi().GetPlatformToken();
 }
 
 export async function setPlatformAPIBaseURL(url: string): Promise<void> {

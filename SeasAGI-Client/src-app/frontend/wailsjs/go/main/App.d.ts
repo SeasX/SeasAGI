@@ -152,8 +152,6 @@ export function GetPlans():Promise<Array<Record<string, any>>>;
 
 export function GetPlatformAPIBaseURL():Promise<string>;
 
-export function GetPlatformToken():Promise<string>;
-
 export function GetPluginAuditLog():Promise<Array<Record<string, any>>>;
 
 export function GetPluginHooks():Promise<Array<Record<string, any>>>;

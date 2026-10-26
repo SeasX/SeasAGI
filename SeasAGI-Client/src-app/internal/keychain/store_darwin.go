@@ -21,7 +21,7 @@ func platformGet(keyID string) (string, error) {
 }
 
 func platformSave(keyID, secret string) error {
-	_ = platformDelete(keyID)
+	// -U 已具备更新语义，直接写入即可；先删除会在写入失败时丢失原有凭证。
 	cmd := exec.Command("security", "add-generic-password", "-U", "-a", keyID, "-s", serviceName, "-w", secret)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("save keychain entry %s: %s (%w)", keyID, strings.TrimSpace(string(output)), err)

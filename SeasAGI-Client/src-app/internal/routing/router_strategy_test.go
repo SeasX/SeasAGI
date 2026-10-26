@@ -112,13 +112,13 @@ func newComboTestService(t *testing.T) *config.Service {
 	svc := config.NewServiceWithPath(config.AppConfig{RoutingStrategy: "fallback"}, filepath.Join(t.TempDir(), "config.json"))
 	if _, err := svc.SaveCustomChannel(config.Channel{
 		ChannelID: "ch-openai", ProviderType: "openai", DisplayName: "OpenAI",
-		BaseURL: "http://openai.test", Enabled: true, Models: []string{"gpt-4o", "gpt-4o-mini"},
+		BaseURL: "https://openai.test", Enabled: true, Models: []string{"gpt-4o", "gpt-4o-mini"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.SaveCustomChannel(config.Channel{
 		ChannelID: "ch-deepseek", ProviderType: "deepseek", DisplayName: "DeepSeek",
-		BaseURL: "http://deepseek.test", Enabled: true, Models: []string{"deepseek-chat"},
+		BaseURL: "https://deepseek.test", Enabled: true, Models: []string{"deepseek-chat"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestResolveChatPlan_ComboQualityFirstAlias(t *testing.T) {
 	svc := newComboTestService(t)
 	if _, err := svc.SaveCustomChannel(config.Channel{
 		ChannelID: "ch-anthropic", ProviderType: "anthropic", DisplayName: "Anthropic",
-		BaseURL: "http://anthropic.test", Enabled: true, Models: []string{"claude-3.5-sonnet"},
+		BaseURL: "https://anthropic.test", Enabled: true, Models: []string{"claude-3.5-sonnet"},
 	}); err != nil {
 		t.Fatal(err)
 	}

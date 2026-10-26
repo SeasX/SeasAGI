@@ -29,7 +29,11 @@ func NewStore(dataDir string) *Store {
 }
 
 func (s *Store) ensureDir() error {
-	return os.MkdirAll(s.dataDir, 0755)
+	if err := os.MkdirAll(s.dataDir, 0o700); err != nil {
+		return err
+	}
+	// 既有目录可能是旧版本以 0755 创建，显式收紧权限。
+	return os.Chmod(s.dataDir, 0o700)
 }
 
 func (s *Store) batchPath(id string) string {
@@ -75,7 +79,7 @@ func (s *Store) saveBatch(record *BatchRecord) error {
 	if err != nil {
 		return fmt.Errorf("序列化失败: %w", err)
 	}
-	return os.WriteFile(s.batchPath(record.ID), data, 0644)
+	return os.WriteFile(s.batchPath(record.ID), data, 0o600)
 }
 
 // GetBatch 获取记录。
@@ -87,6 +91,8 @@ func (s *Store) GetBatch(id string) (*BatchRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 读取时收紧既有文件权限（旧版本可能以 0644 写入）。
+	_ = os.Chmod(s.batchPath(id), 0o600)
 
 	var record BatchRecord
 	if err := json.Unmarshal(data, &record); err != nil {
@@ -140,6 +146,8 @@ func (s *Store) getBatchUnlocked(id string) (*BatchRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 读取时收紧既有文件权限（旧版本可能以 0644 写入）。
+	_ = os.Chmod(s.batchPath(id), 0o600)
 	var record BatchRecord
 	if err := json.Unmarshal(data, &record); err != nil {
 		return nil, err
@@ -345,6 +353,8 @@ func (s *Store) loadCheckpoints(batchID string) ([]BatchItemCheckpoint, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 读取时收紧既有文件权限（旧版本可能以 0644 写入）。
+	_ = os.Chmod(s.checkpointPath(batchID), 0o600)
 	var checkpoints []BatchItemCheckpoint
 	if err := json.Unmarshal(data, &checkpoints); err != nil {
 		return nil, err
@@ -361,7 +371,7 @@ func (s *Store) saveCheckpoints(batchID string, checkpoints []BatchItemCheckpoin
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(s.checkpointPath(batchID), data, 0644); err != nil {
+	if err := os.WriteFile(s.checkpointPath(batchID), data, 0o600); err != nil {
 		return err
 	}
 	if s.onSave != nil {

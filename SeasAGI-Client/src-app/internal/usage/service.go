@@ -127,7 +127,12 @@ type persistLine struct {
 // for backward compatibility.
 func (s *Service) load() {
 	data, err := os.ReadFile(s.path)
-	if err != nil || len(data) == 0 {
+	if err != nil {
+		return
+	}
+	// 使用记录视为私密数据，启动时收紧既有文件权限。
+	_ = os.Chmod(s.path, 0o600)
+	if len(data) == 0 {
 		return
 	}
 	if records, pricing, ok := parseJSONL(data); ok {
@@ -179,7 +184,7 @@ func parseJSONL(data []byte) ([]UsageRecord, []ModelPricing, bool) {
 // appendRecordLocked incrementally appends a single record to the log. The
 // caller must hold s.mu.
 func (s *Service) appendRecordLocked(record UsageRecord) {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		logging.Warningf("usage: create dir for %s failed: %v", s.path, err)
 		return
 	}
@@ -188,12 +193,14 @@ func (s *Service) appendRecordLocked(record UsageRecord) {
 		logging.Warningf("usage: marshal record failed: %v", err)
 		return
 	}
-	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		logging.Warningf("usage: open %s for append failed: %v", s.path, err)
 		return
 	}
 	defer f.Close()
+	// 既有日志可能是旧版本以 0644 写入的，显式收紧权限。
+	_ = os.Chmod(s.path, 0o600)
 	if _, err := f.Write(append(line, '\n')); err != nil {
 		logging.Warningf("usage: append record to %s failed: %v", s.path, err)
 		return
@@ -219,19 +226,21 @@ func (s *Service) persist() {
 	for i := range s.records {
 		writeLine(persistLine{Record: &s.records[i]})
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		logging.Warningf("usage: create dir for %s failed: %v", s.path, err)
 		return
 	}
 	tmpFile := s.path + ".tmp"
-	if err := os.WriteFile(tmpFile, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(tmpFile, buf.Bytes(), 0o600); err != nil {
 		logging.Warningf("usage: write temp file %s failed: %v", tmpFile, err)
 		return
 	}
+	_ = os.Chmod(tmpFile, 0o600)
 	if err := os.Rename(tmpFile, s.path); err != nil {
 		logging.Warningf("usage: rename %s -> %s failed: %v", tmpFile, s.path, err)
 		return
 	}
+	_ = os.Chmod(s.path, 0o600)
 	s.appended = 0
 	s.appendedBytes = 0
 }

@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SeasAGI/SeasAGI-Client/internal/urlguard"
 )
 
 type SyncProvider string
@@ -156,7 +159,27 @@ func (m *Manager) pullICloud(localDir string) error {
 	return syncDirs(icloudDir, localDir, openSyncFile)
 }
 
+// validateWebDAVURL 强制 WebDAV 端点使用 HTTPS（仅允许本机回环使用明文 HTTP），
+// 并拒绝链路本地/未指定等不可路由目标，避免 Basic 凭证明文外泄或被当作 SSRF 跳板（CS-12）。
+func (m *Manager) validateWebDAVURL() error {
+	raw := strings.TrimSpace(m.config.WebDAVURL)
+	if err := urlguard.ValidateSecureURL(raw, true); err != nil {
+		return fmt.Errorf("invalid WebDAV URL: %w", err)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid WebDAV URL: %w", err)
+	}
+	if err := urlguard.RejectLinkLocalHost(u.Host); err != nil {
+		return fmt.Errorf("invalid WebDAV URL: %w", err)
+	}
+	return nil
+}
+
 func (m *Manager) pushWebDAV(localDir string) error {
+	if err := m.validateWebDAVURL(); err != nil {
+		return err
+	}
 	for _, file := range syncFileNames {
 		localPath := filepath.Join(localDir, file)
 		if _, err := os.Stat(localPath); err != nil {
@@ -189,6 +212,12 @@ func (m *Manager) pushWebDAV(localDir string) error {
 }
 
 func (m *Manager) pullWebDAV(localDir string) error {
+	if err := m.validateWebDAVURL(); err != nil {
+		return err
+	}
+	// 两阶段拉取：先把全部远端文件下载并验签/解密到内存，全部通过后再统一落盘，
+	// 任一文件失败都不会留下半套本地配置（CS-06）。
+	staged := make([]stagedSyncFile, 0, len(syncFileNames))
 	for _, file := range syncFileNames {
 		remoteURL := strings.TrimRight(m.config.WebDAVURL, "/") + "/" + file
 		req, err := http.NewRequest("GET", remoteURL, nil)
@@ -217,7 +246,10 @@ func (m *Manager) pullWebDAV(localDir string) error {
 		if err != nil {
 			return fmt.Errorf("verify %s: %w", file, err)
 		}
-		if err := writeSyncFile(filepath.Join(localDir, file), payload); err != nil {
+		staged = append(staged, stagedSyncFile{name: file, data: payload})
+	}
+	for _, item := range staged {
+		if err := writeSyncFile(filepath.Join(localDir, item.name), item.data); err != nil {
 			return err
 		}
 	}
@@ -250,9 +282,17 @@ func (m *Manager) pullLocal(localDir string) error {
 // syncFileNames 是可同步的配置文件清单。
 var syncFileNames = []string{"mcp_servers.json", "prompt_presets.json", "skills.json", "usage_records.json"}
 
+// stagedSyncFile 表示已完成加签/验签、等待统一落盘的文件内容。
+type stagedSyncFile struct {
+	name string
+	data []byte
+}
+
 // syncDirs 读取 srcDir 中的同步文件，经 transform（推送加签 / 拉取验签）处理后写入 dstDir。
-// 任一文件验签或加签失败都整体返回错误，调用方不得应用未经验证的远端内容（CL-S7）。
+// 采用两阶段处理：先对全部文件完成 transform 并暂存内存，全部成功后再统一写盘；
+// 任一文件验签或加签失败都立即返回且不写入任何文件，避免留下半套本地配置（CL-S7/CS-06）。
 func syncDirs(srcDir, dstDir string, transform func([]byte) ([]byte, error)) error {
+	staged := make([]stagedSyncFile, 0, len(syncFileNames))
 	for _, file := range syncFileNames {
 		data, err := os.ReadFile(filepath.Join(srcDir, file))
 		if err != nil {
@@ -262,7 +302,10 @@ func syncDirs(srcDir, dstDir string, transform func([]byte) ([]byte, error)) err
 		if err != nil {
 			return fmt.Errorf("%s: %w", file, err)
 		}
-		if err := writeSyncFile(filepath.Join(dstDir, file), out); err != nil {
+		staged = append(staged, stagedSyncFile{name: file, data: out})
+	}
+	for _, item := range staged {
+		if err := writeSyncFile(filepath.Join(dstDir, item.name), item.data); err != nil {
 			return err
 		}
 	}

@@ -23,9 +23,8 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Failed to read request body")
+	bodyBytes, ok := readLimitedBody(w, r, maxJSONRequestBody)
+	if !ok {
 		return
 	}
 
@@ -89,9 +88,8 @@ func (s *Service) handleImageGenerations(w http.ResponseWriter, r *http.Request)
 	}
 	defer release()
 
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Failed to read request body")
+	bodyBytes, ok := readLimitedBody(w, r, maxJSONRequestBody)
+	if !ok {
 		return
 	}
 
@@ -154,9 +152,8 @@ func (s *Service) handleTTS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Failed to read request body")
+	bodyBytes, ok := readLimitedBody(w, r, maxJSONRequestBody)
+	if !ok {
 		return
 	}
 
@@ -224,6 +221,8 @@ func (s *Service) handleSTT(w http.ResponseWriter, r *http.Request) {
 	var model string
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
+		// multipart 的 32MB 只是内存阈值，超出部分会落临时文件；先限制总请求体（CL-S7）。
+		r.Body = http.MaxBytesReader(w, r.Body, maxMultipartRequestBody)
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "Failed to parse multipart form")
 			return
@@ -241,10 +240,9 @@ func (s *Service) handleSTT(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		var err error
-		bodyBytes, err = io.ReadAll(r.Body)
-		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "Failed to read request body")
+		var ok bool
+		bodyBytes, ok = readLimitedBody(w, r, maxJSONRequestBody)
+		if !ok {
 			return
 		}
 		var req map[string]any

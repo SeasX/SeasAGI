@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/protocol"
+	"github.com/SeasAGI/SeasAGI-Client/internal/urlguard"
 )
 
 // sharedTransport 是进程级共享的 HTTP 连接池。它只约束「等待响应头」的时间，
@@ -31,10 +32,15 @@ var sharedTransport = &http.Transport{
 }
 
 // sharedHTTPClient 用于聊天/补全请求（含流式），超时交由 ctx 与 Transport 控制。
-var sharedHTTPClient = &http.Client{Transport: sharedTransport}
+var sharedHTTPClient = &http.Client{Transport: sharedTransport, CheckRedirect: secureRedirectPolicy}
 
 // metadataHTTPClient 用于模型列表等短请求，保留整体超时。
-var metadataHTTPClient = &http.Client{Transport: sharedTransport, Timeout: 30 * time.Second}
+var metadataHTTPClient = &http.Client{Transport: sharedTransport, Timeout: 30 * time.Second, CheckRedirect: secureRedirectPolicy}
+
+// secureRedirectPolicy 统一出站重定向策略：跨主机剥离凭证、禁止 https 降级（CL-S10）。
+func secureRedirectPolicy(req *http.Request, via []*http.Request) error {
+	return urlguard.SecureRedirect(req, via)
+}
 
 type ProviderConfig struct {
 	ChannelType            string

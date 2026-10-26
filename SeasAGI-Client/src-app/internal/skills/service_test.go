@@ -72,3 +72,73 @@ func TestNewServiceLoadsWithoutFile(t *testing.T) {
 	}
 	_ = svc.ListSkills()
 }
+
+func TestValidateSkillName(t *testing.T) {
+	for _, name := range []string{"my-skill_1", "a", "A0", "skill.v2"} {
+		if err := validateSkillName(name); err != nil {
+			t.Errorf("expected %q to be valid, got %v", name, err)
+		}
+	}
+	for _, name := range []string{"../escape", "a/b", "-x", ".", "..", "", "a b"} {
+		if err := validateSkillName(name); err == nil {
+			t.Errorf("expected %q to be rejected", name)
+		}
+	}
+}
+
+func TestResolveInstallPathRejectsEscape(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := resolveInstallPath(dir, "../escape"); err == nil {
+		t.Fatal("expected path traversal name to be rejected")
+	}
+	p, err := resolveInstallPath(dir, "my-skill_1")
+	if err != nil {
+		t.Fatalf("resolveInstallPath: %v", err)
+	}
+	if want := filepath.Join(dir, "my-skill_1"); p != want {
+		t.Errorf("install path = %q, want %q", p, want)
+	}
+}
+
+// TestInstallFromGitHubRejectsInvalidRepoURL 确保非 github / 非 https / userinfo
+// 与以 "-" 开头的输入都在创建任何目录之前被拒绝。
+func TestInstallFromGitHubRejectsInvalidRepoURL(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	svc := NewService()
+
+	cases := []string{
+		"http://github.com/a/b",
+		"https://evil.com/a/b",
+		"file:///etc",
+		"-x",
+		"https://user:pass@github.com/a/b",
+		"https://github.com/only-owner",
+	}
+	for _, repo := range cases {
+		if err := svc.InstallFromGitHub(repo, "evil-skill"); err == nil {
+			t.Fatalf("expected %q to be rejected", repo)
+		}
+		if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "evil-skill")); !os.IsNotExist(err) {
+			t.Fatalf("install dir must not be created for %q", repo)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude")); !os.IsNotExist(err) {
+		t.Fatal("skills dir must not be created when validation fails")
+	}
+}
+
+// TestInstallFromGitHubRejectsInvalidNameWithoutCreatingDir 确保路径穿越名称
+// 不会创建技能目录。
+func TestInstallFromGitHubRejectsInvalidNameWithoutCreatingDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	svc := NewService()
+
+	if err := svc.InstallFromGitHub("https://github.com/owner/repo", "../escape"); err == nil {
+		t.Fatal("expected path traversal name to be rejected")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude")); !os.IsNotExist(err) {
+		t.Fatal("skills dir must not be created when validation fails")
+	}
+}

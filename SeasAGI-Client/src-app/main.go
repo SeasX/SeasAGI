@@ -265,19 +265,10 @@ func runDesktop() {
 				runtime.WindowShow(app.ctx)
 			},
 		},
+		// 渲染层只允许访问 main.App 门面（CL-S5）：不再绑定 auth/config/gateway 等内部服务，
+		// 避免渲染层（含被注入的页面）直接读取平台令牌或渠道明文密钥。
 		Bind: []interface{}{
 			app,
-			authSvc,
-			configSvc,
-			gatewaySvc,
-			logSvc,
-			discoverySvc,
-			mcpSvc,
-			promptsSvc,
-			skillsSvc,
-			usageSvc,
-			presetsSvc,
-			sessionsSvc,
 		},
 		Menu: appMenu,
 		Mac: &mac.Options{

@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/SeasAGI/SeasAGI-Client/internal/httpguard"
 )
 
 const (
@@ -35,8 +38,20 @@ func NewWSBridge(svc *Service) *WSBridge {
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				// Allow connections from any origin for local proxy usage
-				return true
+				// 无 Origin 的客户端（CLI/SDK）直接放行；浏览器必须来自本机或与 Host 同源，
+				// 防止任意网页借用用户浏览器连接本地网关（CL-S9）。
+				origin := strings.TrimSpace(r.Header.Get("Origin"))
+				if origin == "" {
+					return true
+				}
+				if httpguard.IsLocalOrigin(origin) {
+					return true
+				}
+				u, err := url.Parse(origin)
+				if err != nil {
+					return false
+				}
+				return strings.EqualFold(u.Host, r.Host)
 			},
 		},
 		svc:   svc,

@@ -88,6 +88,8 @@ func NewCA(certDir string) (*CertificateAuthority, error) {
 	if err := os.MkdirAll(certDir, 0o700); err != nil {
 		return nil, fmt.Errorf("mkdir certDir: %w", err)
 	}
+	// 既有目录可能是早期版本以更宽权限创建的，启动时统一收紧（CL-S22）。
+	_ = os.Chmod(certDir, 0o700)
 	return &CertificateAuthority{
 		certPath: filepath.Join(certDir, "ca.pem"),
 		keyPath:  filepath.Join(certDir, "ca-key.pem"),
@@ -141,6 +143,9 @@ func (ca *CertificateAuthority) loadFromDisk() error {
 
 	ca.caCert = caCert
 	ca.caKey = caKey
+	// CA 私钥是全机 TLS 信任的根，加载后再次收紧权限（CL-S22）。
+	_ = os.Chmod(ca.keyPath, 0o600)
+	_ = os.Chmod(ca.certPath, 0o644)
 	return nil
 }
 

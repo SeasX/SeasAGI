@@ -95,3 +95,56 @@ func TestErrorSanitizerInternalHost(t *testing.T) {
 		t.Errorf("Sanitize should mask internal host, got %q", result)
 	}
 }
+
+// TestErrorSanitizerRedactsCredentials 验证上游错误体回显的凭证不会进入日志/前端（CL-S13）。
+func TestErrorSanitizerRedactsCredentials(t *testing.T) {
+	s := NewErrorSanitizer(true)
+
+	cases := []struct {
+		name  string
+		input string
+		leaks []string
+	}{
+		{
+			name:  "bearer header",
+			input: "upstream rejected Authorization: Bearer sk-abcdefghijklmnopqrstuvwx",
+			leaks: []string{"sk-abcdefghijklmnopqrstuvwx"},
+		},
+		{
+			name:  "openai key",
+			input: "invalid api key sk-proj-1234567890abcdefghij",
+			leaks: []string{"sk-proj-1234567890abcdefghij"},
+		},
+		{
+			name:  "google key",
+			input: "API key not valid: AIzaSyA1234567890abcdefghijklmnopqrstu",
+			leaks: []string{"AIzaSyA1234567890abcdefghijklmnopqrstu"},
+		},
+		{
+			name:  "github token",
+			input: "bad credentials ghp_1234567890abcdefghijABCDEFGHIJ",
+			leaks: []string{"ghp_1234567890abcdefghijABCDEFGHIJ"},
+		},
+		{
+			name:  "x-api-key field",
+			input: `{"error":"unauthorized","x-api-key":"plain-secret-value"}`,
+			leaks: []string{"plain-secret-value"},
+		},
+		{
+			name:  "access token field",
+			input: `refresh failed: access_token=ya29.secret-value`,
+			leaks: []string{"ya29.secret-value"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := s.Sanitize(tc.input)
+			for _, leak := range tc.leaks {
+				if strings.Contains(result, leak) {
+					t.Errorf("Sanitize(%q) = %q, still contains credential %q", tc.input, result, leak)
+				}
+			}
+		})
+	}
+}

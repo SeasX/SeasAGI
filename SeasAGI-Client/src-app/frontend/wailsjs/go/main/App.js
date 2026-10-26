@@ -278,10 +278,6 @@ export function GetPlatformAPIBaseURL() {
   return window['go']['main']['App']['GetPlatformAPIBaseURL']();
 }
 
-export function GetPlatformToken() {
-  return window['go']['main']['App']['GetPlatformToken']();
-}
-
 export function GetPluginAuditLog() {
   return window['go']['main']['App']['GetPluginAuditLog']();
 }

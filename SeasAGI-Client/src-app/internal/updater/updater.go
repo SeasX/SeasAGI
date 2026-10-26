@@ -220,7 +220,15 @@ func openReleasesPage() error {
 	return exec.Command("open", "https://github.com/SeasX/seasagi/releases").Run()
 }
 
-// validateHTTPSURL 强制下载与清单地址使用 HTTPS，避免明文传输被中间人替换。
+// allowedUpdateHosts 是更新链路允许的发布域白名单，防止 API 响应或重定向把安装包导向任意主机（CL-S11）。
+var allowedUpdateHosts = map[string]bool{
+	"api.github.com":                true,
+	"github.com":                    true,
+	"objects.githubusercontent.com": true,
+	"raw.githubusercontent.com":     true,
+}
+
+// validateHTTPSURL 强制下载与清单地址使用 HTTPS 且命中发布域白名单，避免明文传输或域名替换。
 func validateHTTPSURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -232,6 +240,9 @@ func validateHTTPSURL(raw string) error {
 	if u.Host == "" {
 		return fmt.Errorf("url has no host: %s", raw)
 	}
+	if !allowedUpdateHosts[strings.ToLower(u.Hostname())] {
+		return fmt.Errorf("refusing untrusted release host: %s", u.Hostname())
+	}
 	return nil
 }
 
@@ -239,10 +250,8 @@ func newSecureHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if req.URL.Scheme != "https" {
-				return fmt.Errorf("refusing redirect to non-https url: %s", req.URL.String())
-			}
-			return nil
+			// 每一跳都重新校验 scheme 与发布域，防止 30x 把下载导向非白名单主机。
+			return validateHTTPSURL(req.URL.String())
 		},
 	}
 }
@@ -413,7 +422,8 @@ func installDMG(dmgPath string) error {
 	defer os.RemoveAll(mountPoint)
 
 	exec.Command("hdiutil", "detach", mountPoint, "-quiet").Run()
-	if err := exec.Command("hdiutil", "attach", dmgPath, "-mountpoint", mountPoint, "-quiet").Run(); err != nil {
+	// 只读、无浏览方式挂载，缩小校验与复制之间被替换的窗口（CL-S11）。
+	if err := exec.Command("hdiutil", "attach", dmgPath, "-mountpoint", mountPoint, "-readonly", "-nobrowse", "-noautoopen", "-quiet").Run(); err != nil {
 		return fmt.Errorf("mount DMG failed: %w", err)
 	}
 	defer exec.Command("hdiutil", "detach", mountPoint, "-quiet").Run()

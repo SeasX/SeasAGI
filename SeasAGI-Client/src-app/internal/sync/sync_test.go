@@ -382,3 +382,56 @@ func TestSyncPullRejectsUnsignedOrTamperedConfig(t *testing.T) {
 		t.Fatal("payload 被篡改的远端配置必须被拒绝")
 	}
 }
+
+// TestSyncDirsTwoPhaseKeepsTargetUnchanged 断言两阶段拉取：任一文件验签失败时不写入任何文件（CS-06）。
+func TestSyncDirsTwoPhaseKeepsTargetUnchanged(t *testing.T) {
+	t.Setenv("SEASAGI_SYNC_HMAC_KEY", "test-sync-key")
+
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+
+	// 源目录：一个合法信封 + 一个用错误密钥签名、无法通过验签的信封。
+	valid, err := sealSyncFile([]byte(`[{"name":"valid"}]`))
+	if err != nil {
+		t.Fatalf("seal valid config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "mcp_servers.json"), valid, 0o600); err != nil {
+		t.Fatalf("write valid remote: %v", err)
+	}
+	bad, err := sealSyncPayload([]byte(`[{"name":"bad"}]`), "wrong-key")
+	if err != nil {
+		t.Fatalf("seal bad config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "prompt_presets.json"), bad, 0o600); err != nil {
+		t.Fatalf("write bad remote: %v", err)
+	}
+
+	// 目标目录已有旧内容，两阶段拉取失败后必须原样保留。
+	oldMCP := []byte(`[{"name":"local-old"}]`)
+	oldPreset := []byte(`[{"name":"preset-old"}]`)
+	if err := os.WriteFile(filepath.Join(dstDir, "mcp_servers.json"), oldMCP, 0o600); err != nil {
+		t.Fatalf("seed local mcp: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dstDir, "prompt_presets.json"), oldPreset, 0o600); err != nil {
+		t.Fatalf("seed local preset: %v", err)
+	}
+
+	if err := syncDirs(srcDir, dstDir, openSyncFile); err == nil {
+		t.Fatal("存在验签失败文件时 syncDirs 必须返回错误")
+	}
+
+	gotMCP, err := os.ReadFile(filepath.Join(dstDir, "mcp_servers.json"))
+	if err != nil {
+		t.Fatalf("read local mcp: %v", err)
+	}
+	if string(gotMCP) != string(oldMCP) {
+		t.Fatalf("验签失败时目标文件被修改: %s", gotMCP)
+	}
+	gotPreset, err := os.ReadFile(filepath.Join(dstDir, "prompt_presets.json"))
+	if err != nil {
+		t.Fatalf("read local preset: %v", err)
+	}
+	if string(gotPreset) != string(oldPreset) {
+		t.Fatalf("验签失败时目标文件被修改: %s", gotPreset)
+	}
+}

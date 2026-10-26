@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1310,5 +1311,181 @@ func TestListChannels_StripsAllCredentials(t *testing.T) {
 	// 非敏感展示字段必须保留，避免脱敏把列表清空。
 	if channels[0].DisplayName != "secret-channel" || channels[0].BaseURL != "https://api.example.com" {
 		t.Fatalf("脱敏后展示字段缺失: %+v", channels[0])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 原子写 / 权限 / 凭证迁移 / URL 校验
+// ---------------------------------------------------------------------------
+
+// fakeCredentialStore 在内存中模拟系统安全存储，避免测试触碰真实钥匙串。
+type fakeCredentialStore struct {
+	single  map[string]string
+	multi   map[string][]string
+	secrets map[string]string
+}
+
+func newFakeCredentialStore() *fakeCredentialStore {
+	return &fakeCredentialStore{
+		single:  make(map[string]string),
+		multi:   make(map[string][]string),
+		secrets: make(map[string]string),
+	}
+}
+
+func (f *fakeCredentialStore) SaveChannelKey(channelID, apiKey string) error {
+	f.single[channelID] = apiKey
+	return nil
+}
+
+func (f *fakeCredentialStore) GetChannelKey(channelID string) (string, error) {
+	if v, ok := f.single[channelID]; ok {
+		return v, nil
+	}
+	return "", fmt.Errorf("key not found: %s", channelID)
+}
+
+func (f *fakeCredentialStore) SaveChannelKeys(channelID string, apiKeys []string) error {
+	f.multi[channelID] = append([]string(nil), apiKeys...)
+	return nil
+}
+
+func (f *fakeCredentialStore) GetChannelKeys(channelID string) ([]string, error) {
+	if v, ok := f.multi[channelID]; ok {
+		return v, nil
+	}
+	return nil, fmt.Errorf("keys not found: %s", channelID)
+}
+
+func (f *fakeCredentialStore) SaveSecret(name, value string) error {
+	f.secrets[name] = value
+	return nil
+}
+
+func (f *fakeCredentialStore) GetSecret(name string) (string, error) {
+	if v, ok := f.secrets[name]; ok {
+		return v, nil
+	}
+	return "", fmt.Errorf("secret not found: %s", name)
+}
+
+// TestSaveLockedUsesPrivatePermissions 断言配置目录 0700、配置文件 0600。
+func TestSaveLockedUsesPrivatePermissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "private")
+	svc := &Service{
+		config:         AppConfig{},
+		channels:       []Channel{},
+		path:           filepath.Join(dir, "config.json"),
+		secrets:        newFakeCredentialStore(),
+		pendingSecrets: make(map[string]pendingChannelSecrets),
+		savedSecretSig: make(map[string]string),
+	}
+	if err := svc.saveLocked(); err != nil {
+		t.Fatalf("saveLocked: %v", err)
+	}
+
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat config dir: %v", err)
+	}
+	if perm := dirInfo.Mode().Perm(); perm != 0o700 {
+		t.Errorf("config dir perm = %o, want 0700", perm)
+	}
+	fileInfo, err := os.Stat(svc.path)
+	if err != nil {
+		t.Fatalf("stat config file: %v", err)
+	}
+	if perm := fileInfo.Mode().Perm(); perm != 0o600 {
+		t.Errorf("config file perm = %o, want 0600", perm)
+	}
+}
+
+// TestRestoreChannelSecretsMigratesSingleKey 断言旧配置中的单 key 会迁移进安全存储，
+// 落盘 JSON 不再包含明文，且重启后仍可从安全存储读回。
+func TestRestoreChannelSecretsMigratesSingleKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	legacy := `{"config":{},"channels":[{"channel_id":"ch_single","channel_type":"custom","display_name":"single","base_url":"https://api.example.com","api_key":"sk-legacy-single","enabled":true}]}`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	store := newFakeCredentialStore()
+	svc := &Service{
+		path:           path,
+		secrets:        store,
+		pendingSecrets: make(map[string]pendingChannelSecrets),
+		savedSecretSig: make(map[string]string),
+	}
+	if err := svc.load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := store.single["ch_single"]; got != "sk-legacy-single" {
+		t.Fatalf("single key not migrated to credential store, got %q", got)
+	}
+
+	if err := svc.saveLocked(); err != nil {
+		t.Fatalf("saveLocked: %v", err)
+	}
+	if raw := string(mustReadFile(t, path)); strings.Contains(raw, "sk-legacy-single") {
+		t.Fatalf("config file must not contain plaintext key: %s", raw)
+	}
+
+	reloaded := &Service{
+		path:           path,
+		secrets:        store,
+		pendingSecrets: make(map[string]pendingChannelSecrets),
+		savedSecretSig: make(map[string]string),
+	}
+	if err := reloaded.load(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	channels, err := reloaded.ListChannelsWithCredentials()
+	if err != nil {
+		t.Fatalf("ListChannelsWithCredentials: %v", err)
+	}
+	if len(channels) != 1 || channels[0].APIKey != "sk-legacy-single" {
+		t.Fatalf("expected key read back from credential store, got %+v", channels)
+	}
+}
+
+// TestSaveCustomChannelRejectsInsecureBaseURL 断言明文 http 与链路本地地址被拒绝。
+func TestSaveCustomChannelRejectsInsecureBaseURL(t *testing.T) {
+	svc := newTestService(t)
+	for _, rawURL := range []string{"http://example.com", "http://169.254.169.254", "https://169.254.169.254"} {
+		if _, err := svc.SaveCustomChannel(Channel{DisplayName: "bad", BaseURL: rawURL}); err == nil {
+			t.Fatalf("expected base url %q to be rejected", rawURL)
+		}
+	}
+	if channels, _ := svc.ListChannels(); len(channels) != 0 {
+		t.Fatalf("rejected channels must not be saved, got %d", len(channels))
+	}
+}
+
+// TestSetPlatformAPIBaseURLRejectsInsecure 断言平台地址同样拒绝明文/链路本地目标。
+func TestSetPlatformAPIBaseURLRejectsInsecure(t *testing.T) {
+	svc := newTestService(t)
+	for _, rawURL := range []string{"http://example.com", "http://169.254.169.254"} {
+		if err := svc.SetPlatformAPIBaseURL(rawURL); err == nil {
+			t.Fatalf("expected platform url %q to be rejected", rawURL)
+		}
+	}
+	if got := svc.GetPlatformAPIBaseURL(); got != "https://seasagi.seasx.ai/api/v1" {
+		t.Errorf("platform url changed after rejection: %q", got)
+	}
+}
+
+// TestUpsertPlatformChannelsRejectsInsecureBaseURL 断言平台渠道同样执行 URL 校验。
+func TestUpsertPlatformChannelsRejectsInsecureBaseURL(t *testing.T) {
+	svc := newTestService(t)
+	err := svc.UpsertPlatformChannels([]Channel{{
+		ChannelID: "plat-bad",
+		BaseURL:   "http://169.254.169.254",
+		Enabled:   true,
+	}})
+	if err == nil {
+		t.Fatal("expected insecure platform channel base url to be rejected")
+	}
+	if channels, _ := svc.ListChannels(); len(channels) != 0 {
+		t.Fatalf("rejected platform channels must not be saved, got %d", len(channels))
 	}
 }

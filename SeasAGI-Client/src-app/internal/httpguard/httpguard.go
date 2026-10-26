@@ -47,11 +47,17 @@ func isLocalHost(host string) bool {
 	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
-// isLocalOrigin 判断 Origin 是否指向本机（允许 http/https 与端口）。
-func isLocalOrigin(origin string) bool {
+// IsLocalOrigin 判断 Origin 是否指向本机（允许 http/https 与端口）。
+// 供 WebSocket 等需要复用同一判定逻辑的入口使用。
+func IsLocalOrigin(origin string) bool {
 	trimmed := strings.TrimPrefix(strings.TrimPrefix(origin, "http://"), "https://")
 	if idx := strings.Index(trimmed, "/"); idx >= 0 {
 		trimmed = trimmed[:idx]
 	}
 	return isLocalHost(trimmed)
+}
+
+// isLocalOrigin 判断 Origin 是否指向本机（允许 http/https 与端口）。
+func isLocalOrigin(origin string) bool {
+	return IsLocalOrigin(origin)
 }
