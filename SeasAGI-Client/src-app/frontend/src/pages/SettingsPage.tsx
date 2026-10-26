@@ -420,7 +420,7 @@ export function SettingsPage() {
           <div className="tab-content section-card">
             <div className="section-heading">
               <h2>MITM Proxy</h2>
-              <p className="hint">一键接管 LLM API 流量，自动路由到本地网关。</p>
+              <p className="hint">{t("settings.mitmProxySubtitle")}</p>
             </div>
             {mitmError && <div className="error-msg" style={{ marginTop: 12 }}>{mitmError}</div>}
             <div
@@ -441,7 +441,7 @@ export function SettingsPage() {
                   }
                   await loadMITMState();
                 } catch (e) {
-                  setMitmError(getErrorMessage(e, isRunning ? "停止失败" : "启动失败"));
+                  setMitmError(getErrorMessage(e, isRunning ? t("settings.mitmStopFailed") : t("settings.mitmStartFailed")));
                 } finally {
                   setMitmToggling(false);
                 }
@@ -454,12 +454,20 @@ export function SettingsPage() {
             >
               <div>
                 <div className="settings-toggle-title">
-                  {mitmToggling ? "切换中..." : mitmStatus?.state === "running" ? "已启用" : "未启用"}
+                  {mitmToggling
+                    ? t("settings.mitmSwitching")
+                    : mitmStatus?.state === "running"
+                      ? t("settings.mitmStatusEnabled")
+                      : t("settings.mitmStatusDisabled")}
                 </div>
                 <div className="hint">
                   {mitmStatus?.state === "running"
-                    ? `代理端口 ${mitmStatus.proxy_port} · CA ${mitmStatus.ca_installed ? "已安装" : "未安装"} · 系统代理 ${mitmStatus.system_proxy ? "已设置" : "未设置"}`
-                    : "点击开启一键接管 AI API 流量"}
+                    ? t("settings.mitmRunningHint", {
+                        port: String(mitmStatus.proxy_port ?? "-"),
+                        ca: mitmStatus.ca_installed ? t("settings.mitmCaInstalled") : t("settings.mitmCaNotInstalled"),
+                        proxy: mitmStatus.system_proxy ? t("settings.mitmProxySet") : t("settings.mitmProxyNotSet"),
+                      })
+                    : t("settings.mitmEnableHint")}
                 </div>
                 <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <span className={`badge ${mitmStatus?.system_proxy_active ? "badge-green" : "badge-red"}`}>
@@ -487,8 +495,8 @@ export function SettingsPage() {
           {/* 域名配置 + 连通性检查 */}
           <div className="tab-content section-card">
             <div className="section-heading">
-              <h2>接管域名</h2>
-              <p className="hint">被接管的域名流量将通过 MITM 代理转发到本地网关，点击「测试」检查连通性。</p>
+              <h2>{t("settings.mitmDomainsTitle")}</h2>
+              <p className="hint">{t("settings.mitmDomainsHint")}</p>
             </div>
             <div className="form-row">
               <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
@@ -512,18 +520,18 @@ export function SettingsPage() {
                     setMitmNewRule("");
                     await loadMITMState();
                   } catch (e) {
-                    setMitmError(getErrorMessage(e, "添加域名失败"));
+                    setMitmError(getErrorMessage(e, t("settings.mitmAddDomainFailed")));
                   }
                 }}
                 className="btn-primary btn-sm"
                 style={{ height: 40, alignSelf: "flex-end" }}
               >
-                添加
+                {t("settings.mitmAdd")}
               </button>
             </div>
             <div style={{ marginTop: 12 }}>
               {mitmRules.length === 0 && (
-                <p className="hint">暂无接管域名，请添加需要拦截的 API 域名。</p>
+                <p className="hint">{t("settings.mitmNoDomains")}</p>
               )}
               {mitmRules.map((domain) => {
                 const testState = mitmDomainTests[domain];
@@ -531,13 +539,15 @@ export function SettingsPage() {
                 return (
                   <div key={domain} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
                     <span className="hint" style={{ marginBottom: 0, minWidth: 180, fontFamily: "monospace" }}>{domain}</span>
-                    {testState?.loading && <span className="badge badge-yellow">测试中...</span>}
+                    {testState?.loading && <span className="badge badge-yellow">{t("settings.mitmTesting")}</span>}
                     {testResult && !testState?.loading && (
                       <>
                         <span className={`badge ${testResult.reachable ? "badge-green" : "badge-red"}`}>
-                          {testResult.reachable ? `可达 ${testResult.status_code}` : "不可达"}
+                          {testResult.reachable
+                            ? t("settings.mitmReachable", { status: String(testResult.status_code ?? "-") })
+                            : t("settings.mitmUnreachable")}
                         </span>
-                        {testResult.intercepted && <span className="badge badge-blue">已接管</span>}
+                        {testResult.intercepted && <span className="badge badge-blue">{t("settings.mitmIntercepted")}</span>}
                         {testResult.latency_ms > 0 && <span className="hint" style={{ marginBottom: 0 }}>{testResult.latency_ms}ms</span>}
                         {testResult.error && <span className="hint" style={{ marginBottom: 0, color: "var(--error, #e53e3e)" }}>{String(testResult.error).slice(0, 60)}</span>}
                       </>
@@ -556,7 +566,7 @@ export function SettingsPage() {
                         className="btn-secondary btn-sm"
                         disabled={mitmStatus?.state !== "running" || testState?.loading}
                       >
-                        测试
+                        {t("settings.mitmTest")}
                       </button>
                       <button
                         onClick={async () => {
@@ -570,12 +580,12 @@ export function SettingsPage() {
                             });
                             await loadMITMState();
                           } catch (e) {
-                            setMitmError(getErrorMessage(e, "移除域名失败"));
+                            setMitmError(getErrorMessage(e, t("settings.mitmRemoveDomainFailed")));
                           }
                         }}
                         className="btn-danger btn-sm"
                       >
-                        移除
+                        {t("settings.mitmRemove")}
                       </button>
                     </div>
                   </div>
@@ -595,8 +605,8 @@ export function SettingsPage() {
           {/* CLI 兼容提示 */}
           <div className="tab-content section-card">
             <div className="section-heading">
-              <h2>CLI 兼容</h2>
-              <p className="hint">终端/CLI 工具如不读取系统代理，可手动设置环境变量。</p>
+              <h2>{t("settings.mitmCliCompatTitle")}</h2>
+              <p className="hint">{t("settings.mitmCliCompatHint")}</p>
             </div>
             <MITMEnvHint running={mitmStatus?.state === "running"} />
           </div>
@@ -604,17 +614,17 @@ export function SettingsPage() {
           {/* 已知局限（不接管） */}
           <div className="tab-content section-card">
             <div className="section-heading">
-              <h2>已知局限（不接管）</h2>
-              <p className="hint">一键接管基于系统代理（HTTP/HTTPS over TCP）与本地 CA 实现，以下流量无法被监控或治理，属于客观盲区：</p>
+              <h2>{t("settings.mitmLimitationsTitle")}</h2>
+              <p className="hint">{t("settings.mitmLimitationsHint")}</p>
             </div>
             <ul className="hint" style={{ margin: 0, paddingLeft: 20, lineHeight: 1.9 }}>
-              <li><strong>HTTP/3（QUIC / UDP 443）</strong>：系统代理仅接管 TCP，基于 UDP 的流量不会被拦截。</li>
-              <li><strong>h2 / gRPC 长连接</strong>：仅对标准 HTTP/HTTPS 请求做解析与治理，gRPC 等二进制长连接不被改写。</li>
-              <li><strong>证书固定（Certificate Pinning）客户端</strong>：内置证书校验的应用会拒绝本地 CA，从而绕过 MITM。</li>
-              <li><strong>不读取系统代理的进程</strong>：自行实现网络栈或显式指定代理的 CLI/工具需手动设置环境变量（见上）。</li>
-              <li><strong>未纳入接管域名清单的流量</strong>：仅清单内的域名会被转发到本地网关。</li>
+              <li><strong>{t("settings.mitmLimitation1Title")}</strong>：{t("settings.mitmLimitation1Desc")}</li>
+              <li><strong>{t("settings.mitmLimitation2Title")}</strong>：{t("settings.mitmLimitation2Desc")}</li>
+              <li><strong>{t("settings.mitmLimitation3Title")}</strong>：{t("settings.mitmLimitation3Desc")}</li>
+              <li><strong>{t("settings.mitmLimitation4Title")}</strong>：{t("settings.mitmLimitation4Desc")}</li>
+              <li><strong>{t("settings.mitmLimitation5Title")}</strong>：{t("settings.mitmLimitation5Desc")}</li>
             </ul>
-            <p className="hint" style={{ marginTop: 8 }}>WebSocket（ws/wss）流量已复用同一网关主链路，可正常接管与记账。</p>
+            <p className="hint" style={{ marginTop: 8 }}>{t("settings.mitmWebSocketNote")}</p>
           </div>
         </div>
       )}
@@ -1041,6 +1051,7 @@ function CloudSyncPanel() {
 }
 
 function MITMInterceptLog() {
+  const { t } = useTranslation();
   const [intercepts, setIntercepts] = useState<Record<string, any>[]>([]);
 
   useEffect(() => {
@@ -1062,19 +1073,19 @@ function MITMInterceptLog() {
   return (
     <div className="tab-content section-card">
       <div className="section-heading">
-        <h2>拦截日志</h2>
-        <p className="hint">最近 20 条被接管的请求（每 3 秒刷新）</p>
+        <h2>{t("settings.mitmInterceptLogTitle")}</h2>
+        <p className="hint">{t("settings.mitmInterceptLogHint")}</p>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ textAlign: "left", borderBottom: "1px solid var(--border, #333)" }}>
-              <th style={{ padding: "4px 8px" }}>时间</th>
-              <th style={{ padding: "4px 8px" }}>方法</th>
-              <th style={{ padding: "4px 8px" }}>域名</th>
-              <th style={{ padding: "4px 8px" }}>路径</th>
-              <th style={{ padding: "4px 8px" }}>状态</th>
-              <th style={{ padding: "4px 8px" }}>延迟</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColTime")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColMethod")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColDomain")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColPath")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColStatus")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColLatency")}</th>
             </tr>
           </thead>
           <tbody>
@@ -1102,6 +1113,7 @@ function MITMInterceptLog() {
 }
 
 function MITMEnvHint({ running }: { running: boolean }) {
+  const { t } = useTranslation();
   const [hint, setHint] = useState<Record<string, string> | null>(null);
 
   useEffect(() => {
@@ -1117,7 +1129,7 @@ function MITMEnvHint({ running }: { running: boolean }) {
   }, [running]);
 
   if (!running || !hint) {
-    return <p className="hint">启动 MITM 代理后显示 CLI 环境变量设置命令。</p>;
+    return <p className="hint">{t("settings.mitmEnvHint")}</p>;
   }
 
   return (
@@ -1131,11 +1143,12 @@ function MITMEnvHint({ running }: { running: boolean }) {
           onClick={() => navigator.clipboard?.writeText(hint.export_cmds)}
           className="btn-secondary btn-sm"
           style={{ height: 40 }}
+          aria-label={t("settings.mitmCopy")}
         >
-          复制
+          {t("settings.mitmCopy")}
         </button>
       </div>
-      <p className="hint" style={{ marginTop: 8 }}>停止后取消设置：</p>
+      <p className="hint" style={{ marginTop: 8 }}>{t("settings.mitmUnsetHint")}</p>
       <div className="form-row" style={{ marginTop: 4 }}>
         <code style={{ flex: 1, padding: 8, background: "var(--bg-code, #1e1e1e)", borderRadius: 4, fontSize: 13, overflowX: "auto", whiteSpace: "nowrap" }}>
           {hint.unset_cmds}
@@ -1144,8 +1157,9 @@ function MITMEnvHint({ running }: { running: boolean }) {
           onClick={() => navigator.clipboard?.writeText(hint.unset_cmds)}
           className="btn-secondary btn-sm"
           style={{ height: 40 }}
+          aria-label={t("settings.mitmCopy")}
         >
-          复制
+          {t("settings.mitmCopy")}
         </button>
       </div>
     </div>

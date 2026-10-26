@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -1265,4 +1266,49 @@ func mustReadFile(t *testing.T, path string) []byte {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return data
+}
+
+// TestListChannels_StripsAllCredentials 断言对外渠道列表不含任何凭证字段（CL-S1）。
+func TestListChannels_StripsAllCredentials(t *testing.T) {
+	svc := newTestService(t)
+	svc.channels = []Channel{{
+		ChannelID:         "ch_secret",
+		ChannelType:       "custom",
+		ProviderType:      "openai",
+		DisplayName:       "secret-channel",
+		BaseURL:           "https://api.example.com",
+		Enabled:           true,
+		APIKey:            "sk-live-plain-single",
+		APIKeys:           []string{"sk-live-plain-single", "sk-live-plain-second"},
+		OAuthRefreshToken: "oauth-refresh-plain",
+		OAuthClientSecret: "oauth-secret-plain",
+		Models:            []string{"gpt-4o"},
+	}}
+
+	channels, err := svc.ListChannels()
+	if err != nil {
+		t.Fatalf("ListChannels: %v", err)
+	}
+	if len(channels) != 1 {
+		t.Fatalf("ListChannels returned %d channels, want 1", len(channels))
+	}
+
+	raw, err := json.Marshal(channels)
+	if err != nil {
+		t.Fatalf("marshal channels: %v", err)
+	}
+	for _, secret := range []string{"sk-live-plain-single", "sk-live-plain-second", "oauth-refresh-plain", "oauth-secret-plain"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("ListChannels 输出泄露凭证 %q: %s", secret, raw)
+		}
+	}
+	for _, field := range []string{`"api_key"`, `"api_keys"`, `"oauth_refresh_token"`, `"oauth_client_secret"`} {
+		if strings.Contains(string(raw), field) {
+			t.Fatalf("ListChannels 输出不应包含凭证字段 %s: %s", field, raw)
+		}
+	}
+	// 非敏感展示字段必须保留，避免脱敏把列表清空。
+	if channels[0].DisplayName != "secret-channel" || channels[0].BaseURL != "https://api.example.com" {
+		t.Fatalf("脱敏后展示字段缺失: %+v", channels[0])
+	}
 }

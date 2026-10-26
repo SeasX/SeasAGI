@@ -2,8 +2,15 @@ package logging
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 )
+
+// PayloadLoggingEnabled 返回是否允许把请求体写入本地日志。
+// 默认关闭；仅当显式设置 SEASAGI_LOG_PAYLOADS=1 时开启，避免 prompt/PII 长期落盘。
+func PayloadLoggingEnabled() bool {
+	return strings.TrimSpace(os.Getenv("SEASAGI_LOG_PAYLOADS")) == "1"
+}
 
 // sensitiveKeys 需要脱敏的敏感 key 列表（小写匹配）。
 var sensitiveKeys = map[string]bool{

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
-import { platformRequest } from "../utils/commands";
+import { platformRequest, asPlatformRecord } from "../utils/commands";
+
+// 轮询间隔为常量，保证 effect 依赖收敛到稳定值（不随渲染变化而重置定时器）。
+const SYNC_INTERVAL_MS = 60000;
 
 export function useConfigSync() {
   const cloudBilling = useAppStore((s) => s.cloudBilling);
@@ -9,22 +12,29 @@ export function useConfigSync() {
   const syncState = useAppStore((s) => s.syncState);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // 用 ref 持有最新配置，供同步逻辑读取；避免把配置写回自身依赖导致重复同步。
+  const appConfigRef = useRef(appConfig);
+  appConfigRef.current = appConfig;
+
   const isTeamsOrAbove = cloudBilling?.plan_id === "teams" || cloudBilling?.plan_id === "enterprise";
   const isEnterprise = cloudBilling?.plan_id === "enterprise";
+  // 配置异步加载完成后再开始同步，避免首个定时器建立在空配置上。
+  const configReady = appConfig !== null;
 
   const doSync = useCallback(async () => {
     if (!isTeamsOrAbove) return;
     setSyncState({ status: "syncing" });
     try {
+      const currentConfig = appConfigRef.current;
       const syncR = await platformRequest("GET", "/tenant-admin/config/sync");
       if (syncR.status >= 400) { setSyncState({ status: "error" }); return; }
-      const syncData = syncR.body;
+      const syncData = asPlatformRecord(syncR.body);
       const remoteVersion = syncData.config_version || 0;
 
       const conflicts: { field: string; local_value: string; remote_value: string; severity: "info" | "warning" | "error" }[] = [];
 
-      if (appConfig && syncData.strategies?.length > 0) {
-        const localStrategy = appConfig.routing_strategy || "fallback";
+      if (currentConfig && syncData.strategies?.length > 0) {
+        const localStrategy = currentConfig.routing_strategy || "fallback";
         const remoteStrategy = syncData.strategies[0]?.strategy_type || "";
         if (remoteStrategy && localStrategy !== remoteStrategy) {
           conflicts.push({
@@ -40,10 +50,10 @@ export function useConfigSync() {
         try {
           const pushR = await platformRequest("GET", "/enterprise/config/push");
           if (pushR.status < 400) {
-            const pushData = pushR.body;
+            const pushData = asPlatformRecord(pushR.body);
             if (pushData.model_policy?.allowed_models) {
               const allowed = pushData.model_policy.allowed_models;
-              if (appConfig && !JSON.stringify(appConfig.model_combos).includes(allowed.replace(/^\[|\]$/g, ""))) {
+              if (currentConfig && !JSON.stringify(currentConfig.model_combos).includes(allowed.replace(/^\[|\]$/g, ""))) {
                 conflicts.push({
                   field: "allowed_models",
                   local_value: "custom",
@@ -67,16 +77,22 @@ export function useConfigSync() {
     } catch {
       setSyncState({ status: "error" });
     }
-  }, [isTeamsOrAbove, isEnterprise, appConfig, syncState.config_version, setSyncState]);
+  }, [isTeamsOrAbove, isEnterprise, setSyncState]);
 
   useEffect(() => {
-    if (!isTeamsOrAbove) return;
-    doSync();
-    intervalRef.current = setInterval(doSync, 60000);
+    if (!isTeamsOrAbove || !configReady) return;
+    void doSync();
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      void doSync();
+    }, SYNC_INTERVAL_MS);
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     };
-  }, [isTeamsOrAbove, doSync]);
+  }, [isTeamsOrAbove, configReady, doSync]);
 
   return { doSync, conflicts: syncState.policy_conflicts };
 }

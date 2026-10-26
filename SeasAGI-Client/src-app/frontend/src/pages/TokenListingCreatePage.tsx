@@ -5,7 +5,9 @@ import {
   listMyAssets,
   platformRequest,
   syncAssetsToCloud,
+  asPlatformRecord,
 } from "../utils/commands";
+import { MoneyInput, parseMoneyInput } from "../components/MoneyInput";
 import { useTranslation } from "../i18n";
 
 type Asset = {
@@ -20,6 +22,7 @@ type Asset = {
 };
 
 type ModelRow = {
+  row_key: string;
   model_id: string;
   wire_protocol: string;
   input_price_per_1m: string;
@@ -29,7 +32,15 @@ type ModelRow = {
 
 type SaleType = "subscription" | "fixed_price" | "discount";
 
+type ImportStatus =
+  | { kind: "idle" }
+  | { kind: "success"; text: string }
+  | { kind: "error"; text: string };
+
 const PROTOCOLS = ["openai-chat", "openai-responses", "anthropic", "gemini"];
+
+let modelRowSeq = 0;
+const nextModelRowKey = () => `model-row-${++modelRowSeq}`;
 
 export function TokenListingCreatePage() {
   const { t } = useTranslation();
@@ -48,6 +59,7 @@ export function TokenListingCreatePage() {
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [importStatus, setImportStatus] = useState<ImportStatus>({ kind: "idle" });
   const currency = "USD";
 
   const selected = useMemo(() => assets.find((a) => a.asset_id === assetID), [assets, assetID]);
@@ -80,6 +92,7 @@ export function TokenListingCreatePage() {
     if (models.length === 0 && selected.models.length > 0) {
       setModels(
         selected.models.map((m) => ({
+          row_key: nextModelRowKey(),
           model_id: m,
           wire_protocol: selected.wire_protocol || "openai-chat",
           input_price_per_1m: "",
@@ -93,7 +106,7 @@ export function TokenListingCreatePage() {
 
   const handleImport = async () => {
     setImporting(true);
-    setError(null);
+    setImportStatus({ kind: "idle" });
     try {
       const localAssets = await exportLocalAssets();
       if (!localAssets || localAssets.length === 0) {
@@ -102,9 +115,15 @@ export function TokenListingCreatePage() {
       const resp = await syncAssetsToCloud(localAssets);
       const synced = resp?.data?.synced ?? localAssets.length;
       await refreshAssets();
-      setError(t("tokenMarket.assetImported").replace("{count}", String(synced)));
+      setImportStatus({
+        kind: "success",
+        text: t("tokenMarket.assetImported", { count: synced }),
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setImportStatus({
+        kind: "error",
+        text: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setImporting(false);
     }
@@ -131,15 +150,15 @@ export function TokenListingCreatePage() {
         currency,
       };
 
-      const quota = parseFloat(quotaPerSlot);
-      const slots = parseInt(capacity, 10);
-
+      const quota = parseMoneyInput(quotaPerSlot, { min: 0.01, precision: 2 });
+      const slots = parseMoneyInput(capacity, { min: 1, max: 100000, integer: true });
+      const priceNum = parseMoneyInput(price, { min: 0.01, precision: 2 });
       if (saleType === "subscription") {
-        if (!price || parseFloat(price) <= 0) throw new Error(t("tokenMarket.weeklyPrice"));
-        if (!slots || slots < 1) throw new Error(t("tokenMarket.capacity"));
-        if (!quota || quota <= 0) throw new Error(t("tokenMarket.quotaPerSlot"));
+        if (priceNum === null) throw new Error(t("money.invalid"));
+        if (slots === null) throw new Error(t("tokenMarket.capacity"));
+        if (quota === null) throw new Error(t("tokenMarket.quotaPerSlot"));
         if (models.length === 0) throw new Error(t("tokenMarket.models"));
-        body.price = parseFloat(price);
+        body.price = priceNum;
         body.capacity = slots;
         body.quota_per_slot_usd = quota;
         body.available_quota = slots * quota;
@@ -147,26 +166,27 @@ export function TokenListingCreatePage() {
         body.models = models.map((m) => ({
           model_id: m.model_id.trim(),
           wire_protocol: m.wire_protocol,
-          input_price_per_1m: parseFloat(m.input_price_per_1m) || 0,
-          output_price_per_1m: parseFloat(m.output_price_per_1m) || 0,
-          weekly_quota_usd: parseFloat(m.weekly_quota_usd) || quota,
+          input_price_per_1m: parseMoneyInput(m.input_price_per_1m, { min: 0, precision: 4 }) ?? 0,
+          output_price_per_1m: parseMoneyInput(m.output_price_per_1m, { min: 0, precision: 4 }) ?? 0,
+          weekly_quota_usd: parseMoneyInput(m.weekly_quota_usd, { min: 0, precision: 2 }) ?? quota,
           enabled: true,
         }));
       } else {
-        if (!price || parseFloat(price) <= 0) throw new Error(t("tokenMarket.price"));
-        body.price = parseFloat(price);
+        if (priceNum === null) throw new Error(t("tokenMarket.price"));
+        if (quota === null) throw new Error(t("tokenMarket.availableQuota"));
+        body.price = priceNum;
         body.available_quota = quota;
         if (saleType === "discount") {
-          const rate = parseFloat(discountRate);
-          if (!rate || rate <= 0 || rate > 1) throw new Error(t("tokenMarket.discountRate"));
+          const rate = parseMoneyInput(discountRate, { min: 0.01, max: 1, precision: 2 });
+          if (rate === null) throw new Error(t("tokenMarket.discountRate"));
           body.discount_rate = rate;
         }
         if (models.length > 0) {
           body.models = models.map((m) => ({
             model_id: m.model_id.trim(),
             wire_protocol: m.wire_protocol,
-            input_price_per_1m: parseFloat(m.input_price_per_1m) || 0,
-            output_price_per_1m: parseFloat(m.output_price_per_1m) || 0,
+            input_price_per_1m: parseMoneyInput(m.input_price_per_1m, { min: 0, precision: 4 }) ?? 0,
+            output_price_per_1m: parseMoneyInput(m.output_price_per_1m, { min: 0, precision: 4 }) ?? 0,
             weekly_quota_usd: 0,
             enabled: true,
           }));
@@ -175,7 +195,7 @@ export function TokenListingCreatePage() {
 
       const resp = await platformRequest("POST", "/token-market/listings", body);
       if (resp.status >= 400) {
-        throw new Error(resp.body?.error || `HTTP ${resp.status}`);
+        throw new Error(String(asPlatformRecord(resp.body).error || `HTTP ${resp.status}`));
       }
       navigate("/token-market/my-listings");
     } catch (err) {
@@ -213,6 +233,15 @@ export function TokenListingCreatePage() {
               {importing ? t("common.submitting") : t("tokenMarket.importAssets")}
             </button>
           </div>
+          {importStatus.kind !== "idle" && (
+            <div
+              className={importStatus.kind === "success" ? "form-success" : "form-error"}
+              role={importStatus.kind === "success" ? "status" : "alert"}
+              style={{ marginTop: 8 }}
+            >
+              {importStatus.text}
+            </div>
+          )}
         </div>
 
         <div className="form-group">
@@ -243,13 +272,12 @@ export function TokenListingCreatePage() {
           <>
             <div className="form-group">
               <label className="form-label">{t("tokenMarket.weeklyPrice")} ({currency})</label>
-              <input
-                className="form-input"
-                type="number"
-                step="0.01"
-                min="0"
+              <MoneyInput
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                onChange={setPrice}
+                min={0.01}
+                max={1000000}
+                precision={2}
                 placeholder="0.00"
                 required
               />
@@ -257,25 +285,23 @@ export function TokenListingCreatePage() {
             <div style={{ display: "flex", gap: 12 }}>
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label">{t("tokenMarket.capacity")}</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  min="1"
-                  step="1"
+                <MoneyInput
                   value={capacity}
-                  onChange={(e) => setCapacity(e.target.value)}
+                  onChange={setCapacity}
+                  min={1}
+                  max={100000}
+                  integer
                   required
                 />
               </div>
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label">{t("tokenMarket.quotaPerSlot")} ({currency})</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                <MoneyInput
                   value={quotaPerSlot}
-                  onChange={(e) => setQuotaPerSlot(e.target.value)}
+                  onChange={setQuotaPerSlot}
+                  min={0.01}
+                  max={1000000}
+                  precision={2}
                   required
                 />
               </div>
@@ -295,40 +321,36 @@ export function TokenListingCreatePage() {
           <>
             <div className="form-group">
               <label className="form-label">{t("tokenMarket.price")} ({currency})</label>
-              <input
-                className="form-input"
-                type="number"
-                step="0.01"
-                min="0"
+              <MoneyInput
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                onChange={setPrice}
+                min={0.01}
+                max={1000000}
+                precision={2}
                 required
               />
             </div>
             {saleType === "discount" && (
               <div className="form-group">
                 <label className="form-label">{t("tokenMarket.discountRate")} (0-1)</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="1"
+                <MoneyInput
                   value={discountRate}
-                  onChange={(e) => setDiscountRate(e.target.value)}
+                  onChange={setDiscountRate}
+                  min={0.01}
+                  max={1}
+                  precision={2}
                   required
                 />
               </div>
             )}
             <div className="form-group">
               <label className="form-label">{t("tokenMarket.availableQuota")}</label>
-              <input
-                className="form-input"
-                type="number"
-                step="0.01"
-                min="0.01"
+              <MoneyInput
                 value={quotaPerSlot}
-                onChange={(e) => setQuotaPerSlot(e.target.value)}
+                onChange={setQuotaPerSlot}
+                min={0.01}
+                max={1000000}
+                precision={2}
                 required
               />
             </div>
@@ -345,6 +367,7 @@ export function TokenListingCreatePage() {
                 setModels((prev) => [
                   ...prev,
                   {
+                    row_key: nextModelRowKey(),
                     model_id: "",
                     wire_protocol: selected?.wire_protocol || "openai-chat",
                     input_price_per_1m: "",
@@ -359,7 +382,7 @@ export function TokenListingCreatePage() {
           </div>
           {models.length === 0 && <p className="form-hint">{t("tokenMarket.noData")}</p>}
           {models.map((m, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+            <div key={m.row_key} style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
               <input
                 className="form-input"
                 style={{ flex: 2 }}
@@ -377,37 +400,40 @@ export function TokenListingCreatePage() {
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
-              <input
-                className="form-input"
-                style={{ flex: 1 }}
-                type="number"
-                step="0.01"
-                min="0"
-                value={m.input_price_per_1m}
-                onChange={(e) => updateModel(i, { input_price_per_1m: e.target.value })}
-                placeholder={t("tokenMarket.inputPrice")}
-              />
-              <input
-                className="form-input"
-                style={{ flex: 1 }}
-                type="number"
-                step="0.01"
-                min="0"
-                value={m.output_price_per_1m}
-                onChange={(e) => updateModel(i, { output_price_per_1m: e.target.value })}
-                placeholder={t("tokenMarket.outputPrice")}
-              />
-              {saleType === "subscription" && (
-                <input
-                  className="form-input"
-                  style={{ flex: 1 }}
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={m.weekly_quota_usd}
-                  onChange={(e) => updateModel(i, { weekly_quota_usd: e.target.value })}
-                  placeholder={t("tokenMarket.weeklyQuota")}
+              <div style={{ flex: 1 }}>
+                <MoneyInput
+                  value={m.input_price_per_1m}
+                  onChange={(v) => updateModel(i, { input_price_per_1m: v })}
+                  min={0}
+                  max={1000000}
+                  precision={4}
+                  allowEmpty
+                  placeholder={t("tokenMarket.inputPrice")}
                 />
+              </div>
+              <div style={{ flex: 1 }}>
+                <MoneyInput
+                  value={m.output_price_per_1m}
+                  onChange={(v) => updateModel(i, { output_price_per_1m: v })}
+                  min={0}
+                  max={1000000}
+                  precision={4}
+                  allowEmpty
+                  placeholder={t("tokenMarket.outputPrice")}
+                />
+              </div>
+              {saleType === "subscription" && (
+                <div style={{ flex: 1 }}>
+                  <MoneyInput
+                    value={m.weekly_quota_usd}
+                    onChange={(v) => updateModel(i, { weekly_quota_usd: v })}
+                    min={0}
+                    max={1000000}
+                    precision={2}
+                    allowEmpty
+                    placeholder={t("tokenMarket.weeklyQuota")}
+                  />
+                </div>
               )}
               <button
                 type="button"

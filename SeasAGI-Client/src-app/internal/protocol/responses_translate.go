@@ -95,15 +95,17 @@ func TranslateFromChatCompletions(chatResp map[string]any, model string) (*Respo
 		id = fmt.Sprintf("resp_%d", time.Now().UnixNano())
 	}
 
-	// 提取 choices[0].message
+	// 提取 choices[0].message 的文本与工具调用
 	choices, _ := chatResp["choices"].([]any)
 	var outputText string
+	var toolCalls []any
 	if len(choices) > 0 {
 		if choice, ok := choices[0].(map[string]any); ok {
 			if msg, ok := choice["message"].(map[string]any); ok {
 				if content, ok := msg["content"].(string); ok {
 					outputText = content
 				}
+				toolCalls = toAnySlice(msg["tool_calls"])
 			}
 		}
 	}
@@ -114,23 +116,51 @@ func TranslateFromChatCompletions(chatResp map[string]any, model string) (*Respo
 	outputTokens, _ := usage["completion_tokens"].(float64)
 	totalTokens, _ := usage["total_tokens"].(float64)
 
-	return &ResponsesResponse{
-		ID:     id,
-		Object: "response",
-		Status: "completed",
-		Model:  model,
-		Output: []ResponseOutputItem{
-			{
-				Type:    "message",
-				ID:      "msg_0",
-				Role:    "assistant",
-				Status:  "completed",
-				Content: map[string]any{
-					"type": "output_text",
-					"text": outputText,
+	// Responses 的 message.content 必须是数组结构（output_text 项数组）。
+	output := make([]ResponseOutputItem, 0, 1+len(toolCalls))
+	if outputText != "" || len(toolCalls) == 0 {
+		output = append(output, ResponseOutputItem{
+			Type:   "message",
+			ID:     "msg_0",
+			Role:   "assistant",
+			Status: "completed",
+			Content: []map[string]any{
+				{
+					"type":        "output_text",
+					"text":        outputText,
+					"annotations": []any{},
 				},
 			},
-		},
+		})
+	}
+	for i, raw := range toolCalls {
+		tc, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		fn, _ := tc["function"].(map[string]any)
+		name, _ := fn["name"].(string)
+		args, _ := fn["arguments"].(string)
+		callID, _ := tc["id"].(string)
+		if callID == "" {
+			callID = fmt.Sprintf("call_%d", i)
+		}
+		output = append(output, ResponseOutputItem{
+			Type:      "function_call",
+			ID:        fmt.Sprintf("fc_%d", i),
+			Status:    "completed",
+			CallID:    callID,
+			Name:      name,
+			Arguments: args,
+		})
+	}
+
+	return &ResponsesResponse{
+		ID:        id,
+		Object:    "response",
+		Status:    "completed",
+		Model:     model,
+		Output:    output,
 		Usage: ResponsesUsage{
 			InputTokens:  int(inputTokens),
 			OutputTokens: int(outputTokens),
@@ -138,6 +168,22 @@ func TranslateFromChatCompletions(chatResp map[string]any, model string) (*Respo
 		},
 		CreatedAt: time.Now().Unix(),
 	}, nil
+}
+
+// toAnySlice 兼容 []any 与 []map[string]any 两种工具调用容器形态。
+func toAnySlice(value any) []any {
+	switch list := value.(type) {
+	case []any:
+		return list
+	case []map[string]any:
+		result := make([]any, 0, len(list))
+		for _, item := range list {
+			result = append(result, item)
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 // TranslateFromChatCompletionsBytes 将 Chat Completions JSON 响应转换为 Responses JSON

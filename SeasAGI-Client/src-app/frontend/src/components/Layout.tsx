@@ -7,6 +7,9 @@ import { useConfigSync } from "../hooks/useConfigSync";
 import { useMarketStore } from "../stores/marketStore";
 import seasagiIcon from "../assets/seasagi-icon.png";
 
+// 构建期由 scripts/version.txt 经 VITE_APP_VERSION 注入；未注入时回退到源码默认版本。
+const appVersion = import.meta.env.VITE_APP_VERSION || "0.2.5";
+
 type AppIconName =
   | "home"
   | "channels"
@@ -247,7 +250,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <img src={seasagiIcon} alt="SeasAGI" className="sidebar-logo-img" />
                 <div className="sidebar-logo-info">
                   <span className="logo-text">SeasAGI</span>
-                  <span className="logo-version">v0.2.0</span>
+                  <span className="logo-version">v{appVersion}</span>
                 </div>
               </div>
               <AppIcon name="chevron" className="title-chevron" />

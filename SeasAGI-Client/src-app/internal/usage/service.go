@@ -14,8 +14,11 @@ import (
 )
 
 // maxRecords caps how many in-memory records are retained; the oldest are
-// dropped once the cap is exceeded (and the file is compacted).
+// dropped once the cap is exceeded (and the file is compacted periodically).
 const maxRecords = 10000
+
+// usageCompactBytes 是追加日志的磁盘体积上限，超过后立即压缩。
+const usageCompactBytes = 8 << 20
 
 // Fallback pricing (USD per 1M tokens) used when a model is not present in the
 // pricing table. The record is flagged via UsageRecord.CostEstimated.
@@ -93,6 +96,10 @@ type Service struct {
 	records []UsageRecord
 	pricing []ModelPricing
 	path    string
+	// appended / appendedBytes 记录自上次全量压缩以来追加的条数与字节数，
+	// 用于把「追加日志 + 定期压缩」的磁盘占用限制在有界范围内。
+	appended      int
+	appendedBytes int64
 }
 
 func NewService() *Service {
@@ -189,7 +196,10 @@ func (s *Service) appendRecordLocked(record UsageRecord) {
 	defer f.Close()
 	if _, err := f.Write(append(line, '\n')); err != nil {
 		logging.Warningf("usage: append record to %s failed: %v", s.path, err)
+		return
 	}
+	s.appended++
+	s.appendedBytes += int64(len(line) + 1)
 }
 
 // persist rewrites the whole log atomically (tmp file + rename). Used on
@@ -220,7 +230,10 @@ func (s *Service) persist() {
 	}
 	if err := os.Rename(tmpFile, s.path); err != nil {
 		logging.Warningf("usage: rename %s -> %s failed: %v", tmpFile, s.path, err)
+		return
 	}
+	s.appended = 0
+	s.appendedBytes = 0
 }
 
 func (s *Service) GetUsageSummary() UsageSummary {
@@ -417,14 +430,15 @@ func (s *Service) RecordUsageV2(detail UsageDetail) {
 
 	s.records = append(s.records, record)
 	if len(s.records) > maxRecords {
-		// Compaction: drop the oldest and rewrite the log atomically.
+		// 内存只保留最近 maxRecords 条；文件在下一次压缩时一并收敛。
 		s.records = s.records[len(s.records)-maxRecords:]
-		s.persist()
-		return
 	}
-	// Incremental append: only the new record is written, avoiding an O(n)
-	// full rewrite on every single request.
+	// 增量追加：单条请求只写一行，避免每请求 O(n) 全量重写。
 	s.appendRecordLocked(record)
+	// 到达阈值后再做一次原子压缩，把磁盘条目数收敛回 maxRecords。
+	if s.appended >= maxRecords || s.appendedBytes >= usageCompactBytes {
+		s.persist()
+	}
 }
 
 // estimateCost computes the USD cost of a request. When the granular v2 token

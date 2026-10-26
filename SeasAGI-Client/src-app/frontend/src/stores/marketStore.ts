@@ -66,7 +66,7 @@ interface MarketStore {
   freeChannelsCache: unknown[] | null;
   freeChannelsCacheTime: number | null;
   setMarketVisible: (visible: boolean) => void;
-  setMarketListings: (listings: MarketListing[]) => void;
+  setMarketListings: (listings: MarketListing[] | ((prev: MarketListing[]) => MarketListing[])) => void;
   setMyListings: (listings: MarketListing[]) => void;
   setMyOrders: (orders: MarketOrder[]) => void;
   setMySettlements: (settlements: MarketSettlement[]) => void;
@@ -91,7 +91,10 @@ export const useMarketStore = create<MarketStore>((set) => ({
   freeChannelsCache: null,
   freeChannelsCacheTime: null,
   setMarketVisible: (marketVisible) => set({ marketVisible }),
-  setMarketListings: (marketListings) => set({ marketListings }),
+  setMarketListings: (listings) =>
+    set((state) => ({
+      marketListings: typeof listings === "function" ? listings(state.marketListings) : listings,
+    })),
   setMyListings: (myListings) => set({ myListings }),
   setMyOrders: (myOrders) => set({ myOrders }),
   setMySettlements: (mySettlements) => set({ mySettlements }),

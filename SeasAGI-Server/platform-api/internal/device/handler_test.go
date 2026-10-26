@@ -2,7 +2,16 @@ package device
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
+
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/timeutil"
+	"github.com/gin-gonic/gin"
 )
 
 func TestDevice_StructFields(t *testing.T) {
@@ -127,5 +136,61 @@ func TestDevice_JSONTags(t *testing.T) {
 	}
 	if raw["bound_at"] != "2024-05-20T08:30:00Z" {
 		t.Errorf("expected JSON bound_at to be '2024-05-20T08:30:00Z', got %v", raw["bound_at"])
+	}
+}
+
+// 设备绑定时间必须统一为 SQLite 格式，且列表读取时兼容转换（CS-06 回归）。
+func TestBindDeviceUsesSQLiteTimestamp(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	if err := database.Init(filepath.Join(t.TempDir(), "device-test.db")); err != nil {
+		t.Fatalf("database init failed: %v", err)
+	}
+	t.Cleanup(database.Close)
+
+	router := gin.New()
+	router.POST("/devices/bind", func(c *gin.Context) {
+		c.Set("user_id", "user-1")
+		BindDevice(c)
+	})
+	router.GET("/devices", func(c *gin.Context) {
+		c.Set("user_id", "user-1")
+		ListDevices(c)
+	})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/devices/bind", strings.NewReader(`{"device_name":"MacBook","platform":"macos"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("bind status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var stored string
+	if err := database.DB.QueryRow(
+		`SELECT quote(bound_at) FROM devices WHERE user_id = ?`, "user-1",
+	).Scan(&stored); err != nil {
+		t.Fatalf("query device failed: %v", err)
+	}
+	if !regexp.MustCompile(`^'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'$`).MatchString(stored) {
+		t.Fatalf("stored bound_at = %q, want SQLite layout %q", stored, timeutil.SQLiteLayout)
+	}
+
+	recorder = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/devices", nil)
+	router.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("list status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var resp struct {
+		Data []Device `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(resp.Data))
+	}
+	if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$`).MatchString(resp.Data[0].BoundAt) {
+		t.Fatalf("response bound_at = %q, want SQLite layout", resp.Data[0].BoundAt)
 	}
 }

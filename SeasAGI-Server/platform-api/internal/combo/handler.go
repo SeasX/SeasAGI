@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/i18n"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/timeutil"
+	"github.com/gin-gonic/gin"
 )
 
 func generateID() string {
@@ -86,6 +86,13 @@ type UpdateComboRequest struct {
 	Status        *string         `json:"status,omitempty"`
 }
 
+// comboSelectColumns 是 model_combos 的统一查询列清单，
+// 必须与 scanCombo 的 Scan 顺序/数量严格一致；所有 SELECT 复用此常量，
+// 避免遗漏 quick_strategy / task_profile 导致扫描列数不匹配（17 vs 19）。
+const comboSelectColumns = `combo_id, scope, owner_id, tenant_id, logical_name, display_name, description,
+	tags, strategy, sticky_uses, quick_strategy, task_profile, steps_json, status, source, version,
+	created_by, created_at, updated_at`
+
 func scanCombo(scanner interface {
 	Scan(dest ...interface{}) error
 }) (ModelCombo, error) {
@@ -97,6 +104,9 @@ func scanCombo(scanner interface {
 		&c.StepsJSON, &c.Status, &c.Source, &c.Version,
 		&c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
 	)
+	// 兼容历史 RFC3339 数据：读取时统一为 SQLite 时间格式。
+	c.CreatedAt = timeutil.Normalize(c.CreatedAt)
+	c.UpdatedAt = timeutil.Normalize(c.UpdatedAt)
 	return c, err
 }
 
@@ -118,9 +128,7 @@ func ListUserCombos(c *gin.Context) {
 	}
 
 	rows, err := database.DB.Query(
-		`SELECT combo_id, scope, owner_id, tenant_id, logical_name, display_name, description,
-		        tags, strategy, sticky_uses, quick_strategy, task_profile, steps_json, status, source, version,
-		        created_by, created_at, updated_at
+		`SELECT `+comboSelectColumns+`
 		 FROM model_combos
 		 WHERE owner_id = ? AND scope = 'user'
 		 ORDER BY updated_at DESC`, userID,
@@ -151,9 +159,7 @@ func GetUserCombo(c *gin.Context) {
 
 	var mc ModelCombo
 	mc, err := scanCombo(database.DB.QueryRow(
-		`SELECT combo_id, scope, owner_id, tenant_id, logical_name, display_name, description,
-		        tags, strategy, sticky_uses, quick_strategy, task_profile, steps_json, status, source, version,
-		        created_by, created_at, updated_at
+		`SELECT `+comboSelectColumns+`
 		 FROM model_combos WHERE combo_id = ? AND owner_id = ?`, comboID, userID,
 	))
 	if err != nil {
@@ -187,7 +193,7 @@ func CreateUserCombo(c *gin.Context) {
 	}
 
 	comboID := generateID()
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := timeutil.NowSQLite()
 
 	stepsBytes, _ := json.Marshal(req.Steps)
 	tagsBytes, _ := json.Marshal(req.Tags)
@@ -256,9 +262,7 @@ func UpdateUserCombo(c *gin.Context) {
 
 	var existing ModelCombo
 	existing, err := scanCombo(database.DB.QueryRow(
-		`SELECT combo_id, scope, owner_id, tenant_id, logical_name, display_name, description,
-		        tags, strategy, sticky_uses, quick_strategy, task_profile, steps_json, status, source, version,
-		        created_by, created_at, updated_at
+		`SELECT `+comboSelectColumns+`
 		 FROM model_combos WHERE combo_id = ? AND owner_id = ?`, comboID, userID,
 	))
 	if err != nil {
@@ -272,7 +276,7 @@ func UpdateUserCombo(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := timeutil.NowSQLite()
 	newVersion := existing.Version + 1
 
 	displayName := existing.DisplayName
@@ -371,9 +375,7 @@ func ListUserCombosByAdmin(c *gin.Context) {
 	}
 
 	rows, err := database.DB.Query(
-		`SELECT combo_id, scope, owner_id, tenant_id, logical_name, display_name, description,
-		        tags, strategy, sticky_uses, quick_strategy, task_profile, steps_json, status, source, version,
-		        created_by, created_at, updated_at
+		`SELECT `+comboSelectColumns+`
 		 FROM model_combos
 		 WHERE owner_id = ?
 		 ORDER BY updated_at DESC`, userID,
@@ -402,9 +404,7 @@ func ListTenantCombos(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	scope := c.Query("scope")
 
-	query := `SELECT combo_id, scope, owner_id, tenant_id, logical_name, display_name, description,
-	          tags, strategy, sticky_uses, quick_strategy, task_profile, steps_json, status, source, version,
-	          created_by, created_at, updated_at
+	query := `SELECT ` + comboSelectColumns + `
 	          FROM model_combos WHERE status = 'active'`
 
 	args := make([]interface{}, 0)
@@ -444,9 +444,7 @@ func ListTenantCombos(c *gin.Context) {
 // ListOfficialTemplates returns platform-scope active combos as templates
 func ListOfficialTemplates(c *gin.Context) {
 	rows, err := database.DB.Query(
-		`SELECT combo_id, scope, owner_id, tenant_id, logical_name, display_name, description,
-		        tags, strategy, sticky_uses, quick_strategy, task_profile, steps_json, status, source, version,
-		        created_by, created_at, updated_at
+		`SELECT ` + comboSelectColumns + `
 		 FROM model_combos
 		 WHERE scope = 'platform' AND status = 'active'
 		 ORDER BY logical_name ASC`,
@@ -492,9 +490,7 @@ func PublishComboRelease(c *gin.Context) {
 
 	var existing ModelCombo
 	existing, err := scanCombo(database.DB.QueryRow(
-		`SELECT combo_id, scope, owner_id, tenant_id, logical_name, display_name, description,
-		        tags, strategy, sticky_uses, steps_json, status, source, version,
-		        created_by, created_at, updated_at
+		`SELECT `+comboSelectColumns+`
 		 FROM model_combos WHERE combo_id = ?`, comboID,
 	))
 	if err != nil {
@@ -524,7 +520,7 @@ func PublishComboRelease(c *gin.Context) {
 
 	snapshotBytes, _ := json.Marshal(snapshot)
 	releaseID := generateID()
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := timeutil.NowSQLite()
 	newVersion := existing.Version + 1
 
 	_, err = database.DB.Exec(
@@ -604,7 +600,7 @@ func RollbackComboRelease(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := timeutil.NowSQLite()
 	displayName, _ := snapshot["display_name"].(string)
 	description, _ := snapshot["description"].(string)
 	tags, _ := snapshot["tags"].(string)
@@ -661,9 +657,7 @@ func DeployComboToTenant(c *gin.Context) {
 
 	var sourceCombo ModelCombo
 	sourceCombo, err := scanCombo(database.DB.QueryRow(
-		`SELECT combo_id, scope, owner_id, tenant_id, logical_name, display_name, description,
-		        tags, strategy, sticky_uses, steps_json, status, source, version,
-		        created_by, created_at, updated_at
+		`SELECT `+comboSelectColumns+`
 		 FROM model_combos WHERE combo_id = ?`, comboID,
 	))
 	if err != nil {
@@ -672,7 +666,7 @@ func DeployComboToTenant(c *gin.Context) {
 	}
 	parseSteps(&sourceCombo)
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := timeutil.NowSQLite()
 	deployed := make([]string, 0)
 	for _, tenantID := range req.TenantIDs {
 		newID := generateID()
@@ -719,9 +713,7 @@ func ListAllCombosAdmin(c *gin.Context) {
 	scope := c.Query("scope")
 	s := c.Query("status")
 
-	query := `SELECT combo_id, scope, owner_id, tenant_id, logical_name, display_name, description,
-	          tags, strategy, sticky_uses, steps_json, status, source, version,
-	          created_by, created_at, updated_at
+	query := `SELECT ` + comboSelectColumns + `
 	          FROM model_combos WHERE 1=1`
 	args := make([]interface{}, 0)
 

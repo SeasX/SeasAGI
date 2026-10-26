@@ -141,6 +141,7 @@ type CooldownManager struct {
 	entries  map[string]*CooldownEntry
 	duration time.Duration
 	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 func NewCooldownManager(duration time.Duration) *CooldownManager {
@@ -173,8 +174,11 @@ func (cm *CooldownManager) cleanupLoop() {
 	}
 }
 
+// Stop 停止清理协程；可重复调用而不会因重复 close 触发 panic。
 func (cm *CooldownManager) Stop() {
-	close(cm.stopCh)
+	cm.stopOnce.Do(func() {
+		close(cm.stopCh)
+	})
 }
 
 func (cm *CooldownManager) SetCooldown(key string) {

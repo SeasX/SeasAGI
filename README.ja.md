@@ -161,11 +161,38 @@ sudo bash SeasAGI-Server/deploy/install.sh
 
 # 環境変数を設定
 vi /etc/seasagi/platform-api.env
-# JWT_SECRET, JWT_REFRESH_SECRET, ADMIN_SECRET を設定
+# 併せて relay-gateway.env も編集：共有 JWT シークレットを一致させる
 
 # サービスを起動
 sudo systemctl enable --now seasagi-platform-api
 sudo systemctl enable --now seasagi-relay-gateway
+```
+
+#### 必須環境変数
+
+本番モード（`GIN_MODE=release`）では、必須シークレットが未設定または `change-me*` のプレースホルダーのままだと起動を拒否します。コミュニティ版は `JWT_SECRET`、`JWT_REFRESH_SECRET`、`ADMIN_SECRET`、`SEASAGI_DATA_KEY` を強制し、エンタープライズ版はさらに `INTERNAL_API_TOKEN`、`SEASAGI_SNAPSHOT_KEY`、`SEASAGI_MARKET_SIGNING_KEY` を強制します。各シークレットは `openssl rand -hex 32` で生成できます（`SEASAGI_DATA_KEY` は 32 バイトのランダム文字列）。開発モード（`GIN_MODE=debug` または明示的な `SEASAGI_ALLOW_DEV_SECRETS=1`）の場合のみ、一時シークレットを自動補完します。
+
+併せて設定：
+
+- `CORS_ALLOWED_ORIGINS`：カンマ区切り・完全一致。デフォルトはループバックのみで、本番環境では `*` を拒否。
+- `MAX_REQUEST_BODY_BYTES`（platform-api、デフォルト `8388608` = 8MB）と `RELAY_MAX_REQUEST_BODY_BYTES`（relay-gateway、デフォルト `67108864` = 64MB）。
+- `TRACE_RETENTION_DAYS`（デフォルト `30`、`<=0` でパージ無効）と `TRACE_PURGE_INTERVAL_HOURS`（デフォルト `6`）。起動時に一度パージし、その後は定期実行。
+
+#### 起動後のセルフチェック
+
+```bash
+# 1) ヘルスチェック
+curl -fsS http://127.0.0.1:9318/healthz
+
+# 2) 管理 API が匿名アクセスを拒否（401 を期待）
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9318/api/v1/admin/users
+
+# 3) ホワイトリスト外の Origin からのクロスオリジンプリフライトを拒否
+#    （レスポンスに Access-Control-Allow-Origin ヘッダーがないことを期待）
+curl -s -D - -o /dev/null -X OPTIONS \
+  -H 'Origin: https://evil.example' \
+  -H 'Access-Control-Request-Method: POST' \
+  http://127.0.0.1:9318/api/v1/auth/login | grep -i '^access-control-allow-origin'
 ```
 
 ---

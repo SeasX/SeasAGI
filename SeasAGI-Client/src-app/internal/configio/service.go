@@ -11,12 +11,12 @@ import (
 )
 
 type ExportData struct {
-	Version     string            `json:"version"`
-	ExportedAt  string            `json:"exported_at"`
-	AppConfig   config.AppConfig  `json:"app_config"`
-	Channels    []config.Channel  `json:"channels"`
-	MCPServers  []MCPServerExport `json:"mcp_servers,omitempty"`
-	PromptPresets []PromptExport  `json:"prompt_presets,omitempty"`
+	Version       string            `json:"version"`
+	ExportedAt    string            `json:"exported_at"`
+	AppConfig     config.AppConfig  `json:"app_config"`
+	Channels      []config.Channel  `json:"channels"`
+	MCPServers    []MCPServerExport `json:"mcp_servers,omitempty"`
+	PromptPresets []PromptExport    `json:"prompt_presets,omitempty"`
 }
 
 type MCPServerExport struct {
@@ -62,17 +62,11 @@ func (s *Service) Export() ([]byte, error) {
 		return nil, fmt.Errorf("list channels: %w", err)
 	}
 
-	exportChannels := make([]config.Channel, 0, len(channels))
-	for _, ch := range channels {
-		ch.APIKey = ""
-		exportChannels = append(exportChannels, ch)
-	}
-
 	data := ExportData{
 		Version:    "1.0",
 		ExportedAt: time.Now().Format(time.RFC3339),
 		AppConfig:  cfg,
-		Channels:   exportChannels,
+		Channels:   redactChannels(channels),
 	}
 
 	mcpData, _ := os.ReadFile(filepath.Join(s.homeDir, ".seasagi", "mcp_servers.json"))
@@ -86,6 +80,16 @@ func (s *Service) Export() ([]byte, error) {
 	}
 
 	return json.MarshalIndent(data, "", "  ")
+}
+
+// redactChannels 按白名单 DTO 重建导出渠道，保证即使上游列表契约回归，
+// 导出内容也不含 API Key / OAuth 凭证（CL-S1）。
+func redactChannels(channels []config.Channel) []config.Channel {
+	result := make([]config.Channel, 0, len(channels))
+	for _, ch := range channels {
+		result = append(result, ch.Sanitize())
+	}
+	return result
 }
 
 func (s *Service) Import(jsonData []byte) error {

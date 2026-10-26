@@ -23,12 +23,17 @@ type ResponseInputItem struct {
 }
 
 // ResponseOutputItem Responses API 输出条目
+//
+// function_call 条目使用 CallID/Name/Arguments；message 条目使用 Role/Content。
 type ResponseOutputItem struct {
-	Type    string `json:"type"`
-	ID      string `json:"id,omitempty"`
-	Role    string `json:"role,omitempty"`
-	Status  string `json:"status,omitempty"`
-	Content any    `json:"content,omitempty"`
+	Type      string `json:"type"`
+	ID        string `json:"id,omitempty"`
+	Role      string `json:"role,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Content   any    `json:"content,omitempty"`
+	CallID    string `json:"call_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 // ResponsesUsage Responses API usage

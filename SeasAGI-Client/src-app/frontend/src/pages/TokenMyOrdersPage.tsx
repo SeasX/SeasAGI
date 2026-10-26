@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { platformRequest } from "../utils/commands";
+import { platformRequest, asPlatformRecord } from "../utils/commands";
 import { useTranslation } from "../i18n";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useMarketStore, type MarketOrder } from "../stores/marketStore";
 
 export function TokenMyOrdersPage() {
@@ -12,6 +13,7 @@ export function TokenMyOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [settlingId, setSettlingId] = useState<string | null>(null);
+  const [confirmSettleId, setConfirmSettleId] = useState<string | null>(null);
   // C6: 分页和状态筛选
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
@@ -36,10 +38,10 @@ export function TokenMyOrdersPage() {
       if (st) params.set("status", st);
       const resp = await platformRequest("GET", `/token-market/orders?${params}`);
       if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
-      const data = resp.body;
-      setMyOrders(data.data || []);
-      setTotal(data.total || 0);
-      setTotalPages(data.total_pages || 1);
+      const data = asPlatformRecord(resp.body);
+      setMyOrders((data.data as MarketOrder[]) || []);
+      setTotal(Number(data.total) || 0);
+      setTotalPages(Number(data.total_pages) || 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -56,8 +58,8 @@ export function TokenMyOrdersPage() {
     try {
       const resp = await platformRequest("POST", `/token-market/orders/${orderId}/settle`);
       if (resp.status >= 400) {
-        const errData = resp.body || {};
-        throw new Error(errData.error || `HTTP ${resp.status}`);
+        const errData = asPlatformRecord(resp.body);
+        throw new Error(String(errData.error || `HTTP ${resp.status}`));
       }
       // 更新本地状态
       setMyOrders(myOrders.map((o) => o.order_id === orderId ? { ...o, status: "settled" } : o));
@@ -76,8 +78,8 @@ export function TokenMyOrdersPage() {
     try {
       const resp = await platformRequest("POST", `/token-market/orders/${reviewOrder}/review`, { rating: reviewRating, comment: reviewComment });
       if (resp.status >= 400) {
-        const errData = resp.body || {};
-        throw new Error(errData.error || `HTTP ${resp.status}`);
+        const errData = asPlatformRecord(resp.body);
+        throw new Error(String(errData.error || `HTTP ${resp.status}`));
       }
       setReviewOrder(null);
       setReviewRating(5);
@@ -192,7 +194,7 @@ export function TokenMyOrdersPage() {
                   {order.status === "confirmed" && order.role === "seller" && (
                     <button
                       className="btn btn-sm btn-primary"
-                      onClick={() => handleSettle(order.order_id)}
+                      onClick={() => setConfirmSettleId(order.order_id)}
                       disabled={settlingId === order.order_id}
                     >
                       {settlingId === order.order_id ? t("common.processing") : t("tokenMarket.settle")}
@@ -278,6 +280,18 @@ export function TokenMyOrdersPage() {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmSettleId !== null}
+        title={t("tokenMarket.settle")}
+        message={t("tokenMarket.confirmSettle")}
+        pending={settlingId !== null}
+        onCancel={() => setConfirmSettleId(null)}
+        onConfirm={() => {
+          const id = confirmSettleId;
+          setConfirmSettleId(null);
+          if (id) void handleSettle(id);
+        }}
+      />
     </div>
   );
 }

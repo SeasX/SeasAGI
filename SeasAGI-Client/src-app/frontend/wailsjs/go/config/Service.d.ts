@@ -44,6 +44,10 @@ export function GetSetting(arg1:string):Promise<string>;
 
 export function ListChannels():Promise<Array<config.Channel>>;
 
+export function ListChannelsPublic():Promise<Array<config.ChannelPublic>>;
+
+export function ListChannelsWithCredentials():Promise<Array<config.Channel>>;
+
 export function ListComboTemplates():Promise<Array<config.ModelCombo>>;
 
 export function ListModelCombos():Promise<Array<config.ModelCombo>>;

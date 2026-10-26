@@ -2,7 +2,26 @@ package protocol
 
 import (
 	"fmt"
+	"strings"
 )
+
+// ParseGeminiPath 从 Gemini 原生路径中解析模型与动作：
+// /v1beta/models/{model}:generateContent → ("{model}", "generateContent")。
+func ParseGeminiPath(path string) (model, action string) {
+	const marker = "/models/"
+	idx := strings.Index(path, marker)
+	if idx < 0 {
+		return "", ""
+	}
+	rest := path[idx+len(marker):]
+	if rest == "" {
+		return "", ""
+	}
+	if i := strings.Index(rest, ":"); i >= 0 {
+		return rest[:i], rest[i+1:]
+	}
+	return strings.Trim(rest, "/"), ""
+}
 
 type GeminiTranslator struct{}
 

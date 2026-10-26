@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/i18n"
@@ -14,6 +16,83 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// 登录/注册限流：内存令牌桶（进程内），用于缓解在线爆破与弱口令注册。
+var (
+	loginLimiter    = newAttemptLimiter(10, time.Minute)
+	registerLimiter = newAttemptLimiter(5, time.Hour)
+)
+
+// attemptLimiter 是基于固定窗口的简单限流器，按 key（IP 或账号）计数。
+type attemptLimiter struct {
+	mu      sync.Mutex
+	entries map[string]*attemptEntry
+	limit   int
+	window  time.Duration
+}
+
+type attemptEntry struct {
+	count   int
+	resetAt time.Time
+}
+
+func newAttemptLimiter(limit int, window time.Duration) *attemptLimiter {
+	return &attemptLimiter{entries: make(map[string]*attemptEntry), limit: limit, window: window}
+}
+
+// Allow 在窗口内累计一次访问，超过阈值返回 false。
+func (l *attemptLimiter) Allow(key string) bool {
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	entry, ok := l.entries[key]
+	if !ok || now.After(entry.resetAt) {
+		l.entries[key] = &attemptEntry{count: 1, resetAt: now.Add(l.window)}
+		l.cleanupLocked(now)
+		return true
+	}
+	if entry.count >= l.limit {
+		return false
+	}
+	entry.count++
+	return true
+}
+
+// cleanupLocked 在条目过多时清理过期项，避免内存无限增长。
+func (l *attemptLimiter) cleanupLocked(now time.Time) {
+	if len(l.entries) < 1024 {
+		return
+	}
+	for k, e := range l.entries {
+		if now.After(e.resetAt) {
+			delete(l.entries, k)
+		}
+	}
+}
+
+// validatePasswordStrength 校验最小长度与复杂度（至少包含字母和数字）。
+func validatePasswordStrength(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+	if len(password) > 128 {
+		return fmt.Errorf("password must be at most 128 characters")
+	}
+	var hasLetter, hasDigit bool
+	for _, r := range password {
+		switch {
+		case unicode.IsLetter(r):
+			hasLetter = true
+		case unicode.IsDigit(r):
+			hasDigit = true
+		}
+	}
+	if !hasLetter || !hasDigit {
+		return fmt.Errorf("password must contain both letters and digits")
+	}
+	return nil
+}
 
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
@@ -36,6 +115,12 @@ func Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 同时按 IP 与账号限流，避免单一维度被绕过。
+	if !loginLimiter.Allow("ip:"+c.ClientIP()) || !loginLimiter.Allow("account:"+strings.ToLower(req.Email)) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many login attempts, please try again later"})
 		return
 	}
 
@@ -72,6 +157,16 @@ func Login(c *gin.Context) {
 func Register(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if !registerLimiter.Allow("ip:" + c.ClientIP()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many registration attempts, please try again later"})
+		return
+	}
+
+	if err := validatePasswordStrength(req.Password); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -116,7 +211,8 @@ func RefreshToken(c *gin.Context) {
 		return
 	}
 
-	claims, err := validateTokenWithSecret(req.RefreshToken, os.Getenv("JWT_REFRESH_SECRET"))
+	// refresh token 必须使用 refresh 密钥强校验，避免密钥未配置时以空密钥通过校验。
+	claims, err := validateTokenWithSecret(req.RefreshToken, getJWTRefreshSecret())
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": i18n.TFromContext(c, "auth.invalidToken")})
 		return
@@ -211,9 +307,12 @@ func validateToken(tokenString string) (*Claims, error) {
 }
 
 func validateTokenWithSecret(tokenString, secret string) (*Claims, error) {
+	if secret == "" {
+		return nil, fmt.Errorf("jwt secret is not configured")
+	}
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(secret), nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil {
 		return nil, err
 	}

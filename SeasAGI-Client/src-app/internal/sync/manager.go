@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,20 +14,20 @@ import (
 type SyncProvider string
 
 const (
-	ProviderICloud   SyncProvider = "icloud"
-	ProviderWebDAV   SyncProvider = "webdav"
-	ProviderDropbox  SyncProvider = "dropbox"
-	ProviderLocal    SyncProvider = "local"
+	ProviderICloud  SyncProvider = "icloud"
+	ProviderWebDAV  SyncProvider = "webdav"
+	ProviderDropbox SyncProvider = "dropbox"
+	ProviderLocal   SyncProvider = "local"
 )
 
 type SyncConfig struct {
 	Provider   SyncProvider `json:"provider"`
-	RemotePath string      `json:"remote_path"`
-	WebDAVURL  string      `json:"webdav_url,omitempty"`
-	Username   string      `json:"username,omitempty"`
-	Password   string      `json:"password,omitempty"`
-	AutoSync   bool        `json:"auto_sync"`
-	Interval   int         `json:"interval"`
+	RemotePath string       `json:"remote_path"`
+	WebDAVURL  string       `json:"webdav_url,omitempty"`
+	Username   string       `json:"username,omitempty"`
+	Password   string       `json:"password,omitempty"`
+	AutoSync   bool         `json:"auto_sync"`
+	Interval   int          `json:"interval"`
 }
 
 type SyncStatus struct {
@@ -144,8 +143,8 @@ func (m *Manager) updateResult(err error) {
 func (m *Manager) pushICloud(localDir string) error {
 	homeDir, _ := os.UserHomeDir()
 	icloudDir := filepath.Join(homeDir, "Library", "Mobile Documents", "com~apple~CloudDocs", "SeasAGI")
-	os.MkdirAll(icloudDir, 0755)
-	return syncDirs(localDir, icloudDir)
+	os.MkdirAll(icloudDir, 0700)
+	return syncDirs(localDir, icloudDir, sealSyncFile)
 }
 
 func (m *Manager) pullICloud(localDir string) error {
@@ -154,12 +153,11 @@ func (m *Manager) pullICloud(localDir string) error {
 	if _, err := os.Stat(icloudDir); err != nil {
 		return fmt.Errorf("iCloud directory not found")
 	}
-	return syncDirs(icloudDir, localDir)
+	return syncDirs(icloudDir, localDir, openSyncFile)
 }
 
 func (m *Manager) pushWebDAV(localDir string) error {
-	files := []string{"mcp_servers.json", "prompt_presets.json", "skills.json", "usage_records.json"}
-	for _, file := range files {
+	for _, file := range syncFileNames {
 		localPath := filepath.Join(localDir, file)
 		if _, err := os.Stat(localPath); err != nil {
 			continue
@@ -168,8 +166,12 @@ func (m *Manager) pushWebDAV(localDir string) error {
 		if err != nil {
 			continue
 		}
+		sealed, err := sealSyncFile(data)
+		if err != nil {
+			return fmt.Errorf("sign %s: %w", file, err)
+		}
 		remoteURL := strings.TrimRight(m.config.WebDAVURL, "/") + "/" + file
-		req, err := http.NewRequest("PUT", remoteURL, strings.NewReader(string(data)))
+		req, err := http.NewRequest("PUT", remoteURL, strings.NewReader(string(sealed)))
 		if err != nil {
 			return err
 		}
@@ -187,8 +189,7 @@ func (m *Manager) pushWebDAV(localDir string) error {
 }
 
 func (m *Manager) pullWebDAV(localDir string) error {
-	files := []string{"mcp_servers.json", "prompt_presets.json", "skills.json", "usage_records.json"}
-	for _, file := range files {
+	for _, file := range syncFileNames {
 		remoteURL := strings.TrimRight(m.config.WebDAVURL, "/") + "/" + file
 		req, err := http.NewRequest("GET", remoteURL, nil)
 		if err != nil {
@@ -199,19 +200,26 @@ func (m *Manager) pullWebDAV(localDir string) error {
 		if err != nil {
 			continue
 		}
-		defer resp.Body.Close()
 		if resp.StatusCode == 404 {
+			resp.Body.Close()
 			continue
 		}
 		if resp.StatusCode >= 400 {
+			resp.Body.Close()
 			return fmt.Errorf("WebDAV GET failed: %d", resp.StatusCode)
 		}
 		data, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		if err != nil {
 			return err
 		}
-		os.MkdirAll(localDir, 0755)
-		os.WriteFile(filepath.Join(localDir, file), data, 0644)
+		payload, err := openSyncFile(data)
+		if err != nil {
+			return fmt.Errorf("verify %s: %w", file, err)
+		}
+		if err := writeSyncFile(filepath.Join(localDir, file), payload); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -228,33 +236,90 @@ func (m *Manager) pushLocal(localDir string) error {
 	if m.config.RemotePath == "" {
 		return fmt.Errorf("local sync path not configured")
 	}
-	os.MkdirAll(m.config.RemotePath, 0755)
-	return syncDirs(localDir, m.config.RemotePath)
+	os.MkdirAll(m.config.RemotePath, 0700)
+	return syncDirs(localDir, m.config.RemotePath, sealSyncFile)
 }
 
 func (m *Manager) pullLocal(localDir string) error {
 	if m.config.RemotePath == "" {
 		return fmt.Errorf("local sync path not configured")
 	}
-	return syncDirs(m.config.RemotePath, localDir)
+	return syncDirs(m.config.RemotePath, localDir, openSyncFile)
 }
 
-func syncDirs(srcDir, dstDir string) error {
-	files := []string{"mcp_servers.json", "prompt_presets.json", "skills.json", "usage_records.json"}
-	for _, file := range files {
-		srcPath := filepath.Join(srcDir, file)
-		dstPath := filepath.Join(dstDir, file)
-		data, err := os.ReadFile(srcPath)
+// syncFileNames 是可同步的配置文件清单。
+var syncFileNames = []string{"mcp_servers.json", "prompt_presets.json", "skills.json", "usage_records.json"}
+
+// syncDirs 读取 srcDir 中的同步文件，经 transform（推送加签 / 拉取验签）处理后写入 dstDir。
+// 任一文件验签或加签失败都整体返回错误，调用方不得应用未经验证的远端内容（CL-S7）。
+func syncDirs(srcDir, dstDir string, transform func([]byte) ([]byte, error)) error {
+	for _, file := range syncFileNames {
+		data, err := os.ReadFile(filepath.Join(srcDir, file))
 		if err != nil {
 			continue
 		}
-		var srcJSON, dstJSON interface{}
-		json.Unmarshal(data, &srcJSON)
-		if dstData, err := os.ReadFile(dstPath); err == nil {
-			json.Unmarshal(dstData, &dstJSON)
+		out, err := transform(data)
+		if err != nil {
+			return fmt.Errorf("%s: %w", file, err)
 		}
-		os.MkdirAll(filepath.Dir(dstPath), 0755)
-		os.WriteFile(dstPath, data, 0644)
+		if err := writeSyncFile(filepath.Join(dstDir, file), out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sealSyncFile 用本机同步密钥对文件内容加签，返回 HMAC 信封。
+func sealSyncFile(data []byte) ([]byte, error) {
+	key, err := syncSigningKey()
+	if err != nil {
+		return nil, err
+	}
+	return sealSyncPayload(data, key)
+}
+
+// openSyncFile 校验信封签名并返回原始文件内容；密钥缺失或签名不符均返回错误。
+func openSyncFile(data []byte) ([]byte, error) {
+	key, err := syncVerificationKey()
+	if err != nil {
+		return nil, err
+	}
+	return openSyncPayload(data, key)
+}
+
+// writeSyncFile 以 0600 原子写入同步文件，避免半截文件与全局可读（CL-S7/CL-S8）。
+func writeSyncFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+	}
+	if err := tmp.Chmod(0600); err != nil {
+		cleanup()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return err
 	}
 	return nil
 }

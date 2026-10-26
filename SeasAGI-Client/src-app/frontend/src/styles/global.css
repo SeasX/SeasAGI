@@ -984,6 +984,12 @@ textarea:focus {
   color: #fecaca;
 }
 
+.form-success {
+  border: 1px solid rgba(34, 197, 94, 0.32);
+  background: var(--success-soft, rgba(34, 197, 94, 0.12));
+  color: #86efac;
+}
+
 .loading-state,
 .loading {
   border: 1px dashed var(--border-strong);
@@ -1487,6 +1493,13 @@ body[data-theme="light"] .token-market-stat-card {
   gap: 10px;
   cursor: pointer;
   transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.token-market-listing-card:focus-visible,
+.token-market-table tbody tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
 }
 
 .token-market-listing-card:hover,

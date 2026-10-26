@@ -12,7 +12,7 @@ VERSION_FILE="$SCRIPT_DIR/version.txt"
 if [ -f "$VERSION_FILE" ]; then
     VERSION="${SEASAGI_VERSION:-$(cat "$VERSION_FILE")}"
 else
-    VERSION="${SEASAGI_VERSION:-0.2.0}"
+    VERSION="${SEASAGI_VERSION:-0.2.5}"
 fi
 
 # Platform override: $1 > $WAILS_PLATFORM > uname detection
@@ -88,7 +88,7 @@ echo "  Go tests complete"
 echo ""
 
 echo "[4/5] Building Wails application..."
-"$WAILS_BIN" build -s -platform "$TARGET_PLATFORM" -ldflags "-s -w" -o "$APP_NAME"
+"$WAILS_BIN" build -s -platform "$TARGET_PLATFORM" -ldflags "-s -w -X github.com/SeasAGI/SeasAGI-Client/internal/buildinfo.Version=$VERSION" -o "$APP_NAME"
 echo "  Wails build complete"
 echo ""
 

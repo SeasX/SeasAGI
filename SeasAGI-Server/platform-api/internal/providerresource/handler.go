@@ -56,6 +56,14 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
+// validateLimits 校验并发/限流等数值参数非负，避免写入非法配置。
+func validateLimits(req CreateResourceRequest) error {
+	if req.Weight < 0 || req.Priority < 0 || req.RateLimitRPM < 0 || req.MaxConcurrency < 0 {
+		return fmt.Errorf("weight, priority, rate_limit_rpm and max_concurrency must be non-negative")
+	}
+	return nil
+}
+
 // ListResources returns all resources for a channel.
 func ListResources(c *gin.Context) {
 	channelID := c.Param("id")
@@ -123,12 +131,18 @@ func CreateResource(c *gin.Context) {
 	if weight == 0 {
 		weight = 100
 	}
+	if err := validateLimits(req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
+	// 占位符必须与列一一对应：enabled/healthy 为字面量 1，
+	// max_concurrency 使用参数，避免此前错位导致配置恒为 0。
 	_, err := database.DB.Exec(
 		`INSERT INTO provider_resources
 		 (resource_id, channel_id, resource_name, encrypted_api_key, region, environment,
 		  enabled, weight, priority, rate_limit_rpm, max_concurrency, healthy)
-		 VALUES (?,?,?,?,?,?,1,?,?,?,0,1)`,
+		 VALUES (?,?,?,?,?,?,1,?,?,?,?,1)`,
 		resourceID, channelID, req.ResourceName, encrypted, req.Region, environment,
 		weight, req.Priority, req.RateLimitRPM, req.MaxConcurrency,
 	)
@@ -173,6 +187,10 @@ func UpdateResource(c *gin.Context) {
 	weight := req.Weight
 	if weight == 0 {
 		weight = existing.Weight
+	}
+	if err := validateLimits(req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	_, err = database.DB.Exec(

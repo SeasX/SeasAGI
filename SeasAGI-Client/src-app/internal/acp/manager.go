@@ -1,3 +1,7 @@
+// Package acp 提供 ACP（Agent Client Protocol）子进程管理与注册表。
+//
+// 状态：experimental，未接入生产路径：main/app 未创建或调用本包，
+// 全仓仅本包测试引用。复用时需先补齐进程生命周期回收与失败重连。
 package acp
 
 import (

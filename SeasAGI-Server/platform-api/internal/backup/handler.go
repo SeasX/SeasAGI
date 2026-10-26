@@ -6,12 +6,15 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/logging"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/timeutil"
 	"github.com/gin-gonic/gin"
 )
 
@@ -79,7 +82,7 @@ func CreateBackup(c *gin.Context) {
 	_, err = database.DB.Exec(
 		`INSERT INTO seasagi_backups (backup_id, filename, file_path, file_size, sha256_checksum, status, triggered_by, expires_at)
 		 VALUES (?,?,?,?,?, 'completed', 'admin', ?)`,
-		backupID, filename, backupPath, fileSize, checksum, expiry.Format("2006-01-02 15:04:05"),
+		backupID, filename, backupPath, fileSize, checksum, timeutil.FormatSQLite(expiry),
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -115,6 +118,10 @@ func ListBackups(c *gin.Context) {
 		if restoredAt.Valid {
 			b.RestoredAt = restoredAt.String
 		}
+		// 兼容历史 RFC3339 数据：读取时统一为 SQLite 时间格式。
+		b.CreatedAt = timeutil.Normalize(b.CreatedAt)
+		b.ExpiresAt = timeutil.Normalize(b.ExpiresAt)
+		b.RestoredAt = timeutil.Normalize(b.RestoredAt)
 		backups = append(backups, b)
 	}
 	c.JSON(http.StatusOK, gin.H{"object": "list", "data": backups})
@@ -172,22 +179,16 @@ func RestoreBackup(c *gin.Context) {
 		return
 	}
 
-	// Copy backup file to the current database path
+	// 复制备份文件到当前数据库路径
 	dbPath := database.Path()
 	if dbPath == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database path not available"})
 		return
 	}
 
-	// Read backup file
-	data, err := os.ReadFile(record.FilePath)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to read backup: %v", err)})
-		return
-	}
-
-	// Write to database path
-	if err := os.WriteFile(dbPath, data, 0644); err != nil {
+	// 关闭连接（并 checkpoint WAL）→ 写入临时库 → 原子 rename 替换 → 重新打开。
+	// 任一步失败都会回滚保留原库文件。
+	if err := restoreDatabase(record.FilePath, dbPath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to restore: %v", err)})
 		return
 	}
@@ -195,7 +196,93 @@ func RestoreBackup(c *gin.Context) {
 	// Update restored_at timestamp
 	database.DB.Exec(`UPDATE seasagi_backups SET restored_at = CURRENT_TIMESTAMP WHERE backup_id = ?`, backupID)
 
-	c.JSON(http.StatusOK, gin.H{"restored": true, "backup_id": backupID, "note": "database restored, restart recommended"})
+	c.JSON(http.StatusOK, gin.H{"restored": true, "backup_id": backupID, "note": "database restored atomically"})
+}
+
+// restoreDatabase 以原子方式用备份文件替换主库，失败时回滚保留原库。
+func restoreDatabase(backupPath, dbPath string) error {
+	// 1. 合并 WAL 并关闭读写连接池，避免替换文件时存在未落盘的 WAL。
+	if err := database.Checkpoint(); err != nil {
+		logging.Warningf("wal checkpoint before restore failed: %v", err)
+	}
+	database.Close()
+
+	tmpPath := dbPath + ".restore.tmp"
+	rollbackPath := dbPath + ".restore.bak"
+	_ = os.Remove(tmpPath)
+
+	// 2. 备份先写入同目录临时文件并 fsync，保证 rename 的原子性。
+	if err := copyFileSync(backupPath, tmpPath); err != nil {
+		_ = database.Init(dbPath)
+		return err
+	}
+
+	hadOriginal := false
+	if _, statErr := os.Stat(dbPath); statErr == nil {
+		_ = os.Remove(rollbackPath)
+		if err := os.Rename(dbPath, rollbackPath); err != nil {
+			_ = os.Remove(tmpPath)
+			_ = database.Init(dbPath)
+			return err
+		}
+		hadOriginal = true
+	}
+
+	// 旧 WAL/SHM 与新库不匹配，必须清理。
+	_ = os.Remove(dbPath + "-wal")
+	_ = os.Remove(dbPath + "-shm")
+
+	// 3. 原子替换。
+	if err := os.Rename(tmpPath, dbPath); err != nil {
+		if hadOriginal {
+			_ = os.Rename(rollbackPath, dbPath)
+		}
+		_ = database.Init(dbPath)
+		return err
+	}
+
+	// 4. 重新打开并执行迁移；失败则回滚到原库。
+	if err := database.Init(dbPath); err != nil {
+		database.Close()
+		_ = os.Remove(dbPath)
+		if hadOriginal {
+			_ = os.Rename(rollbackPath, dbPath)
+		}
+		if reopenErr := database.Init(dbPath); reopenErr != nil {
+			logging.Errorf("rollback reopen failed: %v", reopenErr)
+		}
+		return fmt.Errorf("reopen restored database failed: %w", err)
+	}
+
+	if hadOriginal {
+		_ = os.Remove(rollbackPath)
+	}
+	return nil
+}
+
+// copyFileSync 复制文件并 fsync，确保替换前数据已落盘。
+func copyFileSync(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return err
+	}
+	return out.Close()
 }
 
 // VerifyBackup verifies a backup's checksum.
@@ -241,6 +328,10 @@ func fetchBackup(backupID string) (BackupRecord, error) {
 	if restoredAt.Valid {
 		b.RestoredAt = restoredAt.String
 	}
+	// 兼容历史 RFC3339 数据：读取时统一为 SQLite 时间格式。
+	b.CreatedAt = timeutil.Normalize(b.CreatedAt)
+	b.ExpiresAt = timeutil.Normalize(b.ExpiresAt)
+	b.RestoredAt = timeutil.Normalize(b.RestoredAt)
 	return b, nil
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { platformRequest } from "../utils/commands";
+import { platformRequest, asPlatformRecord } from "../utils/commands";
 import { useTranslation } from "../i18n";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 type Subscription = {
   subscription_id: string;
@@ -34,16 +35,19 @@ export function TokenMySubscriptionsPage() {
   const [items, setItems] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
       const resp = await platformRequest("GET", "/token-market/subscriptions/my");
+      const body = asPlatformRecord(resp.body);
       if (resp.status >= 400) {
-        throw new Error(resp.body?.error || `HTTP ${resp.status}`);
+        throw new Error(String(body.error || `HTTP ${resp.status}`));
       }
-      setItems((resp.body?.data || []) as Subscription[]);
+      setItems((body.data || []) as Subscription[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -56,14 +60,17 @@ export function TokenMySubscriptionsPage() {
   }, []);
 
   const cancel = async (id: string) => {
+    setCancelling(true);
     try {
       const resp = await platformRequest("POST", `/token-market/subscriptions/${id}/cancel`);
       if (resp.status >= 400) {
-        throw new Error(resp.body?.error || `HTTP ${resp.status}`);
+        throw new Error(String(asPlatformRecord(resp.body).error || `HTTP ${resp.status}`));
       }
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -76,7 +83,7 @@ export function TokenMySubscriptionsPage() {
         reason: reason.trim(),
       });
       if (resp.status >= 400) {
-        throw new Error(resp.body?.error || `HTTP ${resp.status}`);
+        throw new Error(String(asPlatformRecord(resp.body).error || `HTTP ${resp.status}`));
       }
       window.alert(t("tokenMarket.disputeSubmitted"));
     } catch (e) {
@@ -129,8 +136,12 @@ export function TokenMySubscriptionsPage() {
                     </button>
                   )}
                   {(s.status === "active" || s.status === "past_due" || s.status === "pending") && (
-                    <button className="btn btn-secondary" onClick={() => cancel(s.subscription_id)}>
-                      {t("tokenMarket.cancelSubscription")}
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => setConfirmCancelId(s.subscription_id)}
+                      disabled={cancelling}
+                    >
+                      {cancelling ? t("common.processing") : t("tokenMarket.cancelSubscription")}
                     </button>
                   )}
                 </td>
@@ -139,6 +150,19 @@ export function TokenMySubscriptionsPage() {
           </tbody>
         </table>
       )}
+      <ConfirmDialog
+        open={confirmCancelId !== null}
+        title={t("tokenMarket.cancelSubscription")}
+        message={t("tokenMarket.confirmCancelSubscription")}
+        danger
+        pending={cancelling}
+        onCancel={() => setConfirmCancelId(null)}
+        onConfirm={() => {
+          const id = confirmCancelId;
+          setConfirmCancelId(null);
+          if (id) void cancel(id);
+        }}
+      />
     </div>
   );
 }

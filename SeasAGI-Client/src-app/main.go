@@ -21,6 +21,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/auth"
+	"github.com/SeasAGI/SeasAGI-Client/internal/buildinfo"
 	"github.com/SeasAGI/SeasAGI-Client/internal/config"
 	"github.com/SeasAGI/SeasAGI-Client/internal/configio"
 	"github.com/SeasAGI/SeasAGI-Client/internal/deeplink"
@@ -285,7 +286,7 @@ func runDesktop() {
 			},
 			About: &mac.AboutInfo{
 				Title:   "SeasAGI",
-				Message: "本地大模型通道切换客户端\nVersion 0.2.0",
+				Message: "本地大模型通道切换客户端\nVersion " + buildinfo.Version,
 			},
 			WebviewIsTransparent: false,
 		},
@@ -307,7 +308,7 @@ func buildAppMenu(app *App, gw *gateway.Service) *menu.Menu {
 		runtime.MessageDialog(app.ctx, runtime.MessageDialogOptions{
 			Type:    runtime.InfoDialog,
 			Title:   "关于 SeasAGI",
-			Message: "SeasAGI v0.2.0\n本地大模型通道切换客户端\n\n本地网关: http://127.0.0.1:4318/v1",
+			Message: "SeasAGI v" + buildinfo.Version + "\n本地大模型通道切换客户端\n\n本地网关: http://127.0.0.1:4318/v1",
 		})
 	})
 	fileMenu.AddSeparator()

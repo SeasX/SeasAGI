@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/keychain"
+	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
 	"github.com/SeasAGI/SeasAGI-Client/internal/usage"
 )
 
@@ -246,11 +247,137 @@ type Channel struct {
 	OAuthTokenURL          string            `json:"oauth_token_url,omitempty"`
 }
 
+// ChannelPublic 是渠道的对外白名单 DTO：只包含展示/路由所需的非敏感字段，
+// 任何凭证（单/多 API Key、OAuth refresh token、client secret）都不在其中。
+// 列表与配置导出统一经它构造，避免 sanitizeChannel 漏字段导致凭证外泄（CL-S1）。
+type ChannelPublic struct {
+	ChannelID              string            `json:"channel_id"`
+	ChannelType            string            `json:"channel_type"`
+	ProviderType           string            `json:"provider_type"`
+	DisplayName            string            `json:"display_name"`
+	BaseURL                string            `json:"base_url"`
+	Enabled                bool              `json:"enabled"`
+	HealthStatus           string            `json:"health_status"`
+	Source                 string            `json:"source,omitempty"`
+	ProviderSpecificConfig map[string]string `json:"provider_specific_config"`
+	SupportedModalities    []string          `json:"supported_modalities,omitempty"`
+	Models                 []string          `json:"models,omitempty"`
+	RetryConfig            *RetryConfig      `json:"retry_config,omitempty"`
+	Weight                 int               `json:"weight,omitempty"`
+	Priority               int               `json:"priority,omitempty"`
+	MaxConcurrent          int               `json:"max_concurrent,omitempty"`
+	// OAuth 非敏感元数据：客户端 id 与 token 端点可用于展示，凭证本身不外传。
+	OAuthClientID string `json:"oauth_client_id,omitempty"`
+	OAuthTokenURL string `json:"oauth_token_url,omitempty"`
+	// AuthType 描述该渠道使用的鉴权方式：api_key / oauth / none。
+	AuthType string `json:"auth_type,omitempty"`
+}
+
+// Public 从完整渠道提取对外展示字段（凭证一律丢弃）。
+func (ch Channel) Public() ChannelPublic {
+	authType := "none"
+	switch {
+	case ch.OAuthRefreshToken != "" || ch.OAuthTokenURL != "":
+		authType = "oauth"
+	case ch.APIKey != "" || len(ch.APIKeys) > 0:
+		authType = "api_key"
+	}
+	return ChannelPublic{
+		ChannelID:              ch.ChannelID,
+		ChannelType:            ch.ChannelType,
+		ProviderType:           ch.ProviderType,
+		DisplayName:            ch.DisplayName,
+		BaseURL:                ch.BaseURL,
+		Enabled:                ch.Enabled,
+		HealthStatus:           ch.HealthStatus,
+		Source:                 ch.Source,
+		ProviderSpecificConfig: ch.ProviderSpecificConfig,
+		SupportedModalities:    ch.SupportedModalities,
+		Models:                 ch.Models,
+		RetryConfig:            ch.RetryConfig,
+		Weight:                 ch.Weight,
+		Priority:               ch.Priority,
+		MaxConcurrent:          ch.MaxConcurrent,
+		OAuthClientID:          ch.OAuthClientID,
+		OAuthTokenURL:          ch.OAuthTokenURL,
+		AuthType:               authType,
+	}
+}
+
+// toChannel 把白名单 DTO 还原为 Channel（凭证字段为零值），供保持 []Channel API 兼容的列表接口使用。
+func (p ChannelPublic) toChannel() Channel {
+	return Channel{
+		ChannelID:              p.ChannelID,
+		ChannelType:            p.ChannelType,
+		ProviderType:           p.ProviderType,
+		DisplayName:            p.DisplayName,
+		BaseURL:                p.BaseURL,
+		Enabled:                p.Enabled,
+		HealthStatus:           p.HealthStatus,
+		Source:                 p.Source,
+		ProviderSpecificConfig: p.ProviderSpecificConfig,
+		SupportedModalities:    p.SupportedModalities,
+		Models:                 p.Models,
+		RetryConfig:            p.RetryConfig,
+		Weight:                 p.Weight,
+		Priority:               p.Priority,
+		MaxConcurrent:          p.MaxConcurrent,
+		OAuthClientID:          p.OAuthClientID,
+		OAuthTokenURL:          p.OAuthTokenURL,
+	}
+}
+
+// credentialStore 抽象系统安全存储，便于在测试中注入写入失败，验证 fail-closed（CL-S3）。
+type credentialStore interface {
+	SaveChannelKey(channelID, apiKey string) error
+	GetChannelKey(channelID string) (string, error)
+	SaveChannelKeys(channelID string, apiKeys []string) error
+	GetChannelKeys(channelID string) ([]string, error)
+	SaveSecret(name, value string) error
+	GetSecret(name string) (string, error)
+}
+
+// keychainCredentialStore 生产实现：委托给 macOS 钥匙串 / 环境变量。
+type keychainCredentialStore struct{}
+
+func (keychainCredentialStore) SaveChannelKey(channelID, apiKey string) error {
+	return keychain.SaveChannelKey(channelID, apiKey)
+}
+func (keychainCredentialStore) GetChannelKey(channelID string) (string, error) {
+	return keychain.GetChannelKey(channelID)
+}
+func (keychainCredentialStore) SaveChannelKeys(channelID string, apiKeys []string) error {
+	return keychain.SaveChannelKeys(channelID, apiKeys)
+}
+func (keychainCredentialStore) GetChannelKeys(channelID string) ([]string, error) {
+	return keychain.GetChannelKeys(channelID)
+}
+func (keychainCredentialStore) SaveSecret(name, value string) error {
+	return keychain.SaveSecret(name, value)
+}
+func (keychainCredentialStore) GetSecret(name string) (string, error) {
+	return keychain.GetSecret(name)
+}
+
+// pendingChannelSecrets 是 keychain 写入失败时保留的待重试凭证副本。
+type pendingChannelSecrets struct {
+	apiKey            string
+	apiKeys           []string
+	oauthRefreshToken string
+	oauthClientSecret string
+}
+
 type Service struct {
 	mu       sync.RWMutex
 	config   AppConfig
 	channels []Channel
 	path     string
+	// secrets 凭证安全存储（默认 keychain）；测试可注入失败实现。
+	secrets credentialStore
+	// pendingSecrets 记录 keychain 写入失败、等待下次保存重试的凭证（fail-closed，不清空内存）。
+	pendingSecrets map[string]pendingChannelSecrets
+	// savedSecretSig 记录各渠道上次成功写入 keychain 的凭证签名，避免每次保存重复写钥匙串。
+	savedSecretSig map[string]string
 }
 
 type persistedState struct {
@@ -265,9 +392,12 @@ func NewService(cfg AppConfig) *Service {
 // NewServiceWithPath 与 NewService 相同，但配置持久化到指定路径（测试隔离用）。
 func NewServiceWithPath(cfg AppConfig, path string) *Service {
 	svc := &Service{
-		config:   cfg,
-		channels: []Channel{},
-		path:     path,
+		config:         cfg,
+		channels:       []Channel{},
+		path:           path,
+		secrets:        keychainCredentialStore{},
+		pendingSecrets: make(map[string]pendingChannelSecrets),
+		savedSecretSig: make(map[string]string),
 	}
 	_ = svc.load()
 	svc.ensureOptimizationConfig()
@@ -743,15 +873,68 @@ func (s *Service) SetMarketNodeConfig(cfg MarketNodeConfig) error {
 	return s.saveLocked()
 }
 
-func (s *Service) ListChannels() ([]Channel, error) {
+// ListChannelsPublic 返回白名单 DTO 列表，供前端展示与配置导出使用（不含任何凭证）。
+func (s *Service) ListChannelsPublic() ([]ChannelPublic, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make([]Channel, 0, len(s.channels))
+	result := make([]ChannelPublic, 0, len(s.channels))
 	for _, ch := range s.channels {
-		result = append(result, sanitizeChannel(ch))
+		result = append(result, ch.Public())
 	}
 	return result, nil
+}
+
+// ListChannels 保持原有 []Channel API 兼容；所有凭证字段均被白名单剔除（CL-S1）。
+func (s *Service) ListChannels() ([]Channel, error) {
+	public, err := s.ListChannelsPublic()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Channel, 0, len(public))
+	for _, pub := range public {
+		result = append(result, pub.toChannel())
+	}
+	return result, nil
+}
+
+// ListChannelsWithCredentials 返回带真实凭证的渠道副本，仅供进程内受控用途
+// （健康检查、资产导出）使用。凭证优先取内存副本，缺失时从 keychain 读取，
+// 绝不直接暴露给前端。
+func (s *Service) ListChannelsWithCredentials() ([]Channel, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.listChannelsWithCredentialsLocked(), nil
+}
+
+func (s *Service) listChannelsWithCredentialsLocked() []Channel {
+	store := s.credentialStore()
+	result := make([]Channel, 0, len(s.channels))
+	for _, ch := range s.channels {
+		resolved := ch
+		if resolved.APIKey == "" {
+			if v, err := store.GetChannelKey(ch.ChannelID); err == nil {
+				resolved.APIKey = v
+			}
+		}
+		if len(resolved.APIKeys) == 0 {
+			if keys, err := store.GetChannelKeys(ch.ChannelID); err == nil && len(keys) > 0 {
+				resolved.APIKeys = keys
+			}
+		}
+		if resolved.OAuthRefreshToken == "" {
+			if v, err := store.GetSecret(oauthRefreshKeyName(ch.ChannelID)); err == nil {
+				resolved.OAuthRefreshToken = v
+			}
+		}
+		if resolved.OAuthClientSecret == "" {
+			if v, err := store.GetSecret(oauthClientSecretKeyName(ch.ChannelID)); err == nil {
+				resolved.OAuthClientSecret = v
+			}
+		}
+		result = append(result, resolved)
+	}
+	return result
 }
 
 // NormalizeChannelWeights validates and normalizes Weight and MaxConcurrent for
@@ -1506,26 +1689,46 @@ func (s *Service) load() error {
 
 // restoreChannelSecretsLocked 恢复渠道密钥到内存。config.json 不再持久化明文凭证，
 // 单/多 API Key 与 OAuth 令牌统一存放在 keychain；同时兼容旧配置里残留的明文（迁移进 keychain）。
+// 迁移写入失败只告警、不清空内存凭证，后续保存会重试。
 // 调用方需持有 s.mu。
 func (s *Service) restoreChannelSecretsLocked() {
+	store := s.credentialStore()
+	if s.savedSecretSig == nil {
+		s.savedSecretSig = make(map[string]string)
+	}
 	for i := range s.channels {
 		ch := &s.channels[i]
+		migrationFailed := false
 		if len(ch.APIKeys) > 0 {
-			_ = keychain.SaveChannelKeys(ch.ChannelID, ch.APIKeys)
-		} else if keys, err := keychain.GetChannelKeys(ch.ChannelID); err == nil && len(keys) > 0 {
+			if err := store.SaveChannelKeys(ch.ChannelID, ch.APIKeys); err != nil {
+				migrationFailed = true
+				logging.Warningf("config: migrate channel keys for %s failed: %v", ch.ChannelID, err)
+			}
+		} else if keys, err := store.GetChannelKeys(ch.ChannelID); err == nil && len(keys) > 0 {
 			ch.APIKeys = keys
 		}
 
 		// OAuth 刷新令牌与客户端密钥同样是敏感凭证，迁移到系统安全存储。
 		if token := strings.TrimSpace(ch.OAuthRefreshToken); token != "" {
-			_ = keychain.SaveSecret(oauthRefreshKeyName(ch.ChannelID), token)
-		} else if token, err := keychain.GetSecret(oauthRefreshKeyName(ch.ChannelID)); err == nil {
+			if err := store.SaveSecret(oauthRefreshKeyName(ch.ChannelID), token); err != nil {
+				migrationFailed = true
+				logging.Warningf("config: migrate oauth refresh token for %s failed: %v", ch.ChannelID, err)
+			}
+		} else if token, err := store.GetSecret(oauthRefreshKeyName(ch.ChannelID)); err == nil {
 			ch.OAuthRefreshToken = token
 		}
 		if secret := strings.TrimSpace(ch.OAuthClientSecret); secret != "" {
-			_ = keychain.SaveSecret(oauthClientSecretKeyName(ch.ChannelID), secret)
-		} else if secret, err := keychain.GetSecret(oauthClientSecretKeyName(ch.ChannelID)); err == nil {
+			if err := store.SaveSecret(oauthClientSecretKeyName(ch.ChannelID), secret); err != nil {
+				migrationFailed = true
+				logging.Warningf("config: migrate oauth client secret for %s failed: %v", ch.ChannelID, err)
+			}
+		} else if secret, err := store.GetSecret(oauthClientSecretKeyName(ch.ChannelID)); err == nil {
 			ch.OAuthClientSecret = secret
+		}
+		// 记录当前已落库指纹，避免后续 saveLocked 重复写钥匙串；迁移失败时不记录，
+		// 让下一次 saveLocked 继续重试。
+		if !migrationFailed {
+			s.savedSecretSig[ch.ChannelID] = secretSignature(*ch)
 		}
 	}
 }
@@ -1533,24 +1736,105 @@ func (s *Service) restoreChannelSecretsLocked() {
 func oauthRefreshKeyName(channelID string) string      { return "oauth_refresh_" + channelID }
 func oauthClientSecretKeyName(channelID string) string { return "oauth_client_secret_" + channelID }
 
+// secretSignature 是渠道凭证的内容指纹，用于跳过未变更的 keychain 写入。
+func secretSignature(ch Channel) string {
+	return strings.Join(ch.APIKeys, "\x00") + "\x01" + ch.APIKey + "\x01" +
+		ch.OAuthRefreshToken + "\x01" + ch.OAuthClientSecret
+}
+
+// persistChannelSecretsLocked 把渠道凭证写入安全存储。任何写入失败都返回错误，
+// 由调用方 fail-closed 处理（不落盘、不清空内存、保留待重试副本）。
+func (s *Service) persistChannelSecretsLocked(store credentialStore, ch Channel) error {
+	if len(ch.APIKeys) > 0 {
+		if err := store.SaveChannelKeys(ch.ChannelID, ch.APIKeys); err != nil {
+			return err
+		}
+		// 首个 key 同时写入单 key 槽位，兼容只读单 key 的调用路径。
+		if ch.APIKey == "" && ch.APIKeys[0] != "" {
+			if err := store.SaveChannelKey(ch.ChannelID, ch.APIKeys[0]); err != nil {
+				return err
+			}
+		}
+	}
+	if ch.APIKey != "" {
+		if err := store.SaveChannelKey(ch.ChannelID, ch.APIKey); err != nil {
+			return err
+		}
+	}
+	if ch.OAuthRefreshToken != "" {
+		if err := store.SaveSecret(oauthRefreshKeyName(ch.ChannelID), ch.OAuthRefreshToken); err != nil {
+			return err
+		}
+	}
+	if ch.OAuthClientSecret != "" {
+		if err := store.SaveSecret(oauthClientSecretKeyName(ch.ChannelID), ch.OAuthClientSecret); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rememberPendingSecretsLocked 保留写入失败的凭证副本，等待下次保存重试。
+func (s *Service) rememberPendingSecretsLocked(ch Channel) {
+	if s.pendingSecrets == nil {
+		s.pendingSecrets = make(map[string]pendingChannelSecrets)
+	}
+	s.pendingSecrets[ch.ChannelID] = pendingChannelSecrets{
+		apiKey:            ch.APIKey,
+		apiKeys:           append([]string(nil), ch.APIKeys...),
+		oauthRefreshToken: ch.OAuthRefreshToken,
+		oauthClientSecret: ch.OAuthClientSecret,
+	}
+}
+
+// flushPendingSecretsLocked 重试此前失败的 keychain 写入；仍失败则返回错误。
+func (s *Service) flushPendingSecretsLocked(store credentialStore) error {
+	for channelID, pending := range s.pendingSecrets {
+		ch := Channel{
+			ChannelID:         channelID,
+			APIKey:            pending.apiKey,
+			APIKeys:           pending.apiKeys,
+			OAuthRefreshToken: pending.oauthRefreshToken,
+			OAuthClientSecret: pending.oauthClientSecret,
+		}
+		if err := s.persistChannelSecretsLocked(store, ch); err != nil {
+			return err
+		}
+		delete(s.pendingSecrets, channelID)
+	}
+	return nil
+}
+
 func (s *Service) saveLocked() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
 	}
 
+	store := s.credentialStore()
+	if s.savedSecretSig == nil {
+		s.savedSecretSig = make(map[string]string)
+	}
+	// 先重试此前失败的凭证写入，避免带着未落库的凭证继续走下去。
+	if err := s.flushPendingSecretsLocked(store); err != nil {
+		return fmt.Errorf("retry pending keychain writes: %w", err)
+	}
+
 	channels := make([]Channel, 0, len(s.channels))
-	for _, ch := range s.channels {
+	for i := range s.channels {
+		ch := s.channels[i]
 		// 明文凭证不落盘：单 key、多 key 与 OAuth 令牌都在 keychain 中保存。
-		if ch.OAuthRefreshToken != "" {
-			_ = keychain.SaveSecret(oauthRefreshKeyName(ch.ChannelID), ch.OAuthRefreshToken)
-			ch.OAuthRefreshToken = ""
-		}
-		if ch.OAuthClientSecret != "" {
-			_ = keychain.SaveSecret(oauthClientSecretKeyName(ch.ChannelID), ch.OAuthClientSecret)
-			ch.OAuthClientSecret = ""
+		// 写入失败必须 fail-closed：返回错误、保留待重试副本，且不把凭证从内存里清掉。
+		if secretSignature(ch) != s.savedSecretSig[ch.ChannelID] {
+			if err := s.persistChannelSecretsLocked(store, ch); err != nil {
+				s.rememberPendingSecretsLocked(ch)
+				return fmt.Errorf("persist channel %s credentials to keychain: %w", ch.ChannelID, err)
+			}
+			s.savedSecretSig[ch.ChannelID] = secretSignature(ch)
 		}
 		ch.APIKey = ""
 		ch.APIKeys = nil
+		ch.OAuthRefreshToken = ""
+		ch.OAuthClientSecret = ""
 		channels = append(channels, ch)
 	}
 
@@ -1614,11 +1898,23 @@ func (s *Service) GetSetting(key string) string {
 	return ""
 }
 
+// credentialStore 返回当前凭证存储实现；零值 Service（测试字面量）回退 keychain。
+func (s *Service) credentialStore() credentialStore {
+	if s.secrets != nil {
+		return s.secrets
+	}
+	return keychainCredentialStore{}
+}
+
+// Sanitize 返回剔除全部凭证字段的渠道副本（单/多 API Key、OAuth refresh token、
+// client secret 等敏感字段全部归零）。任何对外输出都必须经它构造（CL-S1）。
+func (ch Channel) Sanitize() Channel {
+	return ch.Public().toChannel()
+}
+
 func sanitizeChannel(ch Channel) Channel {
-	// 凭证一律不外传：单 key 与多 key 都存放在 keychain，列表中不回传明文。
-	ch.APIKey = ""
-	ch.APIKeys = nil
-	return ch
+	// 凭证一律不外传：通过白名单 DTO 重建敏感字段全部归零（CL-S1）。
+	return ch.Sanitize()
 }
 
 func defaultConfigPath() string {

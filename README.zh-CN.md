@@ -161,11 +161,38 @@ sudo bash SeasAGI-Server/deploy/install.sh
 
 # 配置环境变量
 vi /etc/seasagi/platform-api.env
-# 设置 JWT_SECRET, JWT_REFRESH_SECRET, ADMIN_SECRET
+# 同时编辑 relay-gateway.env：共享 JWT 密钥必须一致
 
 # 启动服务
 sudo systemctl enable --now seasagi-platform-api
 sudo systemctl enable --now seasagi-relay-gateway
+```
+
+#### 必需环境变量
+
+生产模式（`GIN_MODE=release`）下，必需密钥缺失或仍为 `change-me*` 占位值时服务端拒绝启动。社区版强制校验 `JWT_SECRET`、`JWT_REFRESH_SECRET`、`ADMIN_SECRET`、`SEASAGI_DATA_KEY`；企业版还强制 `INTERNAL_API_TOKEN`、`SEASAGI_SNAPSHOT_KEY`、`SEASAGI_MARKET_SIGNING_KEY`。每个密钥可用 `openssl rand -hex 32` 生成（`SEASAGI_DATA_KEY` 使用 32 字节随机串）。开发模式（`GIN_MODE=debug` 或显式 `SEASAGI_ALLOW_DEV_SECRETS=1`）才会自动补全临时密钥。
+
+同时设置：
+
+- `CORS_ALLOWED_ORIGINS`：逗号分隔、精确匹配；默认仅回环来源，生产环境禁止 `*`。
+- `MAX_REQUEST_BODY_BYTES`（platform-api，默认 `8388608`，即 8MB）与 `RELAY_MAX_REQUEST_BODY_BYTES`（relay-gateway，默认 `67108864`，即 64MB）。
+- `TRACE_RETENTION_DAYS`（默认 `30`，`<=0` 关闭清理）与 `TRACE_PURGE_INTERVAL_HOURS`（默认 `6`）；启动即清理一次，之后周期执行。
+
+#### 启动后自检
+
+```bash
+# 1）健康检查
+curl -fsS http://127.0.0.1:9318/healthz
+
+# 2）管理接口拒绝匿名访问（预期 401）
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9318/api/v1/admin/users
+
+# 3）未列入白名单的 Origin 跨域预检被拒
+#    （预期响应中没有 Access-Control-Allow-Origin 头）
+curl -s -D - -o /dev/null -X OPTIONS \
+  -H 'Origin: https://evil.example' \
+  -H 'Access-Control-Request-Method: POST' \
+  http://127.0.0.1:9318/api/v1/auth/login | grep -i '^access-control-allow-origin'
 ```
 
 ---

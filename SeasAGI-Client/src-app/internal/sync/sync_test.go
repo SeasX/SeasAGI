@@ -1,6 +1,11 @@
 package sync
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -191,16 +196,16 @@ func TestSyncBundleConflictDetect(t *testing.T) {
 			{"channel_id": "ch-2", "models": []interface{}{"claude-3-opus"}},
 		},
 		ModelAliases: map[string]string{
-			"fast":   "gpt-3.5-turbo", // 存在
-			"smart":  "claude-3-opus", // 存在
+			"fast":    "gpt-3.5-turbo",     // 存在
+			"smart":   "claude-3-opus",     // 存在
 			"missing": "nonexistent-model", // 不存在 → 冲突
 		},
 		Combos: []map[string]interface{}{
 			{
 				"id": "combo-1",
 				"steps": []interface{}{
-					map[string]interface{}{"channel_id": "ch-1"},     // 存在
-					map[string]interface{}{"channel_id": "ch-999"},   // 不存在 → 冲突
+					map[string]interface{}{"channel_id": "ch-1"},   // 存在
+					map[string]interface{}{"channel_id": "ch-999"}, // 不存在 → 冲突
 				},
 			},
 		},
@@ -281,5 +286,99 @@ func TestFormatConflicts(t *testing.T) {
 	output := FormatConflicts(conflicts)
 	if output == "" {
 		t.Fatal("格式化输出不应为空")
+	}
+}
+
+// TestSyncPushSealsAndPullVerifies 断言推送内容为 HMAC 信封、拉取验签后按 0600 还原（CL-S7）。
+func TestSyncPushSealsAndPullVerifies(t *testing.T) {
+	t.Setenv("SEASAGI_SYNC_HMAC_KEY", "test-sync-key")
+
+	localDir := t.TempDir()
+	remoteDir := t.TempDir()
+	payload := []byte(`[{"name":"mcp","env":{"API_KEY":"sk-sync-test"}}]`)
+	if err := os.WriteFile(filepath.Join(localDir, "mcp_servers.json"), payload, 0o600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	mgr := NewManager(SyncConfig{Provider: ProviderLocal, RemotePath: remoteDir})
+	if err := mgr.Push(localDir); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	remoteRaw, err := os.ReadFile(filepath.Join(remoteDir, "mcp_servers.json"))
+	if err != nil {
+		t.Fatalf("read remote config: %v", err)
+	}
+	var env signedEnvelope
+	if err := json.Unmarshal(remoteRaw, &env); err != nil {
+		t.Fatalf("远端内容必须是签名信封: %v", err)
+	}
+	if env.Signature == "" || env.Payload == "" {
+		t.Fatalf("信封缺少 payload/signature: %s", remoteRaw)
+	}
+	if strings.Contains(string(remoteRaw), "sk-sync-test") {
+		t.Fatalf("远端配置不得包含明文凭证: %s", remoteRaw)
+	}
+
+	targetDir := t.TempDir()
+	puller := NewManager(SyncConfig{Provider: ProviderLocal, RemotePath: remoteDir})
+	if err := puller.Pull(targetDir); err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(targetDir, "mcp_servers.json"))
+	if err != nil {
+		t.Fatalf("read pulled config: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("拉取内容与原始配置不一致: %s", got)
+	}
+	info, err := os.Stat(filepath.Join(targetDir, "mcp_servers.json"))
+	if err != nil {
+		t.Fatalf("stat pulled config: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("拉取文件权限 = %#o, want 0600", perm)
+	}
+}
+
+// TestSyncPullRejectsUnsignedOrTamperedConfig 断言未签名或被篡改的远端配置不会被应用（CL-S7）。
+func TestSyncPullRejectsUnsignedOrTamperedConfig(t *testing.T) {
+	t.Setenv("SEASAGI_SYNC_HMAC_KEY", "test-sync-key")
+
+	remoteDir := t.TempDir()
+	remotePath := filepath.Join(remoteDir, "mcp_servers.json")
+	mgr := NewManager(SyncConfig{Provider: ProviderLocal, RemotePath: remoteDir})
+
+	// 1) 明文（未签名）远端配置必须被拒绝。
+	if err := os.WriteFile(remotePath, []byte(`[{"name":"unsigned"}]`), 0o600); err != nil {
+		t.Fatalf("write unsigned remote: %v", err)
+	}
+	targetDir := t.TempDir()
+	if err := mgr.Pull(targetDir); err == nil {
+		t.Fatal("未签名远端配置必须被拒绝")
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "mcp_servers.json")); !os.IsNotExist(err) {
+		t.Fatal("验签失败时不得写入本地配置")
+	}
+
+	// 2) 合法信封但 payload 被替换（签名保留原值）必须被拒绝。
+	sealed, err := sealSyncFile([]byte(`[{"name":"original"}]`))
+	if err != nil {
+		t.Fatalf("seal payload: %v", err)
+	}
+	var env signedEnvelope
+	if err := json.Unmarshal(sealed, &env); err != nil {
+		t.Fatalf("parse sealed envelope: %v", err)
+	}
+	env.Payload = base64.StdEncoding.EncodeToString([]byte(`[{"name":"tampered"}]`))
+	tampered, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal tampered envelope: %v", err)
+	}
+	if err := os.WriteFile(remotePath, tampered, 0o600); err != nil {
+		t.Fatalf("write tampered remote: %v", err)
+	}
+	if err := mgr.Pull(t.TempDir()); err == nil {
+		t.Fatal("payload 被篡改的远端配置必须被拒绝")
 	}
 }

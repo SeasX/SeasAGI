@@ -20,6 +20,7 @@ type HealthChecker struct {
 	maxFailures   int
 	checkInterval time.Duration
 	stopCh        chan struct{}
+	stopOnce      sync.Once
 }
 
 type HealthChannelInfo struct {
@@ -62,7 +63,9 @@ func (hc *HealthChecker) Start(ctx context.Context) {
 }
 
 func (hc *HealthChecker) Stop() {
-	close(hc.stopCh)
+	hc.stopOnce.Do(func() {
+		close(hc.stopCh)
+	})
 }
 
 func (hc *HealthChecker) runOnce() {

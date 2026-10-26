@@ -272,7 +272,45 @@ export async function createCheckoutSession(planId: string, quantity?: number): 
 
 export interface PlatformResponse {
   status: number;
-  body: any;
+  // body 使用 unknown：后端在异常时可能返回字符串或 HTML 错误页，
+  // 直接标注 any 会让调用点把错误体误当成对象/列表。调用方须用下方类型守卫解析。
+  body: unknown;
+}
+
+// 是否为普通对象（非数组、非字符串、非 null）。
+export function isPlatformRecord(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// 归一化平台响应体为对象；字符串/HTML 错误体返回空对象，避免误当列表渲染。
+export function asPlatformRecord(body: unknown): Record<string, any> {
+  return isPlatformRecord(body) ? body : {};
+}
+
+// 读取 body.data；字符串/HTML 错误体不会命中。
+export function getPlatformData<T = any>(body: unknown): T | undefined {
+  const record = asPlatformRecord(body);
+  return record.data as T | undefined;
+}
+
+// 读取 body.data 并保证为数组；非数组时返回空数组（调用前应先确认请求成功）。
+export function getPlatformArray<T = any>(body: unknown): T[] {
+  const data = getPlatformData<T[]>(body);
+  return Array.isArray(data) ? data : [];
+}
+
+// 从响应体提取可读错误信息：优先 JSON error/message，其次剥离 HTML 标签的文本。
+export function describePlatformError(resp: PlatformResponse): string {
+  const body = resp.body;
+  if (typeof body === "string") {
+    const text = body.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    return text ? `HTTP ${resp.status}: ${text.slice(0, 300)}` : `HTTP ${resp.status}`;
+  }
+  if (isPlatformRecord(body)) {
+    const candidate = body.error ?? body.message;
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  }
+  return `HTTP ${resp.status}`;
 }
 
 // platformRequest 统一经 Go 后端代理平台 API：前端不再持有并外发平台 Token。
@@ -482,9 +520,15 @@ export async function getOverageUsage(): Promise<OverageRecord | null> {
 // getInvoices 经 Go 后端代理平台发票列表接口，返回当前用户的发票记录。
 export async function getInvoices(): Promise<Invoice[]> {
   const res = await platformRequest("GET", "/invoices");
-  if (res.status !== 200 || !res.body) return [];
-  const data = Array.isArray(res.body) ? res.body : res.body.data;
-  return (data as Invoice[]) || [];
+  if (res.status !== 200) throw new Error(describePlatformError(res));
+  if (Array.isArray(res.body)) return res.body as Invoice[];
+  const data = getPlatformData<Invoice[]>(res.body);
+  if (Array.isArray(data)) return data;
+  // 字符串/HTML 错误体不能被当成「没有发票」
+  if (typeof res.body === "string" && res.body.trim()) {
+    throw new Error(describePlatformError(res));
+  }
+  return [];
 }
 
 export async function fetchActiveGrants(): Promise<Record<string, any>[]> {

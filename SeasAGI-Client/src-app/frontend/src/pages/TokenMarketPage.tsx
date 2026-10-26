@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { platformRequest, fetchFreeChannels, listChannels, saveCustomChannel } from "../utils/commands";
+import {
+  platformRequest,
+  fetchFreeChannels,
+  listChannels,
+  saveCustomChannel,
+  describePlatformError,
+  getPlatformArray,
+  getPlatformData,
+} from "../utils/commands";
 import type { Channel } from "../utils/types";
 import { useTranslation } from "../i18n";
 import { useMarketStore } from "../stores/marketStore";
@@ -70,7 +78,7 @@ export function TokenMarketPage() {
     try {
       const resp = await platformRequest("GET", "/token-market/notice");
       if (resp.status >= 400) return;
-      const data = resp.body?.data;
+      const data = getPlatformData<Record<string, any>>(resp.body);
       if (!data) return;
       setMarketNotice({
         text: String(data.compliance_notice || ""),
@@ -89,18 +97,23 @@ export function TokenMarketPage() {
     try {
       const resp = await platformRequest("GET", "/token-market/account");
       if (resp.status >= 400) return;
-      const data = resp.body;
-      if (typeof data.data?.balance === "number") setMyBalance(data.data.balance);
+      const data = getPlatformData<{ balance?: number }>(resp.body);
+      if (typeof data?.balance === "number") setMyBalance(data.balance);
     } catch {
       // 静默失败：余额展示失败不影响市场浏览
     }
   };
 
+  // 请求序号：仅最后一次发起的请求可写入状态，丢弃过期响应（竞态防护）。
+  const requestSeq = useRef(0);
+
   const fetchListings = async (pageNum: number, append: boolean) => {
+    const reqId = ++requestSeq.current;
     if (append) {
       setLoadingMore(true);
     } else {
       setLoading(true);
+      setLoadingMore(false);
     }
     setError(null);
     try {
@@ -116,21 +129,25 @@ export function TokenMarketPage() {
       if (onlyCapacity) params.set("has_capacity", "1");
       params.set("sort", sortBy);
       const resp = await platformRequest("GET", `/token-market/listings?${params}`);
-      if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
-      const data = resp.body;
-      const newItems = data.data || [];
-      setTotal(data.total || 0);
-      setTotalPages(data.total_pages || 1);
-      if (append) {
-        setMarketListings([...marketListings, ...newItems]);
-      } else {
-        setMarketListings(newItems);
-      }
+      // 过期响应（筛选变更/更晚的请求已发出）直接丢弃，避免旧数据覆盖新结果。
+      if (reqId !== requestSeq.current) return;
+      if (resp.status >= 400) throw new Error(describePlatformError(resp));
+      const body = resp.body as Record<string, any>;
+      const newItems = getPlatformArray(body);
+      setTotal(typeof body.total === "number" ? body.total : 0);
+      setTotalPages(typeof body.total_pages === "number" ? body.total_pages : 1);
+      // 函数式更新，避免基于闭包中的旧列表拼接导致丢页/重复。
+      setMarketListings((prev) => (append ? [...prev, ...newItems] : newItems));
+      // 页码在请求成功后再推进，失败时保持原页码以便重试。
+      setPage(pageNum);
     } catch (err) {
+      if (reqId !== requestSeq.current) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (reqId === requestSeq.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   };
 
@@ -166,9 +183,9 @@ export function TokenMarketPage() {
   };
 
   const handleLoadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchListings(nextPage, true);
+    if (loadingMore || loading || page >= totalPages) return;
+    // 页码在 fetchListings 成功后推进，避免失败后页码错位。
+    fetchListings(page + 1, true);
   };
 
   const marketStats = useMemo(() => {
@@ -503,7 +520,17 @@ export function TokenMarketPage() {
                 <div
                   key={listing.listing_id}
                   className="token-market-listing-card"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${listing.token_label} · ${t("tokenMarket.viewListing")}`}
                   onClick={() => navigate(`/token-market/listing/${listing.listing_id}`)}
+                  onKeyDown={(e) => {
+                    // 键盘用户可用 Enter/空格打开详情
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`/token-market/listing/${listing.listing_id}`);
+                    }
+                  }}
                 >
                   <div className="token-market-listing-top">
                     <div>
@@ -563,7 +590,20 @@ export function TokenMarketPage() {
                 </thead>
                 <tbody>
                   {marketListings.map((listing) => (
-                    <tr key={listing.listing_id} onClick={() => navigate(`/token-market/listing/${listing.listing_id}`)}>
+                    <tr
+                      key={listing.listing_id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${listing.token_label} · ${t("tokenMarket.viewListing")}`}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => navigate(`/token-market/listing/${listing.listing_id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          navigate(`/token-market/listing/${listing.listing_id}`);
+                        }
+                      }}
+                    >
                       <td>
                         <div className="token-market-table-title">{listing.token_label}</div>
                       </td>

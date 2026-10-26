@@ -1,11 +1,17 @@
 package usage
 
 import (
+	"crypto/subtle"
+	"encoding/json"
+	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/timeutil"
+	"github.com/gin-gonic/gin"
 )
 
 type UsageEvent struct {
@@ -42,11 +48,45 @@ type ModelUsage struct {
 	TotalOutputTok int    `json:"total_output_tokens"`
 }
 
+// InternalAuth 保护内部用量上报入口。
+// 令牌优先读取 INTERNAL_API_TOKEN，未配置时回退 ADMIN_SECRET；
+// 两者皆未配置则返回 503（fail-closed），并使用常量时间比较。
+func InternalAuth() gin.HandlerFunc {
+	token := strings.TrimSpace(os.Getenv("INTERNAL_API_TOKEN"))
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("ADMIN_SECRET"))
+	}
+	return func(c *gin.Context) {
+		if token == "" {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "internal api token is not configured"})
+			c.Abort()
+			return
+		}
+		provided := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+		if provided == "" {
+			provided = c.GetHeader("X-Internal-Token")
+		}
+		if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid internal api token"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 func IngestUsage(c *gin.Context) {
+	// 先一次性读取请求体：此前连续两次 ShouldBindJSON 会因 body 被消费而失败。
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
+		return
+	}
+
 	var events []UsageEvent
-	if err := c.ShouldBindJSON(&events); err != nil {
+	if err := json.Unmarshal(body, &events); err != nil {
 		var single UsageEvent
-		if err2 := c.ShouldBindJSON(&single); err2 != nil {
+		if err2 := json.Unmarshal(body, &single); err2 != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -55,6 +95,9 @@ func IngestUsage(c *gin.Context) {
 
 	count := 0
 	for _, e := range events {
+		if e.UserID == "" || e.ChannelID == "" || e.Model == "" {
+			continue
+		}
 		capability := e.Capability
 		if capability == "" {
 			capability = "chat"
@@ -81,31 +124,42 @@ func IngestUsage(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ingested": count})
 }
 
-func GetUserUsage(c *gin.Context) {
-	userID := c.GetString("user_id")
-	period := c.DefaultQuery("period", "month")
-
-	now := time.Now()
-	var periodStart time.Time
+// periodStartUTC 返回统计周期起点（UTC）。
+// usage_records.recorded_at 由 CURRENT_TIMESTAMP 写入（UTC），
+// 这里统一用 UTC 计算起点，避免本地时区/格式不一致导致当天统计恒 0、周月漏首日。
+func periodStartUTC(now time.Time, period string) time.Time {
+	now = now.UTC()
 	switch period {
 	case "day":
-		periodStart = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	case "week":
 		weekday := int(now.Weekday())
 		if weekday == 0 {
 			weekday = 7
 		}
-		periodStart = time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, now.Location())
+		return time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, time.UTC)
 	default:
-		periodStart = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	}
+}
+
+// sqliteTimestamp 统一时间参数格式，与 SQLite CURRENT_TIMESTAMP 保持一致。
+func sqliteTimestamp(t time.Time) string {
+	return timeutil.FormatSQLite(t)
+}
+
+func GetUserUsage(c *gin.Context) {
+	userID := c.GetString("user_id")
+	period := c.DefaultQuery("period", "month")
+
+	periodStart := periodStartUTC(time.Now(), period)
 
 	var summary UsageSummary
 	summary.Period = period
-	err := database.DB.QueryRow(
+	err := database.Reader().QueryRow(
 		`SELECT COALESCE(SUM(request_count),0), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(is_error),0)
-		 FROM usage_records WHERE user_id = ? AND recorded_at >= ?`,
-		userID, periodStart.Format(time.RFC3339),
+		 FROM usage_records WHERE user_id = ? AND datetime(recorded_at) >= datetime(?)`,
+		userID, sqliteTimestamp(periodStart),
 	).Scan(&summary.TotalRequests, &summary.TotalInputTok, &summary.TotalOutputTok, &summary.TotalErrors)
 	if err != nil {
 		summary = UsageSummary{Period: period}
@@ -119,26 +173,13 @@ func GetUserModelUsage(c *gin.Context) {
 	userID := c.GetString("user_id")
 	period := c.DefaultQuery("period", "month")
 
-	now := time.Now()
-	var periodStart time.Time
-	switch period {
-	case "day":
-		periodStart = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	case "week":
-		weekday := int(now.Weekday())
-		if weekday == 0 {
-			weekday = 7
-		}
-		periodStart = time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, now.Location())
-	default:
-		periodStart = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	}
+	periodStart := periodStartUTC(time.Now(), period)
 
-	rows, err := database.DB.Query(
+	rows, err := database.Reader().Query(
 		`SELECT model, capability, COALESCE(SUM(request_count),0), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0)
-		 FROM usage_records WHERE user_id = ? AND recorded_at >= ?
+		 FROM usage_records WHERE user_id = ? AND datetime(recorded_at) >= datetime(?)
 		 GROUP BY model, capability ORDER BY SUM(request_count) DESC`,
-		userID, periodStart.Format(time.RFC3339),
+		userID, sqliteTimestamp(periodStart),
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -170,28 +211,15 @@ func GetErrorDistribution(c *gin.Context) {
 	userID := c.GetString("user_id")
 	period := c.DefaultQuery("period", "month")
 
-	now := time.Now()
-	var periodStart time.Time
-	switch period {
-	case "day":
-		periodStart = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	case "week":
-		weekday := int(now.Weekday())
-		if weekday == 0 {
-			weekday = 7
-		}
-		periodStart = time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, now.Location())
-	default:
-		periodStart = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	}
+	periodStart := periodStartUTC(time.Now(), period)
 
-	rows, err := database.DB.Query(
+	rows, err := database.Reader().Query(
 		`SELECT COALESCE(error_category, '') AS category, COUNT(*) AS cnt
 		 FROM usage_records
-		 WHERE user_id = ? AND is_error = 1 AND recorded_at >= ?
+		 WHERE user_id = ? AND is_error = 1 AND datetime(recorded_at) >= datetime(?)
 		 GROUP BY error_category
 		 ORDER BY cnt DESC`,
-		userID, periodStart.Format(time.RFC3339),
+		userID, sqliteTimestamp(periodStart),
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -227,7 +255,8 @@ func GetUsageTimeline(c *gin.Context) {
 	period := c.DefaultQuery("period", "24h")
 	interval := c.DefaultQuery("interval", "hour")
 
-	now := time.Now()
+	// 时间线使用相对窗口（24h/7d/30d），统一按 UTC 计算并与 SQLite 时间格式对齐。
+	now := time.Now().UTC()
 	var periodStart time.Time
 	switch period {
 	case "7d":
@@ -246,15 +275,15 @@ func GetUsageTimeline(c *gin.Context) {
 		timeExpr = "strftime('%Y-%m-%dT%H:00:00', recorded_at)"
 	}
 
-	rows, err := database.DB.Query(
+	rows, err := database.Reader().Query(
 		`SELECT `+timeExpr+` AS bucket,
 			COUNT(*) AS total_count,
 			SUM(is_error) AS error_count
 		 FROM usage_records
-		 WHERE user_id = ? AND recorded_at >= ?
+		 WHERE user_id = ? AND datetime(recorded_at) >= datetime(?)
 		 GROUP BY bucket
 		 ORDER BY bucket ASC`,
-		userID, periodStart.Format(time.RFC3339),
+		userID, sqliteTimestamp(periodStart),
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

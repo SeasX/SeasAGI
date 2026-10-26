@@ -32,6 +32,10 @@ type Proxy struct {
 
 // NewProxy 创建 Proxy 实例。addr 为监听地址（如 ":8080"），gatewayURL 为本地网关地址。
 func NewProxy(addr string, ca *CertificateAuthority, rules *Rules, gatewayURL string, logger InterceptLogger) *Proxy {
+	// CL-S11：只有命中拦截规则的域名才允许用受信根签发叶子证书。
+	if ca != nil && rules != nil {
+		ca.SetDomainPolicy(rules.Match)
+	}
 	return &Proxy{
 		ca:           ca,
 		rules:        rules,

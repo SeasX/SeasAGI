@@ -113,10 +113,9 @@ func (s *smoothWRRState) reorderForWRR(key string, candidates []PlanStep) []Plan
 	ordered := make([]PlanStep, 0, len(candidates))
 	used := make([]bool, len(candidates))
 
-	// Clone the state for simulation so we don't advance the real state
+	// 模拟过程会推进 currentWeight，必须全程持锁，避免并发请求读到半更新的权重（CL-07）。
 	s.mu.Lock()
 	items := s.items[key]
-	s.mu.Unlock()
 
 	// We need to pick each item exactly once, in smooth-WRR priority order
 	for range candidates {
@@ -124,7 +123,7 @@ func (s *smoothWRRState) reorderForWRR(key string, candidates []PlanStep) []Plan
 		totalWeight := 0
 		bestIdx := -1
 		for i, item := range items {
-			if used[i] {
+			if i >= len(used) || used[i] {
 				continue
 			}
 			// Use the current state + weight as the selection score
@@ -146,10 +145,11 @@ func (s *smoothWRRState) reorderForWRR(key string, candidates []PlanStep) []Plan
 
 	// Ensure all items are included even if something went wrong
 	for i, item := range items {
-		if !used[i] {
+		if i < len(used) && !used[i] {
 			ordered = append(ordered, item.step)
 		}
 	}
+	s.mu.Unlock()
 
 	return ordered
 }

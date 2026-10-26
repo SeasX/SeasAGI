@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { platformRequest } from "../utils/commands";
+import { platformRequest, asPlatformRecord } from "../utils/commands";
 import { useTranslation } from "../i18n";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 type Batch = {
   batch_id: string;
@@ -28,6 +29,7 @@ type Subscriber = {
   buyer_user_id: string;
   token_label?: string;
   price: number;
+  currency?: string;
   quota_usd: number;
   used_usd: number;
   status: string;
@@ -52,6 +54,8 @@ export function TokenProviderEarningsPage() {
   const [rate, setRate] = useState(0.05);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [confirmSubId, setConfirmSubId] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -61,16 +65,18 @@ export function TokenProviderEarningsPage() {
         platformRequest("GET", "/token-market/provider/earnings"),
         platformRequest("GET", "/token-market/provider/subscriptions"),
       ]);
-      if (earn.status >= 400) throw new Error(earn.body?.error || `HTTP ${earn.status}`);
-      if (subsResp.status >= 400) throw new Error(subsResp.body?.error || `HTTP ${subsResp.status}`);
+      const earnBody = asPlatformRecord(earn.body);
+      const subsBody = asPlatformRecord(subsResp.body);
+      if (earn.status >= 400) throw new Error(String(earnBody.error || `HTTP ${earn.status}`));
+      if (subsResp.status >= 400) throw new Error(String(subsBody.error || `HTTP ${subsResp.status}`));
 
-      const data = earn.body?.data || {};
+      const data = earnBody.data || {};
       setBatches((data.batches || []) as Batch[]);
       setItems((data.items || []) as Item[]);
       setSettled(data.settled_net_total || 0);
       setPending(data.pending_net || 0);
       setRate(data.relay_fee_rate || 0.05);
-      setSubs((subsResp.body?.data || []) as Subscriber[]);
+      setSubs((subsBody.data || []) as Subscriber[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -83,12 +89,15 @@ export function TokenProviderEarningsPage() {
   }, []);
 
   const confirm = async (id: string) => {
+    setConfirming(true);
     try {
       const resp = await platformRequest("POST", `/token-market/subscriptions/${id}/confirm`);
-      if (resp.status >= 400) throw new Error(resp.body?.error || `HTTP ${resp.status}`);
+      if (resp.status >= 400) throw new Error(String(asPlatformRecord(resp.body).error || `HTTP ${resp.status}`));
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConfirming(false);
     }
   };
 
@@ -137,7 +146,7 @@ export function TokenProviderEarningsPage() {
               <tr key={s.subscription_id}>
                 <td>{s.token_label || "-"}</td>
                 <td>{s.buyer_user_id}</td>
-                <td>{s.price.toFixed(2)} USD</td>
+                <td>{s.price.toFixed(2)} {s.currency || "USD"}</td>
                 <td>
                   {s.used_usd.toFixed(2)} / {s.quota_usd.toFixed(2)}
                 </td>
@@ -145,8 +154,12 @@ export function TokenProviderEarningsPage() {
                 <td>{s.current_period_end || "-"}</td>
                 <td>
                   {s.status === "pending" && (
-                    <button className="btn btn-primary" onClick={() => confirm(s.subscription_id)}>
-                      {t("tokenMarket.statusActiveSub")}
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setConfirmSubId(s.subscription_id)}
+                      disabled={confirming}
+                    >
+                      {confirming ? t("common.processing") : t("tokenMarket.statusActiveSub")}
                     </button>
                   )}
                 </td>
@@ -211,6 +224,18 @@ export function TokenProviderEarningsPage() {
           </table>
         </>
       )}
+      <ConfirmDialog
+        open={confirmSubId !== null}
+        title={t("tokenMarket.statusActiveSub")}
+        message={t("tokenMarket.confirmConfirmSubscription")}
+        pending={confirming}
+        onCancel={() => setConfirmSubId(null)}
+        onConfirm={() => {
+          const id = confirmSubId;
+          setConfirmSubId(null);
+          if (id) void confirm(id);
+        }}
+      />
     </div>
   );
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/auth"
+	"github.com/SeasAGI/SeasAGI-Client/internal/buildinfo"
 	"github.com/SeasAGI/SeasAGI-Client/internal/config"
 	"github.com/SeasAGI/SeasAGI-Client/internal/configio"
 	"github.com/SeasAGI/SeasAGI-Client/internal/deeplink"
@@ -139,7 +140,7 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) GetAppInfo() map[string]any {
 	return map[string]any{
 		"name":    "SeasAGI",
-		"version": "0.2.0",
+		"version": buildinfo.Version,
 	}
 }
 
@@ -1433,22 +1434,27 @@ func (a *App) ListMyAssets() ([]map[string]any, error) {
 	return payload.Data, nil
 }
 
-// ExportLocalAssets 从本地通道生成可上架资产清单（含凭证与指纹）。
+// ExportLocalAssets 从本地通道生成可上架资产清单（含加密凭证与指纹）。
 //
 // 指纹 = SHA-256(api_key) 前 16 字节十六进制，不可逆，仅用于企业端识别同一凭证；
 // 这样企业端无需知道明文即可完成「同一资产的唯一注册与所有权校验」。
-// 凭证默认走平台 RSA-OAEP 公钥信封（api_key_enc）；OAuth 会话类通道不含凭证，
-// 仅登记资产元数据，实际请求由 A 端节点（P2-1）执行。
+// 凭证只走平台 RSA-OAEP 公钥信封（api_key_enc）：拿不到公钥或加密失败时整体失败，
+// 绝不回退明文（CL-S15）；OAuth 会话类通道不含凭证，仅登记资产元数据。
 func (a *App) ExportLocalAssets() ([]map[string]any, error) {
-	channels, err := a.configSvc.ListChannels()
+	// 走受控凭证读取（keychain），脱敏渠道列表不含密钥、会导出空清单。
+	channels, err := a.configSvc.ListChannelsWithCredentials()
 	if err != nil {
 		return nil, err
 	}
 
 	assets := make([]map[string]any, 0, len(channels))
-	pubKey, _ := a.fetchAssetPublicKey()
+	// 平台公钥按需获取：只有需要上送 API Key 时才要求登录态/公钥可用。
+	var pubKey *rsa.PublicKey
 	for _, ch := range channels {
 		key := strings.TrimSpace(ch.APIKey)
+		if key == "" && len(ch.APIKeys) > 0 {
+			key = strings.TrimSpace(ch.APIKeys[0])
+		}
 		if strings.TrimSpace(ch.BaseURL) == "" || !ch.Enabled {
 			continue
 		}
@@ -1470,7 +1476,20 @@ func (a *App) ExportLocalAssets() ([]map[string]any, error) {
 			continue
 		}
 		sum := sha256.Sum256([]byte(key))
-		entry := map[string]any{
+		if pubKey == nil {
+			pubKey, err = a.fetchAssetPublicKey()
+			if err != nil {
+				return nil, fmt.Errorf("refusing to export assets without platform encryption key: %w", err)
+			}
+		}
+		enc, err := encryptWithPublicKey(pubKey, key)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt credential for channel %s: %w", ch.ChannelID, err)
+		}
+		if enc == "" {
+			return nil, fmt.Errorf("encrypt credential for channel %s: empty ciphertext", ch.ChannelID)
+		}
+		assets = append(assets, map[string]any{
 			"token_fingerprint": hex.EncodeToString(sum[:16]),
 			"label":             ch.DisplayName,
 			"provider_type":     ch.ProviderType,
@@ -1478,14 +1497,8 @@ func (a *App) ExportLocalAssets() ([]map[string]any, error) {
 			"auth_type":         "api_key",
 			"base_url":          strings.TrimRight(ch.BaseURL, "/"),
 			"models":            ch.Models,
-		}
-		// 有平台公钥时走 RSA-OAEP 信封，明文凭证不经过业务 JSON；无公钥时退回明文（内网/TLS）。
-		if enc, err := encryptWithPublicKey(pubKey, key); err == nil && enc != "" {
-			entry["api_key_enc"] = enc
-		} else {
-			entry["api_key"] = key
-		}
-		assets = append(assets, entry)
+			"api_key_enc":       enc,
+		})
 	}
 	return assets, nil
 }
@@ -2650,15 +2663,24 @@ func (a *App) ChatCompletion(messages []map[string]any, model string) (map[strin
 	result["_gateway_status"] = resp.StatusCode
 	result["_gateway_port"] = gatewayPort
 
-	// Build curl command for debugging
+	// Build curl command for debugging。
+	// 安全：真实令牌绝不回传给前端（会被截图/复制外泄），统一使用环境变量占位符，
+	// 用户在自己的终端执行时再导出同名变量即可复现。
 	result["_curl_command"] = buildCurlCommand(
 		fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", gatewayPort),
-		"Bearer "+token,
+		curlChannelKeyAuthHeader,
 		string(bodyBytes),
 	)
 
 	return result, nil
 }
+
+// curlChannelKeyAuthHeader 是 Playground 回传 curl 命令时使用的上游渠道 Key 占位符。
+// 真实的渠道 Key / 本机令牌只保留在进程内，绝不出现在任何回传数据里。
+const curlChannelKeyAuthHeader = "Bearer $SEASAGI_CHANNEL_KEY"
+
+// curlLocalTokenAuthHeader 是访问本机网关时使用的令牌占位符（CL-S2）。
+const curlLocalTokenAuthHeader = "Bearer $SEASAGI_LOCAL_TOKEN"
 
 func buildCurlCommand(url, authHeader, bodyJSON string) string {
 	escapedBody := strings.ReplaceAll(bodyJSON, "'", "'\\''")
@@ -2716,10 +2738,12 @@ func (a *App) ChatCompletionForChannel(channelID string, messages []map[string]a
 	result["_channel_name"] = ch.DisplayName
 	result["_status_code"] = resp.StatusCode
 
-	// Build curl command for debugging
+	// Build curl command for debugging。
+	// 安全：上游渠道 Key 绝不能出现在回传内容中（Playground 截图/日志会外泄），
+	// 只返回环境变量占位符。
 	result["_curl_command"] = buildCurlCommand(
 		baseURL+"/chat/completions",
-		"Bearer "+apiKey,
+		curlChannelKeyAuthHeader,
 		string(bodyBytes),
 	)
 
@@ -2776,9 +2800,10 @@ func (a *App) ImageGeneration(prompt string, model string, params map[string]any
 
 	result["_gateway_status"] = resp.StatusCode
 	result["_gateway_port"] = gatewayPort
+	// 安全：本机网关令牌同样不得回传前端，只给环境变量占位符（CL-S2）。
 	result["_curl_command"] = buildCurlCommand(
 		fmt.Sprintf("http://127.0.0.1:%d/v1/images/generations", gatewayPort),
-		"Bearer "+token,
+		curlLocalTokenAuthHeader,
 		string(bodyBytes),
 	)
 
@@ -2838,9 +2863,10 @@ func (a *App) ImageGenerationForChannel(channelID string, prompt string, model s
 	result["_channel_id"] = channelID
 	result["_channel_name"] = ch.DisplayName
 	result["_status_code"] = resp.StatusCode
+	// 安全：上游渠道 Key 不得回传前端（截图/日志外泄），只给环境变量占位符（CL-S2）。
 	result["_curl_command"] = buildCurlCommand(
 		baseURL+"/images/generations",
-		"Bearer "+apiKey,
+		curlChannelKeyAuthHeader,
 		string(bodyBytes),
 	)
 
@@ -2897,9 +2923,10 @@ func (a *App) VideoGeneration(prompt string, model string, params map[string]any
 
 	result["_gateway_status"] = resp.StatusCode
 	result["_gateway_port"] = gatewayPort
+	// 安全：本机网关令牌同样不得回传前端，只给环境变量占位符（CL-S2）。
 	result["_curl_command"] = buildCurlCommand(
 		fmt.Sprintf("http://127.0.0.1:%d/v1/videos/generations", gatewayPort),
-		"Bearer "+token,
+		curlLocalTokenAuthHeader,
 		string(bodyBytes),
 	)
 
@@ -2959,9 +2986,10 @@ func (a *App) VideoGenerationForChannel(channelID string, prompt string, model s
 	result["_channel_id"] = channelID
 	result["_channel_name"] = ch.DisplayName
 	result["_status_code"] = resp.StatusCode
+	// 安全：上游渠道 Key 不得回传前端（截图/日志外泄），只给环境变量占位符（CL-S2）。
 	result["_curl_command"] = buildCurlCommand(
 		baseURL+"/videos/generations",
-		"Bearer "+apiKey,
+		curlChannelKeyAuthHeader,
 		string(bodyBytes),
 	)
 

@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  platform-api:
+    name: platform-api
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go build ./...
+      - run: go test ./... -timeout 300s
+      - run: go vet ./...
+
+  relay-gateway:
+    name: relay-gateway
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: relay-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go build ./...
+      - run: go test ./... -timeout 300s
+      - run: go vet ./...
+
+  env-docs:
+    name: env-docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node scripts/check-env-docs.mjs

@@ -1,5 +1,8 @@
 // Package search provides a unified search API that aggregates results
 // from multiple search providers (Perplexity, Brave, Serper, Exa, Tavily).
+//
+// 状态：experimental，未接入生产路径：main/app 未注册本包 handler，
+// 全仓仅本包测试引用。复用时需先补齐鉴权、速率限制与请求体上限。
 package search
 
 import (

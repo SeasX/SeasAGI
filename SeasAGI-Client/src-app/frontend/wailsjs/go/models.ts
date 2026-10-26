@@ -879,6 +879,70 @@ export namespace config {
 		    return a;
 		}
 	}
+	export class ChannelPublic {
+	    channel_id: string;
+	    channel_type: string;
+	    provider_type: string;
+	    display_name: string;
+	    base_url: string;
+	    enabled: boolean;
+	    health_status: string;
+	    source?: string;
+	    provider_specific_config: Record<string, string>;
+	    supported_modalities?: string[];
+	    models?: string[];
+	    retry_config?: RetryConfig;
+	    weight?: number;
+	    priority?: number;
+	    max_concurrent?: number;
+	    oauth_client_id?: string;
+	    oauth_token_url?: string;
+	    auth_type?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChannelPublic(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.channel_id = source["channel_id"];
+	        this.channel_type = source["channel_type"];
+	        this.provider_type = source["provider_type"];
+	        this.display_name = source["display_name"];
+	        this.base_url = source["base_url"];
+	        this.enabled = source["enabled"];
+	        this.health_status = source["health_status"];
+	        this.source = source["source"];
+	        this.provider_specific_config = source["provider_specific_config"];
+	        this.supported_modalities = source["supported_modalities"];
+	        this.models = source["models"];
+	        this.retry_config = this.convertValues(source["retry_config"], RetryConfig);
+	        this.weight = source["weight"];
+	        this.priority = source["priority"];
+	        this.max_concurrent = source["max_concurrent"];
+	        this.oauth_client_id = source["oauth_client_id"];
+	        this.oauth_token_url = source["oauth_token_url"];
+	        this.auth_type = source["auth_type"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	
 	
 	

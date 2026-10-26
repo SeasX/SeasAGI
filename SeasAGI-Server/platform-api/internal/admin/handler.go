@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/i18n"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/logging"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/timeutil"
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,7 +22,7 @@ func Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if token != adminSecret {
+		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(adminSecret)) != 1 {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": i18n.TFromContext(c, "auth.invalidAdminSecret")})
 			c.Abort()
 			return
@@ -177,36 +179,25 @@ func GetUsageStats(c *gin.Context) {
 	userID := c.Query("user_id")
 	period := c.DefaultQuery("period", "month")
 
-	now := time.Now()
-	var periodStart time.Time
-	switch period {
-	case "day":
-		periodStart = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	case "week":
-		weekday := int(now.Weekday())
-		if weekday == 0 {
-			weekday = 7
-		}
-		periodStart = time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, now.Location())
-	default:
-		periodStart = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	}
+	// usage_records.recorded_at 由 CURRENT_TIMESTAMP 写入（UTC）；
+	// 统一按 UTC 计算起点并使用 datetime() 比较，修复当天统计恒 0、周月漏首日。
+	periodStart := periodStartUTC(time.Now(), period)
 
 	var query string
 	var args []interface{}
 
 	if userID != "" {
 		query = `SELECT COALESCE(SUM(request_count),0), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(is_error),0), COUNT(DISTINCT user_id)
-				 FROM usage_records WHERE user_id = ? AND recorded_at >= ?`
-		args = []interface{}{userID, periodStart.Format(time.RFC3339)}
+				 FROM usage_records WHERE user_id = ? AND datetime(recorded_at) >= datetime(?)`
+		args = []interface{}{userID, sqliteTimestamp(periodStart)}
 	} else {
 		query = `SELECT COALESCE(SUM(request_count),0), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(is_error),0), COUNT(DISTINCT user_id)
-				 FROM usage_records WHERE recorded_at >= ?`
-		args = []interface{}{periodStart.Format(time.RFC3339)}
+				 FROM usage_records WHERE datetime(recorded_at) >= datetime(?)`
+		args = []interface{}{sqliteTimestamp(periodStart)}
 	}
 
 	var totalReqs, totalInputTok, totalOutputTok, totalErrors, distinctUsers int
-	_ = database.DB.QueryRow(query, args...).Scan(&totalReqs, &totalInputTok, &totalOutputTok, &totalErrors, &distinctUsers)
+	_ = database.Reader().QueryRow(query, args...).Scan(&totalReqs, &totalInputTok, &totalOutputTok, &totalErrors, &distinctUsers)
 
 	c.JSON(http.StatusOK, gin.H{
 		"period":              period,
@@ -223,7 +214,7 @@ func ListAllUsage(c *gin.Context) {
 	limit := 100
 	offset := 0
 
-	rows, err := database.DB.Query(
+	rows, err := database.Reader().Query(
 		`SELECT user_id, device_id, channel_id, model, capability, input_tokens, output_tokens, request_count, latency_ms, status_code, is_error, recorded_at
 		 FROM usage_records ORDER BY recorded_at DESC LIMIT ? OFFSET ?`,
 		limit, offset,
@@ -271,7 +262,7 @@ func ListUserCustomChannels(c *gin.Context) {
 		return
 	}
 
-	rows, err := database.DB.Query(
+	rows, err := database.Reader().Query(
 		`SELECT channel_id, user_id, tenant_id, provider_type, display_name, base_url, models, enabled, created_at, updated_at
 		 FROM user_custom_channels WHERE user_id = ? ORDER BY created_at DESC`, userID,
 	)
@@ -303,4 +294,26 @@ func ListUserCustomChannels(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"object": "list", "data": items})
+}
+
+// periodStartUTC 返回统计周期起点（UTC），与 usage_records 的 UTC 时间语义一致。
+func periodStartUTC(now time.Time, period string) time.Time {
+	now = now.UTC()
+	switch period {
+	case "day":
+		return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	case "week":
+		weekday := int(now.Weekday())
+		if weekday == 0 {
+			weekday = 7
+		}
+		return time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, time.UTC)
+	default:
+		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	}
+}
+
+// sqliteTimestamp 统一时间参数格式，与 SQLite CURRENT_TIMESTAMP 保持一致。
+func sqliteTimestamp(t time.Time) string {
+	return timeutil.FormatSQLite(t)
 }

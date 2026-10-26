@@ -47,7 +47,7 @@ func TestVerifyIntegrityDetectsHashTamper(t *testing.T) {
 
 func TestVerifyIntegritySurvivesPersistence(t *testing.T) {
 	s := newTestService(t)
-	for i := 0; i < persistBatch; i++ {
+	for i := 0; i < testPersistCount; i++ {
 		_ = s.RecordLog(RequestLog{RequestID: "r" + string(rune('0'+i))})
 	}
 

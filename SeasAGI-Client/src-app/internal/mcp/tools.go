@@ -135,102 +135,86 @@ func (s *GatewayServer) registerBuiltinTools() {
 }
 
 // --- Tool handler 实现 ---
+//
+// 这些工具目前尚未接入真实的路由/用量/健康数据源。返回显式 unimplemented 错误，
+// 避免外部 agent 基于硬编码的假健康度、假配额做出错误决策（CL-S9）。
+
+func unimplemented(tool string) (interface{}, error) {
+	return nil, fmt.Errorf("%s is not implemented yet; query the desktop UI or local HTTP API instead", tool)
+}
 
 func toolGetHealth(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"status": "healthy", "uptime": "running"}, nil
+	return unimplemented("get_health")
 }
 
 func toolListCombos(args map[string]interface{}) (interface{}, error) {
-	return []map[string]interface{}{
-		{"id": "combo-1", "name": "default", "strategy": "priority"},
-	}, nil
+	return unimplemented("list_combos")
 }
 
 func toolGetComboMetrics(args map[string]interface{}) (interface{}, error) {
-	comboID, _ := args["combo_id"].(string)
-	if comboID == "" {
-		return nil, fmt.Errorf("combo_id is required")
-	}
-	return map[string]interface{}{"combo_id": comboID, "requests": 100, "success_rate": 0.95}, nil
+	return unimplemented("get_combo_metrics")
 }
 
 func toolSwitchCombo(args map[string]interface{}) (interface{}, error) {
-	comboID, _ := args["combo_id"].(string)
-	if comboID == "" {
-		return nil, fmt.Errorf("combo_id is required")
-	}
-	return map[string]interface{}{"active_combo": comboID, "status": "switched"}, nil
+	return unimplemented("switch_combo")
 }
 
 func toolCheckQuota(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"used": 5000, "limit": 10000, "remaining": 5000}, nil
+	return unimplemented("check_quota")
 }
 
 func toolRouteRequest(args map[string]interface{}) (interface{}, error) {
-	model, _ := args["model"].(string)
-	if model == "" {
-		return nil, fmt.Errorf("model is required")
-	}
-	return map[string]interface{}{"model": model, "provider": "openai", "latency_ms": 200}, nil
+	return unimplemented("route_request")
 }
 
 func toolCostReport(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"total_cost": 12.50, "currency": "USD", "period": "2026-07"}, nil
+	return unimplemented("cost_report")
 }
 
 func toolListModelsCatalog(args map[string]interface{}) (interface{}, error) {
-	return []map[string]interface{}{
-		{"id": "gpt-4o", "provider": "openai", "context_window": 128000},
-		{"id": "claude-3.5-sonnet", "provider": "anthropic", "context_window": 200000},
-	}, nil
+	return unimplemented("list_models_catalog")
 }
 
 func toolWebSearch(args map[string]interface{}) (interface{}, error) {
-	query, _ := args["query"].(string)
-	if query == "" {
-		return nil, fmt.Errorf("query is required")
-	}
-	return []map[string]interface{}{
-		{"title": "Search result for: " + query, "url": "https://example.com"},
-	}, nil
+	return unimplemented("web_search")
 }
 
 func toolSimulateRoute(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"simulated": true, "would_route_to": "provider-a"}, nil
+	return unimplemented("simulate_route")
 }
 
 func toolSetBudgetGuard(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"budget_guard": "set", "threshold": 100.0}, nil
+	return unimplemented("set_budget_guard")
 }
 
 func toolSetRoutingStrategy(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"strategy": "priority", "status": "applied"}, nil
+	return unimplemented("set_routing_strategy")
 }
 
 func toolSetResilienceProfile(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"profile": "balanced", "status": "applied"}, nil
+	return unimplemented("set_resilience_profile")
 }
 
 func toolTestCombo(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"combo_id": "combo-1", "reachable": true, "latency_ms": 50}, nil
+	return unimplemented("test_combo")
 }
 
 func toolGetProviderMetrics(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"openai": map[string]interface{}{"requests": 100, "errors": 2}}, nil
+	return unimplemented("get_provider_metrics")
 }
 
 func toolBestComboForTask(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"recommended": "combo-2", "reason": "lowest latency for coding tasks"}, nil
+	return unimplemented("best_combo_for_task")
 }
 
 func toolExplainRoute(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"explanation": "Routed to provider-a based on priority strategy"}, nil
+	return unimplemented("explain_route")
 }
 
 func toolGetSessionSnapshot(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"session_id": "sess-1", "requests": 42}, nil
+	return unimplemented("get_session_snapshot")
 }
 
 func toolDBHealthCheck(args map[string]interface{}) (interface{}, error) {
-	return map[string]interface{}{"db_status": "healthy", "size_bytes": 1048576}, nil
+	return unimplemented("db_health_check")
 }

@@ -86,6 +86,14 @@ export function ListChannels() {
   return window['go']['config']['Service']['ListChannels']();
 }
 
+export function ListChannelsPublic() {
+  return window['go']['config']['Service']['ListChannelsPublic']();
+}
+
+export function ListChannelsWithCredentials() {
+  return window['go']['config']['Service']['ListChannelsWithCredentials']();
+}
+
 export function ListComboTemplates() {
   return window['go']['config']['Service']['ListComboTemplates']();
 }

@@ -125,7 +125,9 @@ func TestA2ATaskGetNotFound(t *testing.T) {
 func TestA2AHTTPMetadata(t *testing.T) {
 	srv := NewServer("http://localhost:4318/a2a")
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/agent.json", nil))
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/agent.json", nil)
+	req.Host = "127.0.0.1:4318"
+	srv.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
@@ -141,7 +143,9 @@ func TestA2AHTTPSend(t *testing.T) {
 	srv := NewServer("http://localhost:4318/a2a")
 	body := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tasks/send","params":{"message":{"content":"hello"}}}`)
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/a2a", body))
+	req := httptest.NewRequest(http.MethodPost, "/a2a", body)
+	req.Host = "127.0.0.1:4318"
+	srv.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
@@ -156,7 +160,9 @@ func TestA2AHTTPSend(t *testing.T) {
 func TestA2AHTTPMethodNotAllowed(t *testing.T) {
 	srv := NewServer("http://localhost:4318/a2a")
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/a2a", nil))
+	req := httptest.NewRequest(http.MethodGet, "/a2a", nil)
+	req.Host = "127.0.0.1:4318"
+	srv.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405, got %d", rec.Code)
@@ -166,7 +172,9 @@ func TestA2AHTTPMethodNotAllowed(t *testing.T) {
 func TestA2AHTTPNotFound(t *testing.T) {
 	srv := NewServer("http://localhost:4318/a2a")
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/unknown", nil))
+	req := httptest.NewRequest(http.MethodGet, "/unknown", nil)
+	req.Host = "127.0.0.1:4318"
+	srv.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", rec.Code)
@@ -185,5 +193,36 @@ func TestA2AInvalidParams(t *testing.T) {
 	}
 	if resp.Error.Code != CodeInvalidParams {
 		t.Errorf("expected code %d, got %d", CodeInvalidParams, resp.Error.Code)
+	}
+}
+
+// CL-S10：A2A 只服务本机，拒绝非回环 Host 与跨站 Origin。
+func TestA2ALocalOnlyGuard(t *testing.T) {
+	srv := NewServer("http://localhost:4318/a2a")
+
+	remoteHost := httptest.NewRequest(http.MethodGet, "/.well-known/agent.json", nil)
+	remoteHost.Host = "evil.example.com"
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, remoteHost)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("non-local Host: expected 403, got %d", rec.Code)
+	}
+
+	crossOrigin := httptest.NewRequest(http.MethodGet, "/.well-known/agent.json", nil)
+	crossOrigin.Host = "127.0.0.1:4318"
+	crossOrigin.Header.Set("Origin", "https://evil.example.com")
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, crossOrigin)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("cross Origin: expected 403, got %d", rec.Code)
+	}
+
+	local := httptest.NewRequest(http.MethodGet, "/.well-known/agent.json", nil)
+	local.Host = "localhost:4318"
+	local.Header.Set("Origin", "http://localhost:5173")
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, local)
+	if rec.Code != http.StatusOK {
+		t.Errorf("local Origin: expected 200, got %d", rec.Code)
 	}
 }

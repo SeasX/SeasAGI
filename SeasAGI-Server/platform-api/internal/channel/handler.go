@@ -61,6 +61,10 @@ func ListChannels(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// 凭证密文不下发到任何 HTTP 响应；只有服务端内部逻辑可读取。
+	for i := range channels {
+		channels[i].EncryptedAPIKey = ""
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"object": "list",
@@ -76,6 +80,7 @@ func GetChannel(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": i18n.TFromContext(c, "channel.notFound")})
 		return
 	}
+	ch.EncryptedAPIKey = ""
 
 	c.JSON(http.StatusOK, ch)
 }

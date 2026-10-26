@@ -173,8 +173,65 @@ func TestCacheMaxEntries(t *testing.T) {
 	}
 
 	stats := mgr.GetStats()
-	if stats.TotalEntries > 5 {
-		t.Errorf("expected at most 5 entries, got %d", stats.TotalEntries)
+	if stats.TotalEntries != 3 {
+		t.Errorf("expected exactly 3 entries (MaxEntries), got %d", stats.TotalEntries)
+	}
+}
+
+// TestCacheMaxEntriesEvictsLeastRecentlyUsed 验证容量上限触发的是真实 LRU 淘汰：
+// 被访问过的条目应保留，最久未使用且未被访问的条目应被驱逐。
+func TestCacheMaxEntriesEvictsLeastRecentlyUsed(t *testing.T) {
+	mgr := NewManager(NewMemoryStore(), CacheConfig{
+		Enabled:    true,
+		TTLSeconds: 60,
+		MaxEntries: 3,
+	})
+
+	mgr.Set("a", []byte("a"))
+	mgr.Set("b", []byte("b"))
+	mgr.Set("c", []byte("c"))
+	// 访问 a，使其成为最近使用；此时 b 是最久未使用。
+	if _, hit := mgr.Get("a"); !hit {
+		t.Fatal("expected hit for a before eviction")
+	}
+
+	mgr.Set("d", []byte("d"))
+
+	if stats := mgr.GetStats(); stats.TotalEntries != 3 {
+		t.Fatalf("entry count should stay at 3, got %d", stats.TotalEntries)
+	}
+	if _, hit := mgr.Get("b"); hit {
+		t.Fatal("b should have been evicted as least recently used")
+	}
+	for _, key := range []string{"a", "c", "d"} {
+		if _, hit := mgr.Get(key); !hit {
+			t.Fatalf("key %q should still be cached", key)
+		}
+	}
+}
+
+// TestCacheCleanupRemovesExpiredEntries 验证 Cleanup 按 TTL 清理过期条目。
+func TestCacheCleanupRemovesExpiredEntries(t *testing.T) {
+	store := NewMemoryStore()
+	mgr := NewManager(store, CacheConfig{Enabled: true, TTLSeconds: 1, MaxEntries: 10})
+
+	mgr.Set("fresh", []byte("fresh"))
+	// 直接写入一条 2 秒前的旧条目（超过 1 秒 TTL）。
+	if err := store.Set("stale", &CacheEntry{
+		Key:       "stale",
+		Response:  []byte("stale"),
+		CreatedAt: time.Now().Add(-2 * time.Second),
+	}); err != nil {
+		t.Fatalf("seed stale entry: %v", err)
+	}
+
+	mgr.Cleanup()
+
+	if stats := mgr.GetStats(); stats.TotalEntries != 1 {
+		t.Fatalf("expected only fresh entry after cleanup, got %d entries", stats.TotalEntries)
+	}
+	if _, hit := mgr.Get("stale"); hit {
+		t.Fatal("stale entry should be purged by TTL cleanup")
 	}
 }
 

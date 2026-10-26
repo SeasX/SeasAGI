@@ -5,6 +5,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import * as cmd from "../utils/commands";
 import { getErrorMessage } from "../utils/errors";
+import { useTranslation } from "../i18n";
 import type { MITMAction, MITMRoutingConfig, MITMRoutingRule, ModelCombo, RequestLog } from "../utils/types";
 
 interface MITMTarget {
@@ -16,16 +17,16 @@ interface MITMTarget {
   default_models?: { id: string; name: string }[];
 }
 
-const DATA_POLICY_LABEL: Record<string, string> = {
-  any: "任意",
-  local_only: "仅本地",
-  no_train: "不用于训练",
+const DATA_POLICY_KEYS: Record<string, string> = {
+  any: "mitmRouting.dataPolicyAny",
+  local_only: "mitmRouting.dataPolicyLocalOnly",
+  no_train: "mitmRouting.dataPolicyNoTrain",
 };
 
-const ACTION_LABEL: Record<MITMAction, string> = {
-  passthrough: "直连（不改写）",
-  combo: "改写为 Combo",
-  model: "改写为模型",
+const ACTION_KEYS: Record<MITMAction, string> = {
+  passthrough: "mitmRouting.actionPassthrough",
+  combo: "mitmRouting.actionCombo",
+  model: "mitmRouting.actionModel",
 };
 
 const emptyRule = (): MITMRoutingRule => ({
@@ -96,12 +97,20 @@ function cleanConstraints(constraints?: Record<string, any>): Record<string, any
   return Object.keys(out).length ? out : undefined;
 }
 
-function describeMatch(rule: MITMRoutingRule, targetName: (id: string) => string): string {
+function describeMatch(
+  rule: MITMRoutingRule,
+  targetName: (id: string) => string,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
   const parts: string[] = [];
-  parts.push(rule.target_id && rule.target_id !== "*" ? targetName(rule.target_id) : "任意工具");
-  if (rule.endpoint_path) parts.push(`路径 ${rule.endpoint_path}*`);
+  parts.push(rule.target_id && rule.target_id !== "*" ? targetName(rule.target_id) : t("mitmRouting.matchAnyTool"));
+  if (rule.endpoint_path) parts.push(t("mitmRouting.matchPath", { path: rule.endpoint_path }));
   if (rule.request_model) {
-    parts.push(rule.request_model.includes("*") ? `模型 ${rule.request_model}（前缀通配）` : `模型 = ${rule.request_model}`);
+    parts.push(
+      rule.request_model.includes("*")
+        ? t("mitmRouting.matchModelPrefix", { model: rule.request_model })
+        : t("mitmRouting.matchModelEqual", { model: rule.request_model }),
+    );
   }
   return parts.join(" · ");
 }
@@ -146,6 +155,7 @@ function findConflicts(rules: MITMRoutingRule[]): Record<number, number[]> {
 }
 
 export function MITMRoutingPanel() {
+  const { t } = useTranslation();
   const [config, setConfig] = useState<MITMRoutingConfig | null>(null);
   const [targets, setTargets] = useState<MITMTarget[]>([]);
   const [combos, setCombos] = useState<ModelCombo[]>([]);
@@ -184,7 +194,7 @@ export function MITMRoutingPanel() {
       setEnterpriseRules((entRules || []) as MITMRoutingRule[]);
       setLogs((logItems || []) as RequestLog[]);
     } catch (e) {
-      setErr(getErrorMessage(e, "加载 MITM 路由配置失败"));
+      setErr(getErrorMessage(e, t("mitmRouting.loadFailed")));
     } finally {
       setLoading(false);
     }
@@ -193,22 +203,23 @@ export function MITMRoutingPanel() {
   // P3-16：从日志页「创建映射规则」跳转时，按 query 预填一条新规则。
   useEffect(() => {
     if (prefillDone.current || !config) return;
-    const t = searchParams.get("rule_target") || "";
-    const m = searchParams.get("rule_model") || "";
-    const ep = searchParams.get("rule_endpoint") || "";
-    if (!t && !m && !ep) return;
+    const ruleTarget = searchParams.get("rule_target") || "";
+    const ruleModel = searchParams.get("rule_model") || "";
+    const ruleEndpoint = searchParams.get("rule_endpoint") || "";
+    if (!ruleTarget && !ruleModel && !ruleEndpoint) return;
     prefillDone.current = true;
     const rule: MITMRoutingRule = {
       ...emptyRule(),
       id: `rule-${Date.now()}`,
-      target_id: t,
-      request_model: m,
-      endpoint_path: ep,
+      target_id: ruleTarget,
+      request_model: ruleModel,
+      endpoint_path: ruleEndpoint,
       action: "combo",
     };
     setConfig((c) => (c ? { ...c, rules: [...c.rules, rule] } : c));
-    setMsg("已按日志预填一条规则，请选择目标 Combo 后保存。");
+    setMsg(t("mitmRouting.prefillNotice"));
     window.setTimeout(() => setMsg(""), 4000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config, searchParams]);
 
   // P2-12：从企业服务端拉取下发的路由规则（只读、置底）。
@@ -219,15 +230,19 @@ export function MITMRoutingPanel() {
     try {
       const res = await cmd.fetchMITMRoutingFromEnterprise();
       if (res && res.ok === false) {
-        setErr(`企业拉取失败：${res.error || "未知错误"}`);
+        setErr(
+          t("mitmRouting.enterpriseFetchFailedDetail", {
+            error: res.error || t("mitmRouting.unknownError"),
+          }),
+        );
         return;
       }
       const ent = await cmd.getMITMEnterpriseRules().catch(() => [] as Record<string, any>[]);
       setEnterpriseRules((ent || []) as MITMRoutingRule[]);
-      setMsg(`已从企业拉取 ${ent?.length || 0} 条规则（只读、置底）。`);
+      setMsg(t("mitmRouting.enterpriseFetchSuccess", { count: ent?.length || 0 }));
       window.setTimeout(() => setMsg(""), 3000);
     } catch (e) {
-      setErr(getErrorMessage(e, "企业规则拉取失败"));
+      setErr(getErrorMessage(e, t("mitmRouting.enterpriseRulesLoadFailed")));
     } finally {
       setFetchingEnt(false);
     }
@@ -237,7 +252,7 @@ export function MITMRoutingPanel() {
     void load();
   }, []);
 
-  const targetName = (id: string) => targets.find((t) => t.id === id)?.name || id;
+  const targetName = (id: string) => targets.find((target) => target.id === id)?.name || id;
 
   const updateRule = (index: number, patch: Partial<MITMRoutingRule>) => {
     if (!config) return;
@@ -295,10 +310,10 @@ export function MITMRoutingPanel() {
     try {
       await cmd.setMITMRoutingConfig(normalized);
       setConfig(normalized);
-      setMsg("已保存，规则即时热生效（无需重启）。");
+      setMsg(t("mitmRouting.saved"));
       window.setTimeout(() => setMsg(""), 3000);
     } catch (e) {
-      setErr(getErrorMessage(e, "保存失败"));
+      setErr(getErrorMessage(e, t("mitmRouting.saveFailed")));
     } finally {
       setSaving(false);
     }
@@ -347,18 +362,16 @@ export function MITMRoutingPanel() {
     [simulation, combos],
   );
 
-  if (loading) return <div className="tab-content section-card"><div className="loading">加载中...</div></div>;
-  if (!config) return <div className="tab-content section-card"><div className="error-msg">{err || "配置不可用"}</div></div>;
+  if (loading) return <div className="tab-content section-card"><div className="loading">{t("mitmRouting.loading")}</div></div>;
+  if (!config) return <div className="tab-content section-card"><div className="error-msg">{err || t("mitmRouting.configUnavailable")}</div></div>;
 
   return (
     <div className="settings-stack">
       {/* 全局开关与默认动作 */}
       <div className="tab-content section-card">
         <div className="section-heading">
-          <h2>路由映射</h2>
-          <p className="hint">
-            将接管到的第三方工具请求按「来源工具 / 端点 / 模型」映射到指定 Combo 或模型；未命中时走下方默认动作。
-          </p>
+          <h2>{t("mitmRouting.title")}</h2>
+          <p className="hint">{t("mitmRouting.subtitle")}</p>
         </div>
         {err && <div className="error-msg" style={{ marginTop: 8 }}>{err}</div>}
         {msg && <div className="info-msg" style={{ marginTop: 8 }}>{msg}</div>}
@@ -368,30 +381,33 @@ export function MITMRoutingPanel() {
             type="checkbox"
             checked={config.enabled}
             onChange={(e) => setConfig({ ...config, enabled: e.target.checked })}
+            aria-label={t("mitmRouting.enableLabel")}
           />
-          <span>启用 MITM 路由映射（关闭时接管流量按原模型直连）</span>
+          <span>{t("mitmRouting.enableLabel")}</span>
         </label>
 
         <div className="form-row" style={{ marginTop: 12 }}>
           <div className="form-group">
-            <label>默认动作（未命中任何规则时）</label>
+            <label>{t("mitmRouting.defaultActionLabel")}</label>
             <select
               value={config.default_action}
               onChange={(e) => setConfig({ ...config, default_action: e.target.value as MITMAction })}
+              aria-label={t("mitmRouting.defaultActionLabel")}
             >
-              <option value="passthrough">passthrough（直连，不改写）</option>
-              <option value="combo">combo（改写为默认 Combo）</option>
-              <option value="model">model（改写为默认模型）</option>
+              <option value="passthrough">{t("mitmRouting.defaultActionPassthroughOption")}</option>
+              <option value="combo">{t("mitmRouting.defaultActionComboOption")}</option>
+              <option value="model">{t("mitmRouting.defaultActionModelOption")}</option>
             </select>
           </div>
           {config.default_action === "combo" && (
             <div className="form-group">
-              <label>默认 Combo</label>
+              <label>{t("mitmRouting.defaultComboLabel")}</label>
               <select
                 value={config.default_combo_name || ""}
                 onChange={(e) => setConfig({ ...config, default_combo_name: e.target.value })}
+                aria-label={t("mitmRouting.defaultComboLabel")}
               >
-                <option value="">-- 选择 Combo --</option>
+                <option value="">{t("mitmRouting.selectComboPlaceholder")}</option>
                 {combos.map((c) => (
                   <option key={c.name} value={c.name}>{c.display_name || c.name}</option>
                 ))}
@@ -400,11 +416,12 @@ export function MITMRoutingPanel() {
           )}
           {config.default_action === "model" && (
             <div className="form-group">
-              <label>默认模型</label>
+              <label>{t("mitmRouting.defaultModelLabel")}</label>
               <input
                 value={config.default_model || ""}
                 onChange={(e) => setConfig({ ...config, default_model: e.target.value })}
-                placeholder="如 claude-sonnet-4"
+                placeholder={t("mitmRouting.modelPlaceholder")}
+                aria-label={t("mitmRouting.defaultModelLabel")}
               />
             </div>
           )}
@@ -413,44 +430,52 @@ export function MITMRoutingPanel() {
         {/* P2-13：头部一致性校验模式 */}
         <div className="form-row" style={{ marginTop: 12 }}>
           <div className="form-group">
-            <label>头部一致性校验（Target vs Original-Host）</label>
+            <label>{t("mitmRouting.securityModeLabel")}</label>
             <select
               value={config.security_mode || "lenient"}
               onChange={(e) => setConfig({ ...config, security_mode: e.target.value as MITMRoutingConfig["security_mode"] })}
+              aria-label={t("mitmRouting.securityModeLabel")}
             >
-              <option value="lenient">宽松（默认，仅记录审计告警）</option>
-              <option value="strict">严格（不一致时拒绝 403）</option>
+              <option value="lenient">{t("mitmRouting.securityLenient")}</option>
+              <option value="strict">{t("mitmRouting.securityStrict")}</option>
             </select>
           </div>
           <div className="form-group">
-            <label>企业下发规则</label>
+            <label>{t("mitmRouting.enterpriseRulesLabel")}</label>
             <button type="button" className="btn-secondary" onClick={fetchEnterprise} disabled={fetchingEnt}>
-              {fetchingEnt ? "拉取中..." : `从企业拉取（当前 ${enterpriseRules.length} 条）`}
+              {fetchingEnt
+                ? t("mitmRouting.fetchingEnterprise")
+                : t("mitmRouting.fetchEnterprise", { count: enterpriseRules.length })}
             </button>
           </div>
         </div>
 
         {/* 优先级链提示 */}
         <div className="hint" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <span>优先级链：</span>
-          <span className="badge badge-blue">MITM 规则</span>
+          <span>{t("mitmRouting.priorityChain")}</span>
+          <span className="badge badge-blue">{t("mitmRouting.priorityChainRule")}</span>
           <span>›</span>
-          <span className="badge">{`默认动作（${ACTION_LABEL[config.default_action]}${defaultResolved(config) ? `：${defaultResolved(config)}` : ""}）`}</span>
+          <span className="badge">
+            {defaultResolved(config)
+              ? t("mitmRouting.priorityChainDefaultWithTarget", {
+                  action: t(ACTION_KEYS[config.default_action]),
+                  target: defaultResolved(config) || "",
+                })
+              : t("mitmRouting.priorityChainDefault", { action: t(ACTION_KEYS[config.default_action]) })}
+          </span>
           <span>›</span>
-          <span className="badge">单模型直连</span>
+          <span className="badge">{t("mitmRouting.priorityChainDirect")}</span>
         </div>
       </div>
 
       {/* 规则编辑器 */}
       <div className="tab-content section-card">
         <div className="section-heading">
-          <h2>路由规则</h2>
-          <p className="hint">
-            规则按列表顺序（自上而下）匹配，首个命中即生效；`request_model` 支持等值或后缀 `*` 前缀通配（如 `claude-*`）。
-          </p>
+          <h2>{t("mitmRouting.rulesTitle")}</h2>
+          <p className="hint">{t("mitmRouting.rulesHint")}</p>
         </div>
 
-        {config.rules.length === 0 && <p className="hint">暂无规则，点击「新增规则」创建第一条映射。</p>}
+        {config.rules.length === 0 && <p className="hint">{t("mitmRouting.noRules")}</p>}
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={config.rules.map((_, i) => `rule-${i}`)} strategy={verticalListSortingStrategy}>
@@ -474,9 +499,9 @@ export function MITMRoutingPanel() {
         </DndContext>
 
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button onClick={addRule} className="btn-secondary">新增规则</button>
+          <button onClick={addRule} className="btn-secondary">{t("mitmRouting.addRule")}</button>
           <button onClick={handleSave} className="btn-primary" disabled={saving}>
-            {saving ? "保存中..." : "保存配置"}
+            {saving ? t("mitmRouting.saving") : t("mitmRouting.saveConfig")}
           </button>
         </div>
       </div>
@@ -484,38 +509,43 @@ export function MITMRoutingPanel() {
       {/* P2-12：企业下发规则（只读、置底） */}
       <div className="tab-content section-card">
         <div className="section-heading">
-          <h2>企业下发规则</h2>
-          <p className="hint">
-            企业端统一下发的规则，只读展示，匹配优先级低于本地规则（置底）。点击上方「从企业拉取」同步。
-          </p>
+          <h2>{t("mitmRouting.enterpriseRulesLabel")}</h2>
+          <p className="hint">{t("mitmRouting.enterpriseSectionHint")}</p>
         </div>
         {enterpriseRules.length === 0 ? (
-          <p className="hint">当前无企业下发规则。</p>
+          <p className="hint">{t("mitmRouting.noEnterpriseRules")}</p>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid var(--border, #333)" }}>
-                  <th style={{ padding: "4px 8px" }}>来源工具</th>
-                  <th style={{ padding: "4px 8px" }}>端点 / 模型</th>
-                  <th style={{ padding: "4px 8px" }}>目标</th>
-                  <th style={{ padding: "4px 8px" }}>状态</th>
+                  <th style={{ padding: "4px 8px" }}>{t("mitmRouting.colSourceTool")}</th>
+                  <th style={{ padding: "4px 8px" }}>{t("mitmRouting.colEndpointModel")}</th>
+                  <th style={{ padding: "4px 8px" }}>{t("mitmRouting.colTarget")}</th>
+                  <th style={{ padding: "4px 8px" }}>{t("mitmRouting.colStatus")}</th>
                 </tr>
               </thead>
               <tbody>
                 {enterpriseRules.map((rule, i) => (
                   <tr key={rule.id || i} style={{ borderBottom: "1px solid var(--border-light, #222)" }}>
                     <td style={{ padding: "4px 8px" }}>
-                      {rule.target_id && rule.target_id !== "*" ? targetName(rule.target_id) : "任意"}
+                      {rule.target_id && rule.target_id !== "*" ? targetName(rule.target_id) : t("mitmRouting.any")}
                     </td>
                     <td style={{ padding: "4px 8px" }}>
                       {rule.endpoint_path || "-"} / {rule.request_model || "-"}
                     </td>
                     <td style={{ padding: "4px 8px" }}>
-                      {rule.action === "passthrough" ? "直连" : `${ACTION_LABEL[rule.action]}：${rule.action === "combo" ? rule.combo_name : rule.model}`}
+                      {rule.action === "passthrough"
+                        ? t("mitmRouting.direct")
+                        : t("mitmRouting.actionWithTarget", {
+                            action: t(ACTION_KEYS[rule.action]),
+                            target: (rule.action === "combo" ? rule.combo_name : rule.model) || "",
+                          })}
                     </td>
                     <td style={{ padding: "4px 8px" }}>
-                      <span className={`badge ${rule.enabled ? "badge-green" : "badge-yellow"}`}>{rule.enabled ? "启用" : "停用"}</span>
+                      <span className={`badge ${rule.enabled ? "badge-green" : "badge-yellow"}`}>
+                        {rule.enabled ? t("mitmRouting.enabled") : t("mitmRouting.disabled")}
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -528,40 +558,61 @@ export function MITMRoutingPanel() {
       {/* 实时预览 */}
       <div className="tab-content section-card">
         <div className="section-heading">
-          <h2>路由预览</h2>
-          <p className="hint">输入来源工具与请求模型，实时查看命中规则与改写目标（本地模拟，不影响实际流量）。</p>
+          <h2>{t("mitmRouting.previewTitle")}</h2>
+          <p className="hint">{t("mitmRouting.previewHint")}</p>
         </div>
         <div className="form-row">
           <div className="form-group">
-            <label>来源工具</label>
-            <select value={simTarget} onChange={(e) => setSimTarget(e.target.value)}>
-              <option value="">（任意）</option>
-              {targets.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
+            <label>{t("mitmRouting.sourceToolLabel")}</label>
+            <select
+              value={simTarget}
+              onChange={(e) => setSimTarget(e.target.value)}
+              aria-label={t("mitmRouting.sourceToolLabel")}
+            >
+              <option value="">{t("mitmRouting.anyOption")}</option>
+              {targets.map((target) => (
+                <option key={target.id} value={target.id}>{target.name}</option>
               ))}
-              <option value="__other__">其他（未预设）</option>
+              <option value="__other__">{t("mitmRouting.otherOption")}</option>
             </select>
           </div>
           <div className="form-group">
-            <label>请求模型</label>
-            <input value={simModel} onChange={(e) => setSimModel(e.target.value)} placeholder="如 claude-sonnet-4-20250514" />
+            <label>{t("mitmRouting.requestModelLabel")}</label>
+            <input
+              value={simModel}
+              onChange={(e) => setSimModel(e.target.value)}
+              placeholder={t("mitmRouting.simModelPlaceholder")}
+              aria-label={t("mitmRouting.requestModelLabel")}
+            />
           </div>
           <div className="form-group">
-            <label>端点路径</label>
-            <input value={simPath} onChange={(e) => setSimPath(e.target.value)} placeholder="如 /v1/messages" />
+            <label>{t("mitmRouting.endpointPathLabel")}</label>
+            <input
+              value={simPath}
+              onChange={(e) => setSimPath(e.target.value)}
+              placeholder={t("mitmRouting.simPathPlaceholder")}
+              aria-label={t("mitmRouting.endpointPathLabel")}
+            />
           </div>
         </div>
         {simulation && (
           <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span className="hint" style={{ marginBottom: 0 }}>结果：</span>
+            <span className="hint" style={{ marginBottom: 0 }}>{t("mitmRouting.resultLabel")}</span>
             {simulation.rule ? (
-              <span className="badge badge-blue">命中规则 · {describeMatch(simulation.rule, targetName)}</span>
+              <span className="badge badge-blue">
+                {t("mitmRouting.hitRule", { match: describeMatch(simulation.rule, targetName, t) })}
+              </span>
             ) : (
-              <span className="badge badge-yellow">未命中规则 · 使用默认动作</span>
+              <span className="badge badge-yellow">{t("mitmRouting.missRule")}</span>
             )}
             <span>→</span>
             <span className={`badge ${simulation.action === "passthrough" ? "badge-green" : "badge-blue"}`}>
-              {ACTION_LABEL[simulation.action]}{simulation.resolved ? `：${simulation.resolved}` : ""}
+              {simulation.resolved
+                ? t("mitmRouting.actionWithTarget", {
+                    action: t(ACTION_KEYS[simulation.action]),
+                    target: simulation.resolved,
+                  })
+                : t(ACTION_KEYS[simulation.action])}
             </span>
           </div>
         )}
@@ -571,22 +622,22 @@ export function MITMRoutingPanel() {
             className="hint"
             style={{ marginTop: 12, marginBottom: 0, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
           >
-            <span className="badge">{simTarget ? targetName(simTarget) : "任意工具"}</span>
-            <span>--({simModel || "任意模型"})--&gt;</span>
+            <span className="badge">{simTarget ? targetName(simTarget) : t("mitmRouting.matchAnyTool")}</span>
+            <span>--({simModel || t("mitmRouting.anyModel")})--&gt;</span>
             <span className="badge badge-blue">
               {simulation.rule
                 ? simulation.rule.source === "enterprise"
-                  ? "企业规则"
-                  : `规则 #${config.rules.indexOf(simulation.rule) + 1}`
-                : "默认动作"}
+                  ? t("mitmRouting.enterpriseRuleBadge")
+                  : t("mitmRouting.ruleIndex", { index: config.rules.indexOf(simulation.rule) + 1 })
+                : t("mitmRouting.defaultActionBadge")}
             </span>
-            <span>--(改写)--&gt;</span>
+            <span>--({t("mitmRouting.rewriteStep")})--&gt;</span>
             <span className={`badge ${simulation.action === "passthrough" ? "badge-green" : "badge-blue"}`}>
-              {simulation.resolved || "直连"}
+              {simulation.resolved || t("mitmRouting.directTarget")}
             </span>
             {simCombo && (simCombo.steps?.length || 0) > 0 && (
               <>
-                <span>--(分发)--&gt;</span>
+                <span>--({t("mitmRouting.distribute")})--&gt;</span>
                 <span className="badge">
                   {simCombo.steps!.map((s) => `${s.channel_id || "?"} / ${s.model}`).join(" · ")}
                 </span>
@@ -614,14 +665,15 @@ function SortableRuleCard({
   onChange: (patch: Partial<MITMRoutingRule>) => void;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
 
   const wildcardHint = rule.request_model?.includes("*")
-    ? `前缀通配：匹配所有以「${rule.request_model.replace(/\*+$/, "")}」开头的模型`
+    ? t("mitmRouting.wildcardHint", { prefix: rule.request_model.replace(/\*+$/, "") })
     : "";
   // P2-11：端点细分——给出所选工具的端点预设，便于按 API 细分规则。
-  const endpointPresets = targets.find((t) => t.id === rule.target_id)?.endpoint_patterns || [];
+  const endpointPresets = targets.find((target) => target.id === rule.target_id)?.endpoint_patterns || [];
   const datalistId = `${id}-endpoints`;
 
   return (
@@ -630,28 +682,38 @@ function SortableRuleCard({
       <div className="combo-step-index">
         <span className="step-role-badge role-primary">P{index + 1}</span>
         <label className="checkbox-label" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, marginTop: 4 }}>
-          <input type="checkbox" checked={rule.enabled} onChange={(e) => onChange({ enabled: e.target.checked })} />
-          <span>启用</span>
+          <input
+            type="checkbox"
+            checked={rule.enabled}
+            onChange={(e) => onChange({ enabled: e.target.checked })}
+            aria-label={t("mitmRouting.enable")}
+          />
+          <span>{t("mitmRouting.enable")}</span>
         </label>
       </div>
 
       <div className="combo-step-fields" style={{ flexWrap: "wrap" }}>
         <div className="form-group">
-          <label>来源工具</label>
-          <select value={rule.target_id || ""} onChange={(e) => onChange({ target_id: e.target.value })}>
-            <option value="">任意</option>
-            <option value="*">任意（*）</option>
-            {targets.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
+          <label>{t("mitmRouting.sourceToolLabel")}</label>
+          <select
+            value={rule.target_id || ""}
+            onChange={(e) => onChange({ target_id: e.target.value })}
+            aria-label={t("mitmRouting.sourceToolLabel")}
+          >
+            <option value="">{t("mitmRouting.any")}</option>
+            <option value="*">{t("mitmRouting.anyStar")}</option>
+            {targets.map((target) => (
+              <option key={target.id} value={target.id}>{target.name}</option>
             ))}
           </select>
         </div>
         <div className="form-group">
-          <label>端点路径前缀（可选）</label>
+          <label>{t("mitmRouting.endpointPathPrefixLabel")}</label>
           <input
             value={rule.endpoint_path || ""}
             onChange={(e) => onChange({ endpoint_path: e.target.value })}
-            placeholder="如 /v1/messages"
+            placeholder={t("mitmRouting.simPathPlaceholder")}
+            aria-label={t("mitmRouting.endpointPathPrefixLabel")}
             list={endpointPresets.length ? datalistId : undefined}
           />
           {endpointPresets.length > 0 && (
@@ -663,27 +725,36 @@ function SortableRuleCard({
           )}
         </div>
         <div className="form-group">
-          <label>请求模型（可选）</label>
+          <label>{t("mitmRouting.requestModelOptionalLabel")}</label>
           <input
             value={rule.request_model || ""}
             onChange={(e) => onChange({ request_model: e.target.value })}
-            placeholder="等值或用 claude-* 前缀通配"
+            placeholder={t("mitmRouting.requestModelPlaceholder")}
+            aria-label={t("mitmRouting.requestModelOptionalLabel")}
           />
           {wildcardHint && <span className="hint" style={{ marginBottom: 0, fontSize: 11 }}>{wildcardHint}</span>}
         </div>
         <div className="form-group">
-          <label>动作</label>
-          <select value={rule.action} onChange={(e) => onChange({ action: e.target.value as MITMAction })}>
-            <option value="combo">改写为 Combo</option>
-            <option value="model">改写为模型</option>
-            <option value="passthrough">直连（不改写）</option>
+          <label>{t("mitmRouting.actionLabel")}</label>
+          <select
+            value={rule.action}
+            onChange={(e) => onChange({ action: e.target.value as MITMAction })}
+            aria-label={t("mitmRouting.actionLabel")}
+          >
+            <option value="combo">{t("mitmRouting.actionCombo")}</option>
+            <option value="model">{t("mitmRouting.actionModel")}</option>
+            <option value="passthrough">{t("mitmRouting.actionPassthrough")}</option>
           </select>
         </div>
         {rule.action === "combo" && (
           <div className="form-group">
-            <label>目标 Combo</label>
-            <select value={rule.combo_name || ""} onChange={(e) => onChange({ combo_name: e.target.value })}>
-              <option value="">-- 选择 Combo --</option>
+            <label>{t("mitmRouting.targetComboLabel")}</label>
+            <select
+              value={rule.combo_name || ""}
+              onChange={(e) => onChange({ combo_name: e.target.value })}
+              aria-label={t("mitmRouting.targetComboLabel")}
+            >
+              <option value="">{t("mitmRouting.selectComboPlaceholder")}</option>
               {combos.map((c) => (
                 <option key={c.name} value={c.name}>{c.display_name || c.name}</option>
               ))}
@@ -695,24 +766,25 @@ function SortableRuleCard({
                 className="hint"
                 style={{ marginBottom: 0, fontSize: 11 }}
               >
-                查看该 Combo 配置 →
+                {t("mitmRouting.viewComboConfig")}
               </Link>
             )}
           </div>
         )}
         {rule.action === "model" && (
           <div className="form-group">
-            <label>目标模型</label>
+            <label>{t("mitmRouting.targetModelLabel")}</label>
             <input
               value={rule.model || ""}
               onChange={(e) => onChange({ model: e.target.value })}
-              placeholder="如 claude-sonnet-4"
+              placeholder={t("mitmRouting.modelPlaceholder")}
+              aria-label={t("mitmRouting.targetModelLabel")}
             />
           </div>
         )}
         {/* P2-10：随映射注入的请求级约束 */}
         <div className="form-group" style={{ flexBasis: "100%" }}>
-          <label>请求级约束（可选，随映射注入）</label>
+          <label>{t("mitmRouting.constraintsLabel")}</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <input
               type="number"
@@ -726,6 +798,7 @@ function SortableRuleCard({
                 })
               }
               placeholder="max_price"
+              aria-label="max_price"
             />
             <input
               type="number"
@@ -739,15 +812,17 @@ function SortableRuleCard({
                 })
               }
               placeholder="max_latency_ms"
+              aria-label="max_latency_ms"
             />
             <select
               style={{ maxWidth: 170 }}
               value={(rule.constraints?.data_policy as string) || ""}
               onChange={(e) => onChange({ constraints: { ...(rule.constraints || {}), data_policy: e.target.value } })}
+              aria-label={t("mitmRouting.dataPolicyLabel")}
             >
-              <option value="">data_policy：不限</option>
-              {Object.entries(DATA_POLICY_LABEL).map(([k, v]) => (
-                <option key={k} value={k}>{v}</option>
+              <option value="">{t("mitmRouting.dataPolicyUnset")}</option>
+              {Object.entries(DATA_POLICY_KEYS).map(([key, value]) => (
+                <option key={key} value={key}>{t(value)}</option>
               ))}
             </select>
           </div>
@@ -758,14 +833,14 @@ function SortableRuleCard({
         {conflicts.length > 0 && (
           <span
             className="badge badge-yellow"
-            title={`与规则 #${conflicts.map((i) => i + 1).join("、#")} 的匹配范围重叠，首个命中者生效`}
+            title={t("mitmRouting.conflictTitle", { rules: conflicts.map((i) => i + 1).join(", ") })}
           >
-            ⚠ 潜在冲突 #{conflicts.map((i) => i + 1).join("、#")}
+            {t("mitmRouting.conflictBadge", { rules: conflicts.map((i) => i + 1).join(", ") })}
           </span>
         )}
-        <button onClick={onRemove} className="btn-danger btn-sm">删除</button>
+        <button onClick={onRemove} className="btn-danger btn-sm">{t("mitmRouting.delete")}</button>
         <span className="hint" style={{ marginBottom: 0, fontSize: 11, maxWidth: 200, textAlign: "right" }}>
-          命中：{describeMatch(rule, targetName)}
+          {t("mitmRouting.matchLabel", { match: describeMatch(rule, targetName, t) })}
         </span>
       </div>
     </div>
@@ -785,11 +860,12 @@ function MITMOverview({
   routeStats: Map<string, RequestLog>;
   unmatched: RequestLog[];
 }) {
+  const { t } = useTranslation();
   const rows = useMemo(
     () =>
-      targets.map((t) => {
-        const r = resolveRoute(config, t.id, "", "");
-        return { target: t, ...r };
+      targets.map((target) => {
+        const r = resolveRoute(config, target.id, "", "");
+        return { target, ...r };
       }),
     [config, targets],
   );
@@ -803,23 +879,23 @@ function MITMOverview({
   return (
     <div className="tab-content section-card">
       <div className="section-heading">
-        <h2>接管概览</h2>
-        <p className="hint">各来源工具在「不限模型 / 不限端点」下的默认路由目标，以及最近一次实际命中（来自接管日志）。</p>
+        <h2>{t("mitmRouting.overviewTitle")}</h2>
+        <p className="hint">{t("mitmRouting.overviewHint")}</p>
       </div>
-      {!config.enabled && <div className="info-msg">路由映射未启用，所有接管流量均按原模型直连。</div>}
+      {!config.enabled && <div className="info-msg">{t("mitmRouting.disabledNotice")}</div>}
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ textAlign: "left", borderBottom: "1px solid var(--border, #333)" }}>
-              <th style={{ padding: "4px 8px" }}>来源工具</th>
-              <th style={{ padding: "4px 8px" }}>当前路由目标</th>
-              <th style={{ padding: "4px 8px" }}>最近命中</th>
-              <th style={{ padding: "4px 8px" }}>最近规则 / 改写</th>
+              <th style={{ padding: "4px 8px" }}>{t("mitmRouting.colSourceTool")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("mitmRouting.colCurrentRoute")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("mitmRouting.colLastHit")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("mitmRouting.colLastRuleRewrite")}</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={4} style={{ padding: "8px", color: "var(--text-secondary, #888)" }}>暂无预设的接管目标。</td></tr>
+              <tr><td colSpan={4} style={{ padding: "8px", color: "var(--text-secondary, #888)" }}>{t("mitmRouting.noTargets")}</td></tr>
             )}
             {rows.map(({ target, rule, action, resolved }) => {
               const hit = routeStats.get(target.id);
@@ -828,11 +904,14 @@ function MITMOverview({
                   <td style={{ padding: "4px 8px" }}>{target.name}</td>
                   <td style={{ padding: "4px 8px" }}>
                     {action === "passthrough" ? (
-                      <span className="badge badge-green">直连（不改写）</span>
+                      <span className="badge badge-green">{t("mitmRouting.actionPassthrough")}</span>
                     ) : (
                       <span className="badge badge-blue">
-                        {ACTION_LABEL[action]}：{resolved}
-                        {rule ? "（规则）" : "（默认）"}
+                        {t("mitmRouting.actionWithTarget", {
+                          action: t(ACTION_KEYS[action]),
+                          target: resolved,
+                        })}
+                        {rule ? t("mitmRouting.sourceRule") : t("mitmRouting.sourceDefault")}
                       </span>
                     )}
                   </td>
@@ -845,7 +924,7 @@ function MITMOverview({
                     ) : hit.resolved_target ? (
                       <span className="badge badge-blue">{hit.resolved_target}</span>
                     ) : (
-                      <span className="badge badge-yellow">未改写（passthrough）</span>
+                      <span className="badge badge-yellow">{t("mitmRouting.notRewritten")}</span>
                     )}
                   </td>
                 </tr>
@@ -858,19 +937,19 @@ function MITMOverview({
       {/* P3-19：未命中规则的接管请求聚合 */}
       <div style={{ marginTop: 16 }}>
         <div className="section-heading">
-          <h3 style={{ margin: 0 }}>未配置路由的接管请求（{unmatched.length}）</h3>
-          <p className="hint">虽被接管但按原模型直连（passthrough）的请求——其中可能包含尚未配置映射的新工具或新模型。</p>
+          <h3 style={{ margin: 0 }}>{t("mitmRouting.unmatchedTitle", { count: unmatched.length })}</h3>
+          <p className="hint">{t("mitmRouting.unmatchedHint")}</p>
         </div>
         {unmatched.length === 0 ? (
-          <p className="hint">暂无未命中的接管请求。</p>
+          <p className="hint">{t("mitmRouting.noUnmatched")}</p>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid var(--border, #333)" }}>
-                  <th style={{ padding: "4px 8px" }}>时间</th>
-                  <th style={{ padding: "4px 8px" }}>来源工具</th>
-                  <th style={{ padding: "4px 8px" }}>请求模型</th>
+                  <th style={{ padding: "4px 8px" }}>{t("mitmRouting.colTime")}</th>
+                  <th style={{ padding: "4px 8px" }}>{t("mitmRouting.colSourceTool")}</th>
+                  <th style={{ padding: "4px 8px" }}>{t("mitmRouting.requestModelLabel")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -888,9 +967,9 @@ function MITMOverview({
       </div>
 
       <div style={{ marginTop: 12 }}>
-        <Link to="/logs?mitm=1" className="btn-secondary btn-sm">查看最近 MITM 拦截日志 →</Link>
+        <Link to="/logs?mitm=1" className="btn-secondary btn-sm">{t("mitmRouting.viewMitmLogs")}</Link>
         <span className="hint" style={{ marginLeft: 8, marginBottom: 0 }}>
-          仅显示被接管（带 MITM 标记）的请求，核对是否命中规则（改写目标为空即表示未改写）。
+          {t("mitmRouting.mitmLogsHint")}
         </span>
       </div>
     </div>

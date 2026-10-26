@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import * as cmd from "../utils/commands";
@@ -30,14 +30,6 @@ export function LogPage() {
   const setLogs = useAppStore((s) => s.setLogs);
   const { t } = useTranslation();
 
-  // Load logs on mount
-  useEffect(() => {
-    if (logs.length === 0) {
-      cmd.listLogs(500, 0).then(setLogs).catch(() => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const mitmOnly = searchParams.get("mitm") === "1";
@@ -49,8 +41,56 @@ export function LogPage() {
   const [presetName, setPresetName] = useState("");
   const [showPresets, setShowPresets] = useState(false);
   const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [channelOptions, setChannelOptions] = useState<string[]>([]);
 
-  const channelOptions = [...new Set(logs.map((l) => l.channel_id).filter(Boolean))];
+  // 卸载标记 + 请求序号：卸载或筛选变更后的过期响应不再写入状态。
+  const mountedRef = useRef(true);
+  const requestSeq = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const refreshLogs = useCallback(async () => {
+    const reqId = ++requestSeq.current;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const items = await cmd.listLogsFiltered(500, 0, statusFilter, channelFilter, "", "", "");
+      if (!mountedRef.current || reqId !== requestSeq.current) return;
+      const next = items || [];
+      setLogs(next);
+      setChannelOptions((prev) => {
+        const merged = new Set(prev);
+        for (const item of next) {
+          if (item.channel_id) merged.add(item.channel_id);
+        }
+        return Array.from(merged);
+      });
+    } catch (e) {
+      if (!mountedRef.current || reqId !== requestSeq.current) return;
+      setLoadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mountedRef.current && reqId === requestSeq.current) setLoading(false);
+    }
+  }, [channelFilter, setLogs, statusFilter]);
+
+  // 进入页面、切换筛选（搜索/状态/通道/排序）或重试时重新拉取。
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshLogs();
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [refreshLogs, search, sortOrder, mitmOnly, reloadKey]);
+
+  const handleRetry = () => setReloadKey((key) => key + 1);
 
   const channelTypeColors: Record<string, string> = {
     local: "var(--green)",
@@ -130,8 +170,19 @@ export function LogPage() {
 
   const handleClear = async () => {
     if (!window.confirm(t("log.confirmClear"))) return;
-    await cmd.clearLogs();
-    setLogs([]);
+    setClearing(true);
+    setLoadError(null);
+    try {
+      await cmd.clearLogs();
+      setLogs([]);
+      setChannelOptions([]);
+      handleRetry();
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      setLoadError(`${t("log.clearFailed")}: ${detail}`);
+    } finally {
+      setClearing(false);
+    }
   };
 
   const handleSavePreset = () => {
@@ -252,8 +303,8 @@ export function LogPage() {
           <button onClick={handleExportCSV} className="btn-secondary">
             {t("log.exportCSV")}
           </button>
-          <button onClick={handleClear} className="btn-danger">
-            {t("log.clear")}
+          <button onClick={handleClear} className="btn-danger" disabled={clearing}>
+            {clearing ? t("common.processing") : t("log.clear")}
           </button>
         </div>
 
@@ -355,7 +406,16 @@ export function LogPage() {
           </div>
         </div>
 
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="loading-state">{t("common.loading")}</div>
+        ) : loadError ? (
+          <div className="form-error" role="alert">
+            <div style={{ marginBottom: 8 }}>{loadError}</div>
+            <button onClick={handleRetry} className="btn-secondary btn-sm">
+              {t("log.retry")}
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="empty-state">{t("log.noLogs")}</div>
         ) : (
           <div className="log-list">

@@ -9,72 +9,94 @@ import (
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/logging"
 )
 
-// weakPatterns are substrings that indicate a placeholder or default secret.
+// weakPatterns are substrings that indicate a placeholder, default or
+// previously shipped development secret.
 var weakPatterns = []string{
 	"change-me",
+	"change-in-production",
 	"default",
 	"xxxxxxxx",
 	"sk_test_xxx",
 	"placeholder",
 	"your-",
 	"example",
+	"seasagi-dev-",
+	"seasagi-market-default",
 }
 
 // minSecretLength is the minimum acceptable length for production secrets.
 const minSecretLength = 16
 
-// ensureSecrets ensures JWT_SECRET and JWT_REFRESH_SECRET are set.
-// If they are empty, auto-generates secure random values so the build artifact
-// can start without a .env file. A warning is logged to encourage setting
-// explicit secrets in production.
+// requiredSecrets 是 platform-api 生产环境必须显式配置的共享密钥。
+// 缺失时不得自动生成：内置默认值等同于公开密钥，自动生成会让重启后密钥漂移。
+var requiredSecrets = []string{
+	"JWT_SECRET",
+	"JWT_REFRESH_SECRET",
+	"ADMIN_SECRET",
+	"SEASAGI_DATA_KEY",
+}
+
+// devMode 判定是否允许开发期自动补全密钥。
+func devMode() bool {
+	return os.Getenv("GIN_MODE") == "debug" || os.Getenv("SEASAGI_ALLOW_DEV_SECRETS") == "1"
+}
+
+// ensureSecrets 仅用于开发模式：为空密钥生成随机值，保证本地可直接启动。
 func ensureSecrets() {
-	secrets := []string{"JWT_SECRET", "JWT_REFRESH_SECRET"}
-	for _, name := range secrets {
+	for _, name := range requiredSecrets {
 		if os.Getenv(name) == "" {
 			b := make([]byte, 32)
 			if _, err := rand.Read(b); err != nil {
 				logging.Warningf("failed to auto-generate %s: %v", name, err)
 				continue
 			}
-			val := hex.EncodeToString(b)
-			os.Setenv(name, val)
-			logging.Warningf("%s not set — auto-generated a random secret. Set it explicitly in production via .env.", name)
+			os.Setenv(name, hex.EncodeToString(b))
+			logging.Warningf("[dev] %s not set — auto-generated a random secret. Set it explicitly in production via .env.", name)
 		}
 	}
 }
 
-// ValidateStartup checks configured secrets for weak/default values.
-// In production mode (GIN_MODE != "debug"), it logs a fatal error and exits
-// if any weak secret is detected. In debug mode, it only logs warnings.
-// If secrets are empty, auto-generates secure random defaults so the build
-// artifact can start without a .env file.
+// ValidateStartup 校验生产环境密钥：缺失或过弱一律终止启动。
+// 开发模式（GIN_MODE=debug 或 SEASAGI_ALLOW_DEV_SECRETS=1）只告警并自动补全。
 func ValidateStartup() {
-	ensureSecrets()
-
-	secrets := []string{
-		"JWT_SECRET",
-		"JWT_REFRESH_SECRET",
+	isDebug := devMode()
+	if isDebug {
+		ensureSecrets()
 	}
 
-	isDebug := os.Getenv("GIN_MODE") == "debug"
-	weak := false
-
-	for _, name := range secrets {
-		val := os.Getenv(name)
-		reason := weakSecretReason(name, val)
-		if reason != "" {
-			if isDebug {
-				logging.Warningf("weak secret %s: %s", name, reason)
-			} else {
-				logging.Errorf("FATAL: weak secret %s: %s", name, reason)
-				weak = true
-			}
+	var missing, weak []string
+	for _, name := range requiredSecrets {
+		val := strings.TrimSpace(os.Getenv(name))
+		if val == "" {
+			missing = append(missing, name)
+			continue
+		}
+		if reason := weakSecretReason(name, val); reason != "" {
+			weak = append(weak, name+" ("+reason+")")
 		}
 	}
 
-	if weak && !isDebug {
-		logging.Fatal("Startup aborted: weak or default secrets detected in production mode. Set strong secrets in your .env file before starting.")
+	if len(missing) == 0 && len(weak) == 0 {
+		return
 	}
+
+	if isDebug {
+		if len(missing) > 0 {
+			logging.Warningf("[dev] missing secrets: %v", missing)
+		}
+		if len(weak) > 0 {
+			logging.Warningf("[dev] weak secrets: %v", weak)
+		}
+		return
+	}
+
+	if len(missing) > 0 {
+		logging.Errorf("FATAL: missing required secrets: %v", missing)
+	}
+	if len(weak) > 0 {
+		logging.Errorf("FATAL: weak secrets: %v", weak)
+	}
+	logging.Fatal("Startup aborted: required secrets are missing or weak in production mode. Set explicit strong values in .env before starting.")
 }
 
 // weakSecretReason returns a non-empty string if the secret value is weak.

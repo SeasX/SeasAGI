@@ -62,6 +62,9 @@ func DedupTools(mcpTools []ToolDef, builtinTools []ToolDef) []ToolDef {
 	return result
 }
 
+// DedupToolsInRequest 在请求体层面按「工具名」去重：仅当已存在等价的 MCP 工具时，
+// 才移除内建工具。原始工具对象（input_schema / function 外壳 / cache_control 等）
+// 全部原样保留，不做任何重建，避免丢失 schema 细节。
 func DedupToolsInRequest(body map[string]any) map[string]any {
 	toolsRaw, ok := body["tools"]
 	if !ok {
@@ -73,57 +76,79 @@ func DedupToolsInRequest(body map[string]any) map[string]any {
 		return body
 	}
 
-	allTools := make([]ToolDef, 0, len(toolsList))
-	for _, t := range toolsList {
-		toolMap, ok := t.(map[string]any)
+	// 收集被 MCP 工具覆盖的内建工具名（只做名称级匹配）。
+	covered := make(map[string]bool)
+	hasMCP := false
+	for _, raw := range toolsList {
+		toolMap, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
-		name, _ := toolMap["name"].(string)
-		desc, _ := toolMap["description"].(string)
-		params, _ := toolMap["parameters"].(map[string]any)
-		allTools = append(allTools, ToolDef{
-			Name:        name,
-			Description: desc,
-			Parameters:  params,
-		})
-	}
-
-	mcpTools := make([]ToolDef, 0)
-	builtinTools := make([]ToolDef, 0)
-	for _, t := range allTools {
-		if isMCPTool(t.Name) {
-			mcpTools = append(mcpTools, t)
-		} else {
-			builtinTools = append(builtinTools, t)
+		name := toolName(toolMap)
+		if name == "" || !isMCPTool(name) {
+			continue
+		}
+		hasMCP = true
+		for builtinName, aliases := range builtinToolEquivalents {
+			if name == builtinName {
+				covered[builtinName] = true
+				continue
+			}
+			for _, alias := range aliases {
+				if name == alias {
+					covered[builtinName] = true
+					break
+				}
+			}
 		}
 	}
-
-	if len(mcpTools) == 0 {
+	if !hasMCP || len(covered) == 0 {
 		return body
 	}
 
-	deduped := DedupTools(mcpTools, builtinTools)
+	kept := make([]interface{}, 0, len(toolsList))
+	seen := make(map[string]bool, len(toolsList))
+	for _, raw := range toolsList {
+		toolMap, ok := raw.(map[string]any)
+		if !ok {
+			kept = append(kept, raw)
+			continue
+		}
+		name := toolName(toolMap)
+		if name != "" && seen[name] {
+			continue // 同名工具只保留首次出现
+		}
+		if covered[name] && !isMCPTool(name) {
+			continue // 已被等价 MCP 工具覆盖的内建工具
+		}
+		if name != "" {
+			seen[name] = true
+		}
+		kept = append(kept, toolMap)
+	}
+	if len(kept) == len(toolsList) {
+		return body
+	}
 
 	result := make(map[string]any, len(body))
 	for k, v := range body {
 		result[k] = v
 	}
-
-	dedupedRaw := make([]interface{}, 0, len(deduped))
-	for _, t := range deduped {
-		toolMap := map[string]any{
-			"name":        t.Name,
-			"description": t.Description,
-		}
-		if t.Parameters != nil {
-			toolMap["parameters"] = t.Parameters
-		}
-		dedupedRaw = append(dedupedRaw, toolMap)
-	}
-	result["tools"] = dedupedRaw
-
+	result["tools"] = kept
 	return result
+}
+
+// toolName 提取工具名，兼容 OpenAI 的 {"type":"function","function":{"name":...}} 外壳。
+func toolName(tool map[string]any) string {
+	if name, ok := tool["name"].(string); ok && name != "" {
+		return name
+	}
+	if fn, ok := tool["function"].(map[string]any); ok {
+		if name, ok := fn["name"].(string); ok {
+			return name
+		}
+	}
+	return ""
 }
 
 func isMCPTool(name string) bool {

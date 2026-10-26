@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,6 +15,26 @@ import (
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/protocol"
 )
+
+// sharedTransport 是进程级共享的 HTTP 连接池。它只约束「等待响应头」的时间，
+// 不设置覆盖整个响应体的 Client.Timeout——后者会把长时间流式输出硬性截断。
+var sharedTransport = &http.Transport{
+	Proxy:                 http.ProxyFromEnvironment,
+	DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          128,
+	MaxIdleConnsPerHost:   32,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   15 * time.Second,
+	ExpectContinueTimeout: 1 * time.Second,
+	ResponseHeaderTimeout: 120 * time.Second,
+}
+
+// sharedHTTPClient 用于聊天/补全请求（含流式），超时交由 ctx 与 Transport 控制。
+var sharedHTTPClient = &http.Client{Transport: sharedTransport}
+
+// metadataHTTPClient 用于模型列表等短请求，保留整体超时。
+var metadataHTTPClient = &http.Client{Transport: sharedTransport, Timeout: 30 * time.Second}
 
 type ProviderConfig struct {
 	ChannelType            string
@@ -100,7 +121,7 @@ func (a *OpenAIExecutor) Name() string {
 }
 
 func (a *OpenAIExecutor) ChatCompletions(ctx context.Context, config *ProviderConfig, req *UpstreamRequest) (*UpstreamResponse, error) {
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := sharedHTTPClient
 
 	body := map[string]any{
 		"model":    req.Model,
@@ -146,7 +167,7 @@ func (a *OpenAIExecutor) ChatCompletions(ctx context.Context, config *ProviderCo
 }
 
 func (a *OpenAIExecutor) ListModels(ctx context.Context, config *ProviderConfig) ([]ModelInfo, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := metadataHTTPClient
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, joinURL(config.BaseURL, "/v1/models"), nil)
 	if err != nil {
 		return nil, err
@@ -178,7 +199,7 @@ func (a *PlatformExecutor) Name() string {
 }
 
 func (a *PlatformExecutor) ChatCompletions(ctx context.Context, config *ProviderConfig, req *UpstreamRequest) (*UpstreamResponse, error) {
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := sharedHTTPClient
 	body := map[string]any{
 		"model":    req.Model,
 		"messages": req.Messages,
@@ -220,7 +241,7 @@ func (a *PlatformExecutor) ChatCompletions(ctx context.Context, config *Provider
 }
 
 func (a *PlatformExecutor) ListModels(ctx context.Context, config *ProviderConfig) ([]ModelInfo, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := metadataHTTPClient
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, joinURL(config.BaseURL, "/models"), nil)
 	if err != nil {
 		return nil, err
@@ -255,7 +276,7 @@ func (a *AzureOpenAIExecutor) ChatCompletions(ctx context.Context, config *Provi
 		return nil, &ProviderError{Type: "configuration_error", Message: "azure deployment_name is required"}
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := sharedHTTPClient
 	body := map[string]any{
 		"messages": req.Messages,
 		"stream":   req.Stream,
@@ -315,7 +336,7 @@ func (a *AnthropicExecutor) Name() string {
 }
 
 func (a *AnthropicExecutor) ChatCompletions(ctx context.Context, config *ProviderConfig, req *UpstreamRequest) (*UpstreamResponse, error) {
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := sharedHTTPClient
 
 	body := map[string]any{
 		"model":      req.Model,
@@ -329,6 +350,16 @@ func (a *AnthropicExecutor) ChatCompletions(ctx context.Context, config *Provide
 
 	for k, v := range req.Extra {
 		if _, blocked := anthropicBlockedFields[k]; blocked {
+			continue
+		}
+		switch k {
+		case "tools":
+			// OpenAI function 工具定义 → Anthropic tools（input_schema 外壳）
+			body[k] = toAnthropicTools(v)
+			continue
+		case "tool_choice":
+			// OpenAI tool_choice → Anthropic tool_choice
+			body[k] = toAnthropicToolChoice(v)
 			continue
 		}
 		body[k] = v
@@ -384,7 +415,7 @@ func (a *AnthropicExecutor) ChatCompletions(ctx context.Context, config *Provide
 }
 
 func (a *AnthropicExecutor) ListModels(ctx context.Context, config *ProviderConfig) ([]ModelInfo, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := metadataHTTPClient
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, joinURL(config.BaseURL, "/v1/models"), nil)
 	if err != nil {
 		return nil, err
@@ -567,8 +598,11 @@ func translateAnthropicResponse(body io.ReadCloser, model string) (io.ReadCloser
 		Type    string `json:"type"`
 		Role    string `json:"role"`
 		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type  string          `json:"type"`
+			Text  string          `json:"text"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
 		} `json:"content"`
 		StopReason string `json:"stop_reason"`
 		Usage      struct {
@@ -581,9 +615,39 @@ func translateAnthropicResponse(body io.ReadCloser, model string) (io.ReadCloser
 	}
 
 	textParts := make([]string, 0, len(payload.Content))
+	toolCalls := make([]map[string]any, 0)
 	for _, part := range payload.Content {
-		if part.Type == "text" && part.Text != "" {
-			textParts = append(textParts, part.Text)
+		switch part.Type {
+		case "text":
+			if part.Text != "" {
+				textParts = append(textParts, part.Text)
+			}
+		case "tool_use":
+			// Anthropic tool_use → OpenAI message.tool_calls
+			id := part.ID
+			if id == "" {
+				id = fmt.Sprintf("toolu_%d", time.Now().UnixNano())
+			}
+			toolCalls = append(toolCalls, map[string]any{
+				"id":   id,
+				"type": "function",
+				"function": map[string]any{
+					"name":      part.Name,
+					"arguments": anthropicToolArguments(part.Input),
+				},
+			})
+		}
+	}
+
+	message := map[string]any{
+		"role":    "assistant",
+		"content": strings.Join(textParts, ""),
+	}
+	finishReason := anthropicFinishReason(payload.StopReason)
+	if len(toolCalls) > 0 {
+		message["tool_calls"] = toolCalls
+		if finishReason == "stop" {
+			finishReason = "tool_calls"
 		}
 	}
 
@@ -594,19 +658,12 @@ func translateAnthropicResponse(body io.ReadCloser, model string) (io.ReadCloser
 		"model":   model,
 		"choices": []map[string]any{
 			{
-				"index": 0,
-				"message": map[string]any{
-					"role":    "assistant",
-					"content": strings.Join(textParts, ""),
-				},
-				"finish_reason": anthropicFinishReason(payload.StopReason),
+				"index":         0,
+				"message":       message,
+				"finish_reason": finishReason,
 			},
 		},
-		"usage": map[string]any{
-			"prompt_tokens":     payload.Usage.InputTokens,
-			"completion_tokens": payload.Usage.OutputTokens,
-			"total_tokens":      payload.Usage.InputTokens + payload.Usage.OutputTokens,
-		},
+		"usage": chatUsage(payload.Usage.InputTokens, payload.Usage.OutputTokens, false),
 	}
 
 	data, err := json.Marshal(openAIResponse)
@@ -617,6 +674,34 @@ func translateAnthropicResponse(body io.ReadCloser, model string) (io.ReadCloser
 	headers := make(http.Header)
 	headers.Set("Content-Type", "application/json")
 	return io.NopCloser(bytes.NewReader(data)), headers, nil
+}
+
+// anthropicToolArguments 把 Anthropic tool_use.input 转为 OpenAI arguments 字符串。
+func anthropicToolArguments(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "{}"
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return string(raw)
+	}
+	if buf.Len() == 0 {
+		return "{}"
+	}
+	return buf.String()
+}
+
+// chatUsage 构造 OpenAI 风格 usage。estimated 表示 token 数由本地估算得出。
+func chatUsage(inputTokens, outputTokens int, estimated bool) map[string]any {
+	usage := map[string]any{
+		"prompt_tokens":     inputTokens,
+		"completion_tokens": outputTokens,
+		"total_tokens":      inputTokens + outputTokens,
+	}
+	if estimated {
+		usage["cost_estimated"] = true
+	}
+	return usage
 }
 
 func translateAnthropicStream(body io.ReadCloser, model string) (io.ReadCloser, http.Header) {
@@ -633,9 +718,57 @@ func translateAnthropicStream(body io.ReadCloser, model string) (io.ReadCloser, 
 		scanner := bufio.NewScanner(body)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+		id := fmt.Sprintf("anthropic-%d", time.Now().UnixNano())
+		created := time.Now().Unix()
 		eventName := ""
 		var dataLines []string
 		sentRole := false
+		finished := false
+		inputTokens, outputTokens := 0, 0
+		usageSeen := false
+		toolCalls := 0
+		toolIndexByBlock := map[int]int{}
+		var contentBuf strings.Builder
+
+		chunk := func(delta map[string]any, finishReason any) error {
+			choice := map[string]any{"index": 0, "delta": delta}
+			if finishReason != nil {
+				choice["finish_reason"] = finishReason
+			}
+			return writeSSEChunk(writer, map[string]any{
+				"id":      id,
+				"object":  "chat.completion.chunk",
+				"created": created,
+				"model":   model,
+				"choices": []map[string]any{choice},
+			})
+		}
+		ensureRole := func() error {
+			if sentRole {
+				return nil
+			}
+			sentRole = true
+			return chunk(map[string]any{"role": "assistant"}, nil)
+		}
+		finish := func(stopReason string) error {
+			if finished {
+				return nil
+			}
+			finished = true
+			out := outputTokens
+			estimated := false
+			if out == 0 && contentBuf.Len() > 0 {
+				// 上游未返回 usage 时本地估算，避免计量恒为 0。
+				out = protocol.EstimateTokens(contentBuf.String())
+				estimated = true
+			}
+			if !usageSeen && (out > 0 || inputTokens > 0) {
+				estimated = true
+			}
+			return chunk(map[string]any{
+				"usage": chatUsage(inputTokens, out, estimated),
+			}, anthropicFinishReason(stopReason))
+		}
 
 		flush := func() error {
 			if len(dataLines) == 0 {
@@ -645,47 +778,119 @@ func translateAnthropicStream(body io.ReadCloser, model string) (io.ReadCloser, 
 			data := strings.Join(dataLines, "\n")
 			dataLines = nil
 			switch eventName {
+			case "message_start":
+				var payload struct {
+					Message struct {
+						Usage struct {
+							InputTokens  int `json:"input_tokens"`
+							OutputTokens int `json:"output_tokens"`
+						} `json:"usage"`
+					} `json:"message"`
+				}
+				if json.Unmarshal([]byte(data), &payload) == nil {
+					if payload.Message.Usage.InputTokens > 0 {
+						inputTokens = payload.Message.Usage.InputTokens
+						usageSeen = true
+					}
+				}
+			case "content_block_start":
+				var payload struct {
+					Index        int `json:"index"`
+					ContentBlock struct {
+						Type string `json:"type"`
+						ID   string `json:"id"`
+						Name string `json:"name"`
+					} `json:"content_block"`
+				}
+				if err := json.Unmarshal([]byte(data), &payload); err != nil {
+					eventName = ""
+					return nil
+				}
+				// Anthropic 工具块开始 → OpenAI tool_calls 首个增量（携带 id/name）
+				if payload.ContentBlock.Type == "tool_use" {
+					if err := ensureRole(); err != nil {
+						return err
+					}
+					callID := payload.ContentBlock.ID
+					if callID == "" {
+						callID = fmt.Sprintf("toolu_%d", time.Now().UnixNano())
+					}
+					idx := toolCalls
+					toolCalls++
+					toolIndexByBlock[payload.Index] = idx
+					if err := chunk(map[string]any{
+						"tool_calls": []map[string]any{
+							{
+								"index": idx,
+								"id":    callID,
+								"type":  "function",
+								"function": map[string]any{
+									"name":      payload.ContentBlock.Name,
+									"arguments": "",
+								},
+							},
+						},
+					}, nil); err != nil {
+						return err
+					}
+				}
 			case "content_block_delta":
 				var payload struct {
+					Index int `json:"index"`
 					Delta struct {
-						Type string `json:"type"`
-						Text string `json:"text"`
+						Type        string `json:"type"`
+						Text        string `json:"text"`
+						PartialJSON string `json:"partial_json"`
 					} `json:"delta"`
 				}
 				if err := json.Unmarshal([]byte(data), &payload); err != nil {
 					eventName = ""
 					return nil
 				}
-				if !sentRole {
-					if err := writeSSEChunk(writer, map[string]any{
-						"id":      fmt.Sprintf("anthropic-%d", time.Now().UnixNano()),
-						"object":  "chat.completion.chunk",
-						"created": time.Now().Unix(),
-						"model":   model,
-						"choices": []map[string]any{
-							{
-								"index": 0,
-								"delta": map[string]any{"role": "assistant"},
-							},
-						},
-					}); err != nil {
+				switch payload.Delta.Type {
+				case "text_delta":
+					if payload.Delta.Text == "" {
+						break
+					}
+					if err := ensureRole(); err != nil {
 						return err
 					}
-					sentRole = true
-				}
-				if payload.Delta.Type == "text_delta" && payload.Delta.Text != "" {
-					if err := writeSSEChunk(writer, map[string]any{
-						"id":      fmt.Sprintf("anthropic-%d", time.Now().UnixNano()),
-						"object":  "chat.completion.chunk",
-						"created": time.Now().Unix(),
-						"model":   model,
-						"choices": []map[string]any{
+					contentBuf.WriteString(payload.Delta.Text)
+					if err := chunk(map[string]any{"content": payload.Delta.Text}, nil); err != nil {
+						return err
+					}
+				case "input_json_delta":
+					// 工具参数增量 → OpenAI tool_calls.function.arguments 增量
+					idx, ok := toolIndexByBlock[payload.Index]
+					if !ok {
+						if err := ensureRole(); err != nil {
+							return err
+						}
+						idx = toolCalls
+						toolCalls++
+						toolIndexByBlock[payload.Index] = idx
+						if err := chunk(map[string]any{
+							"tool_calls": []map[string]any{
+								{
+									"index":    idx,
+									"id":       fmt.Sprintf("toolu_%d", time.Now().UnixNano()),
+									"type":     "function",
+									"function": map[string]any{"name": "", "arguments": ""},
+								},
+							},
+						}, nil); err != nil {
+							return err
+						}
+					}
+					contentBuf.WriteString(payload.Delta.PartialJSON)
+					if err := chunk(map[string]any{
+						"tool_calls": []map[string]any{
 							{
-								"index": 0,
-								"delta": map[string]any{"content": payload.Delta.Text},
+								"index":    idx,
+								"function": map[string]any{"arguments": payload.Delta.PartialJSON},
 							},
 						},
-					}); err != nil {
+					}, nil); err != nil {
 						return err
 					}
 				}
@@ -694,25 +899,30 @@ func translateAnthropicStream(body io.ReadCloser, model string) (io.ReadCloser, 
 					Delta struct {
 						StopReason string `json:"stop_reason"`
 					} `json:"delta"`
+					Usage struct {
+						InputTokens  int `json:"input_tokens"`
+						OutputTokens int `json:"output_tokens"`
+					} `json:"usage"`
 				}
-				if err := json.Unmarshal([]byte(data), &payload); err == nil {
-					if err := writeSSEChunk(writer, map[string]any{
-						"id":      fmt.Sprintf("anthropic-%d", time.Now().UnixNano()),
-						"object":  "chat.completion.chunk",
-						"created": time.Now().Unix(),
-						"model":   model,
-						"choices": []map[string]any{
-							{
-								"index":         0,
-								"delta":         map[string]any{},
-								"finish_reason": anthropicFinishReason(payload.Delta.StopReason),
-							},
-						},
-					}); err != nil {
-						return err
-					}
+				if json.Unmarshal([]byte(data), &payload) != nil {
+					eventName = ""
+					return nil
+				}
+				if payload.Usage.InputTokens > 0 {
+					inputTokens = payload.Usage.InputTokens
+					usageSeen = true
+				}
+				if payload.Usage.OutputTokens > 0 {
+					outputTokens = payload.Usage.OutputTokens
+					usageSeen = true
+				}
+				if err := finish(payload.Delta.StopReason); err != nil {
+					return err
 				}
 			case "message_stop":
+				if err := finish(""); err != nil {
+					return err
+				}
 				if _, err := io.WriteString(writer, "data: [DONE]\n\n"); err != nil {
 					return err
 				}
@@ -741,10 +951,89 @@ func translateAnthropicStream(body io.ReadCloser, model string) (io.ReadCloser, 
 
 		if err := scanner.Err(); err != nil {
 			_ = writer.CloseWithError(err)
+			return
+		}
+		if err := finish(""); err != nil {
+			_ = writer.CloseWithError(err)
 		}
 	}()
 
 	return reader, headers
+}
+
+// toAnthropicTools 把 OpenAI tools 定义转换为 Anthropic tools 格式。
+// 已是 Anthropic 格式（含 input_schema）的定义原样保留。
+func toAnthropicTools(raw any) any {
+	list, ok := raw.([]any)
+	if !ok {
+		if typed, ok := raw.([]map[string]any); ok {
+			list = make([]any, 0, len(typed))
+			for _, item := range typed {
+				list = append(list, item)
+			}
+		} else {
+			return raw
+		}
+	}
+
+	result := make([]map[string]any, 0, len(list))
+	for _, item := range list {
+		tool, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, hasInputSchema := tool["input_schema"]; hasInputSchema {
+			result = append(result, tool)
+			continue
+		}
+		fn, ok := tool["function"].(map[string]any)
+		if !ok {
+			result = append(result, tool)
+			continue
+		}
+		converted := map[string]any{}
+		if name, ok := fn["name"].(string); ok {
+			converted["name"] = name
+		}
+		if desc, ok := fn["description"].(string); ok && desc != "" {
+			converted["description"] = desc
+		}
+		if params, ok := fn["parameters"].(map[string]any); ok {
+			converted["input_schema"] = params
+		} else {
+			converted["input_schema"] = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
+		result = append(result, converted)
+	}
+	return result
+}
+
+// toAnthropicToolChoice 把 OpenAI tool_choice 语义映射为 Anthropic tool_choice。
+func toAnthropicToolChoice(raw any) any {
+	switch choice := raw.(type) {
+	case string:
+		switch choice {
+		case "required":
+			return map[string]any{"type": "any"}
+		case "none":
+			return map[string]any{"type": "none"}
+		default:
+			return map[string]any{"type": "auto"}
+		}
+	case map[string]any:
+		if fn, ok := choice["function"].(map[string]any); ok {
+			if name, ok := fn["name"].(string); ok && name != "" {
+				return map[string]any{"type": "tool", "name": name}
+			}
+		}
+		if t, ok := choice["type"].(string); ok {
+			switch t {
+			case "any", "auto", "none", "tool":
+				return choice
+			}
+		}
+	}
+	return raw
 }
 
 func writeSSEChunk(w io.Writer, payload map[string]any) error {
@@ -786,7 +1075,7 @@ func (a *AnthropicExecutor) GenericPost(ctx context.Context, config *ProviderCon
 }
 
 func genericPostImpl(ctx context.Context, config *ProviderConfig, path string, body []byte, authToken string) (*UpstreamResponse, error) {
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := sharedHTTPClient
 	baseURL := config.BaseURL
 	if baseURL == "" {
 		baseURL = "https://api.openai.com"
