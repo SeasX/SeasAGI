@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,9 +36,9 @@ type Manager struct {
 	healthCancel context.CancelFunc
 }
 
-// isOwnProxyAddr 判断 current 是否指向本客户端的 MITM 代理。
+// isOwnProxyAddr 判断 current 是否指向本客户端 MITM 代理实际监听的地址。
 // 用于区分「SeasAGI 自身写入的系统代理」与「用户自有的代理配置」，避免误清后者。
-func isOwnProxyAddr(current string) bool {
+func (m *Manager) isOwnProxyAddr(current string) bool {
 	current = strings.TrimSpace(current)
 	if current == "" {
 		return false
@@ -48,7 +47,11 @@ func isOwnProxyAddr(current string) bool {
 	if err != nil {
 		return false
 	}
-	if port != strconv.Itoa(defaultProxyPort) {
+	_, wantPort, err := net.SplitHostPort(m.proxyAddr)
+	if err != nil {
+		return false
+	}
+	if port != wantPort {
 		return false
 	}
 	switch strings.ToLower(host) {
@@ -60,8 +63,14 @@ func isOwnProxyAddr(current string) bool {
 
 // NewManager 创建 Manager 实例。gatewayURL 为本地网关地址（如 http://127.0.0.1:4318）。
 func NewManager(ca *CertificateAuthority, rules *Rules, gatewayURL string) *Manager {
+	return NewManagerWithPort(ca, rules, gatewayURL, defaultProxyPort)
+}
+
+// NewManagerWithPort 使用指定端口创建 Manager；生产路径固定 defaultProxyPort，
+// 显式端口便于并发测试使用独立监听地址。
+func NewManagerWithPort(ca *CertificateAuthority, rules *Rules, gatewayURL string, port int) *Manager {
 	interceptLog := NewInterceptLogger(200)
-	addr := fmt.Sprintf("%s:%d", defaultProxyHost, defaultProxyPort)
+	addr := fmt.Sprintf("%s:%d", defaultProxyHost, port)
 	return &Manager{
 		state:        StateStopped,
 		ca:           ca,
@@ -71,7 +80,7 @@ func NewManager(ca *CertificateAuthority, rules *Rules, gatewayURL string) *Mana
 		interceptLog: interceptLog,
 		status: Status{
 			State:      StateStopped,
-			ProxyPort:  defaultProxyPort,
+			ProxyPort:  port,
 			RulesCount: rules.Count(),
 		},
 	}
@@ -107,7 +116,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	if m.sysProxy != nil {
 		if active, _ := m.sysProxy.IsActive(); active {
 			cur, cerr := m.sysProxy.CurrentAddr()
-			if cerr == nil && isOwnProxyAddr(cur) {
+			if cerr == nil && m.isOwnProxyAddr(cur) {
 				logging.Infof("mitm: detected residual SeasAGI system proxy (%s), clearing before start", cur)
 				_ = m.sysProxy.Clear()
 			} else {
@@ -176,7 +185,7 @@ func (m *Manager) Start(ctx context.Context) error {
 			m.failWith(werr)
 			return werr
 		}
-		if err := m.sysProxy.Set(fmt.Sprintf("%s:%d", defaultProxyHost, defaultProxyPort)); err != nil {
+		if err := m.sysProxy.Set(m.proxyAddr); err != nil {
 			m.rollback([]string{"proxy", "trust", "ca"})
 			werr := fmt.Errorf("set system proxy: %w", err)
 			m.failWith(werr)
@@ -225,7 +234,7 @@ func (m *Manager) Stop() error {
 	// 仅清除指向本客户端的系统代理，避免把用户后来手动配置的代理一并清掉。
 	if m.sysProxy != nil {
 		cur, cerr := m.sysProxy.CurrentAddr()
-		if cerr == nil && isOwnProxyAddr(cur) {
+		if cerr == nil && m.isOwnProxyAddr(cur) {
 			_ = m.sysProxy.Clear()
 		} else {
 			logging.Warningf("mitm: system proxy not owned by SeasAGI (%s), not clearing on stop", cur)

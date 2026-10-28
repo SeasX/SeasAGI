@@ -304,9 +304,8 @@ func buildAppMenu(app *App, gw *gateway.Service) *menu.Menu {
 	})
 	fileMenu.AddSeparator()
 	fileMenu.AddText("复制网关地址", keys.CmdOrCtrl("c"), func(_ *menu.CallbackData) {
-		token, _ := app.GetLocalAccessToken()
-		text := fmt.Sprintf("Base URL: http://127.0.0.1:%d/v1\nAPI Key: %s", gw.GetListenPort(), token)
-		runtime.ClipboardSetText(app.ctx, text)
+		// 明文令牌留在后端拼接并直接写入剪贴板，不经过渲染层（CL-S5）。
+		_ = app.CopyGatewaySnippet()
 	})
 	fileMenu.AddSeparator()
 	fileMenu.AddText("隐藏窗口", keys.CmdOrCtrl("h"), func(_ *menu.CallbackData) {

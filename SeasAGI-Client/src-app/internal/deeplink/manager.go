@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -63,7 +64,16 @@ func (m *Manager) Parse(rawURL string) (*DeepLinkAction, error) {
 		}
 	}
 
+	// 深链可能出现在浏览器历史、系统日志和他机剪贴板中，禁止承载任何凭证（CL-S23）。
+	if err := rejectCredentialParams(u.Query()); err != nil {
+		return nil, err
+	}
 	if body := u.Fragment; body != "" {
+		if fragQuery, err := url.ParseQuery(body); err == nil {
+			if err := rejectCredentialParams(fragQuery); err != nil {
+				return nil, err
+			}
+		}
 		params["_fragment"] = body
 	}
 
@@ -71,6 +81,31 @@ func (m *Manager) Parse(rawURL string) (*DeepLinkAction, error) {
 		Type:   actionType,
 		Params: params,
 	}, nil
+}
+
+// rejectCredentialParams 拒绝携带密钥类参数的深链，避免凭证进入 URL（CL-S23）。
+func rejectCredentialParams(values url.Values) error {
+	for key := range values {
+		if isCredentialParam(key) {
+			return fmt.Errorf("deep link must not carry credentials: %s", key)
+		}
+	}
+	return nil
+}
+
+// isCredentialParam 判断参数名是否属于凭证字段（兼容 api-key / accessToken 等写法）。
+func isCredentialParam(name string) bool {
+	key := strings.ToLower(strings.TrimSpace(name))
+	key = strings.ReplaceAll(key, "-", "_")
+	switch key {
+	case "api_key", "apikey", "access_token", "refresh_token", "id_token", "token",
+		"secret", "client_secret", "password", "passwd", "private_key", "credential", "key":
+		return true
+	}
+	return strings.HasPrefix(key, "api_key") ||
+		strings.Contains(key, "secret") ||
+		strings.HasSuffix(key, "_token") ||
+		strings.HasSuffix(key, "password")
 }
 
 func (m *Manager) Handle(rawURL string) error {
@@ -119,12 +154,13 @@ func (m *Manager) ProcessPending() {
 	}
 }
 
-func BuildImportProviderURL(name, providerType, baseURL, apiKey string) string {
-	return fmt.Sprintf("seasagi://import-provider?name=%s&type=%s&base_url=%s&api_key=%s",
+// BuildImportProviderURL 生成提供商导入深链。
+// 刻意不包含 api_key：凭证必须在导入确认后由用户填写，避免出现在 URL/系统日志中（CL-S23）。
+func BuildImportProviderURL(name, providerType, baseURL string) string {
+	return fmt.Sprintf("seasagi://import-provider?name=%s&type=%s&base_url=%s",
 		url.QueryEscape(name),
 		url.QueryEscape(providerType),
 		url.QueryEscape(baseURL),
-		url.QueryEscape(apiKey),
 	)
 }
 

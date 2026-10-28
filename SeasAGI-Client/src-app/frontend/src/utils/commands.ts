@@ -1,5 +1,7 @@
 import type { Channel, DiscoveredModel, RequestLog, RuntimeStatus, AuthState, AppConfig, ModelCombo, CloudUsage, CloudBilling, CloudCombo, OptimizationPlan, OptimizationConfig, ModelStatsEntry, UsageSummary, ProviderHealthMetric, ProviderHealthSummary, BYOKPolicy, QuickStrategy, TaskProfile, MITMStatus, MITMRoutingConfig, OverageRecord, Invoice, OAuthProvider } from "../utils/types";
 
+export type LocalTokenStatus = { present: boolean; masked: string };
+
 type WailsAppApi = {
   StartLocalGateway(): Promise<void>;
   StopLocalGateway(): Promise<void>;
@@ -41,8 +43,10 @@ type WailsAppApi = {
   ListLogs(limit: number, offset: number): Promise<RequestLog[]>;
   ListLogsFiltered(limit: number, offset: number, status: string, channelId: string, timeFrom: string, timeTo: string, keyword: string): Promise<RequestLog[]>;
   UpdateDefaultModel(modelName: string, channelId: string): Promise<void>;
-  GetLocalAccessToken(): Promise<string>;
-  ResetLocalAccessToken(): Promise<string>;
+  GetLocalAccessTokenStatus(): Promise<LocalTokenStatus>;
+  CopyLocalAccessToken(): Promise<void>;
+  CopyGatewaySnippet(): Promise<void>;
+  ResetLocalAccessToken(): Promise<LocalTokenStatus>;
   SetAutoLaunch(enabled: boolean): Promise<void>;
   UpdateRoutingSettings(strategy: string, stickyUses: number): Promise<void>;
   ListModelCombos(): Promise<ModelCombo[]>;
@@ -348,11 +352,19 @@ export async function updateDefaultModel(modelName: string, channelId: string): 
   return getAppApi().UpdateDefaultModel(modelName, channelId);
 }
 
-export async function getLocalAccessToken(): Promise<string> {
-  return getAppApi().GetLocalAccessToken();
+export async function getLocalAccessTokenStatus(): Promise<LocalTokenStatus> {
+  return getAppApi().GetLocalAccessTokenStatus();
 }
 
-export async function resetLocalAccessToken(): Promise<string> {
+export async function copyLocalAccessToken(): Promise<void> {
+  return getAppApi().CopyLocalAccessToken();
+}
+
+export async function copyGatewaySnippet(): Promise<void> {
+  return getAppApi().CopyGatewaySnippet();
+}
+
+export async function resetLocalAccessToken(): Promise<LocalTokenStatus> {
   return getAppApi().ResetLocalAccessToken();
 }
 

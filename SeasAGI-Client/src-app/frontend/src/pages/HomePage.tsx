@@ -199,8 +199,8 @@ export function HomePage() {
   };
 
   const handleCopyBaseUrl = async () => {
-    const token = await cmd.getLocalAccessToken();
-    await navigator.clipboard.writeText(`Base URL: ${baseUrl}\nAPI Key: ${token}`);
+    // 由后端拼接并写入剪贴板，渲染层不接触明文令牌（CL-S5）。
+    await cmd.copyGatewaySnippet();
   };
 
   const platformChannels = channels.filter((ch) => ch.channel_type === "platform");

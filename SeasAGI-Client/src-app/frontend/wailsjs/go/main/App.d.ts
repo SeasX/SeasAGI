@@ -36,6 +36,10 @@ export function ClearSelectedGrant():Promise<void>;
 
 export function ConfirmAction(arg1:string,arg2:string):Promise<boolean>;
 
+export function CopyGatewaySnippet():Promise<void>;
+
+export function CopyLocalAccessToken():Promise<void>;
+
 export function CopyToClipboard(arg1:string):Promise<void>;
 
 export function CreateCheckoutSession(arg1:string,arg2:Array<number>):Promise<Record<string, any>>;
@@ -110,7 +114,7 @@ export function GetEvalScorecard(arg1:string):Promise<Record<string, any>>;
 
 export function GetIntentScenarioStats():Promise<Array<Record<string, any>>>;
 
-export function GetLocalAccessToken():Promise<string>;
+export function GetLocalAccessTokenStatus():Promise<Record<string, any>>;
 
 export function GetLocale():Promise<string>;
 
@@ -268,7 +272,7 @@ export function RenameComboTemplate(arg1:string,arg2:string):Promise<void>;
 
 export function ReorderChannels(arg1:Array<string>):Promise<void>;
 
-export function ResetLocalAccessToken():Promise<string>;
+export function ResetLocalAccessToken():Promise<Record<string, any>>;
 
 export function RunDiagnostics():Promise<Record<string, any>>;
 

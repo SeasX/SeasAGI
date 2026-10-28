@@ -148,7 +148,7 @@ func envKeyName(keyID string) string {
 }
 
 // 平台实现（见 store_darwin.go / store_windows.go / store_file.go）：
-//   - macOS：系统 Keychain（security CLI）
+//   - macOS：系统 Keychain（Security.framework，密钥不经过子进程 argv）
 //   - Windows：DPAPI 加密后落盘到 0600 文件
 //   - 其它（Linux 等）：AES-256-GCM 加密后落盘到 0600 文件，主密钥同样 0600
 //

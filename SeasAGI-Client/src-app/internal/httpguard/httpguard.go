@@ -23,6 +23,11 @@ func LocalOnly(next http.Handler) http.Handler {
 				return
 			}
 		}
+		// 即使监听被误配到非回环地址，也拒绝来自非本机的连接（CL-S21）。
+		if !IsLoopbackRemoteAddr(r.RemoteAddr) {
+			http.Error(w, "client not allowed", http.StatusForbidden)
+			return
+		}
 		if r.Body != nil {
 			if r.ContentLength > maxBodyBytes {
 				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
@@ -45,6 +50,20 @@ func isLocalHost(host string) bool {
 	}
 	host = strings.Trim(host, "[]")
 	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
+// IsLoopbackRemoteAddr 判断 TCP 对端地址（RemoteAddr）是否为回环。
+// 空地址视为不可信，避免在无对端信息时放行。
+func IsLoopbackRemoteAddr(remoteAddr string) bool {
+	host := strings.TrimSpace(remoteAddr)
+	if host == "" {
+		return false
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 // IsLocalOrigin 判断 Origin 是否指向本机（允许 http/https 与端口）。

@@ -1769,21 +1769,58 @@ func (a *App) GetComboByName(name string) config.ModelCombo {
 	return c
 }
 
-func (a *App) GetLocalAccessToken() (string, error) {
-	return a.localTokenStore.GetOrCreate()
+// GetLocalAccessTokenStatus 返回本地令牌是否存在与掩码值。
+// 渲染层不再持有完整令牌，复制动作由后端直接写入系统剪贴板（CL-S5）。
+func (a *App) GetLocalAccessTokenStatus() (map[string]any, error) {
+	token, err := a.localTokenStore.Get()
+	if err != nil || token == "" {
+		token, err = a.localTokenStore.GetOrCreate()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"present": token != "", "masked": maskToken(token)}, nil
 }
 
-func (a *App) ResetLocalAccessToken() (string, error) {
+// CopyLocalAccessToken 把完整本地令牌写入系统剪贴板；明文不经过渲染层。
+func (a *App) CopyLocalAccessToken() error {
+	token, err := a.localTokenStore.GetOrCreate()
+	if err != nil {
+		return err
+	}
+	return runtime.ClipboardSetText(a.ctx, token)
+}
+
+// CopyGatewaySnippet 复制接入片段（Base URL + API Key），明文由后端拼接。
+func (a *App) CopyGatewaySnippet() error {
+	token, err := a.localTokenStore.GetOrCreate()
+	if err != nil {
+		return err
+	}
+	text := fmt.Sprintf("Base URL: http://127.0.0.1:%d/v1\nAPI Key: %s", a.gatewaySvc.GetListenPort(), token)
+	return runtime.ClipboardSetText(a.ctx, text)
+}
+
+// ResetLocalAccessToken 轮换本地令牌并返回新的掩码状态（不返回明文）。
+func (a *App) ResetLocalAccessToken() (map[string]any, error) {
 	token, err := a.localTokenStore.Reset()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	a.gatewaySvc.SetAccessToken(token)
 	// MITM 拦截转发注入的令牌需同步更新，避免被接管请求因旧令牌 401。
 	if a.mitmMgr != nil {
 		a.mitmMgr.SetAccessToken(token)
 	}
-	return token, nil
+	return map[string]any{"present": true, "masked": maskToken(token)}, nil
+}
+
+// maskToken 仅保留首尾各 4 位，避免渲染层拿到可用凭证。
+func maskToken(token string) string {
+	if len(token) <= 8 {
+		return strings.Repeat("•", len(token))
+	}
+	return token[:4] + "••••" + token[len(token)-4:]
 }
 
 func (a *App) SetAutoLaunch(enabled bool) error {

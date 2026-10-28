@@ -897,6 +897,8 @@
   "token.resetFailed": "ローカルアクセストークンのリセットに失敗しました",
   "token.currentToken": "現在のトークン",
   "token.localOnlyHint": "このトークンはローカルデータベースにのみ保存され、クラウドサービスにアップロードされません。",
+  "token.maskedHint": "漏えいリスクを抑えるため、画面にはマスクされたトークンのみを表示します。「トークンをコピー」で完全な値をコピーできます。",
+  "token.copyFailed": "トークンのコピーに失敗しました",
   "token.copy": "トークンをコピー",
   "token.copied": "コピーしました",
   "token.reset": "トークンをリセット",

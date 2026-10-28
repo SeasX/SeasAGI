@@ -7,7 +7,7 @@ import { getErrorMessage } from "../utils/errors";
 export function AccessTokenPage() {
   const { t } = useTranslation();
   const runtime = useAppStore((s) => s.runtime);
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState<cmd.LocalTokenStatus>({ present: false, masked: "" });
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -18,7 +18,7 @@ export function AccessTokenPage() {
     setLoading(true);
     setError("");
     try {
-      setToken(await cmd.getLocalAccessToken());
+      setToken(await cmd.getLocalAccessTokenStatus());
     } catch (err) {
       setError(getErrorMessage(err, t("token.loadFailed")));
     } finally {
@@ -35,8 +35,7 @@ export function AccessTokenPage() {
     setResetting(true);
     setError("");
     try {
-      const nextToken = await cmd.resetLocalAccessToken();
-      setToken(nextToken);
+      setToken(await cmd.resetLocalAccessToken());
       setCopied(false);
     } catch (err) {
       setError(getErrorMessage(err, t("token.resetFailed")));
@@ -46,10 +45,15 @@ export function AccessTokenPage() {
   };
 
   const handleCopy = async () => {
-    if (!token) return;
-    await navigator.clipboard.writeText(token);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    if (!token.present) return;
+    setError("");
+    try {
+      await cmd.copyLocalAccessToken();
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      setError(getErrorMessage(err, t("token.copyFailed")));
+    }
   };
 
   if (loading) {
@@ -70,7 +74,7 @@ export function AccessTokenPage() {
           </div>
           <div className="hero-metric-card">
             <span className="hero-metric-label">{t("token.tokenStatus")}</span>
-            <strong className="hero-metric-value">{token ? t("token.generated") : t("token.notGenerated")}</strong>
+            <strong className="hero-metric-value">{token.present ? t("token.generated") : t("token.notGenerated")}</strong>
           </div>
         </div>
       </div>
@@ -81,12 +85,13 @@ export function AccessTokenPage() {
         <div className="section-heading">
           <h2>{t("token.currentToken")}</h2>
           <p className="hint">{t("token.localOnlyHint")}</p>
+          <p className="hint">{t("token.maskedHint")}</p>
         </div>
 
         <div className="token-card">
-          <code className="token-value">{token || "-"}</code>
+          <code className="token-value">{token.masked || "-"}</code>
           <div className="token-actions">
-            <button onClick={handleCopy} className="btn-secondary" disabled={!token || resetting}>
+            <button onClick={handleCopy} className="btn-secondary" disabled={!token.present || resetting}>
               {copied ? t("token.copied") : t("token.copy")}
             </button>
             <button onClick={handleReset} className="btn-danger" disabled={resetting}>

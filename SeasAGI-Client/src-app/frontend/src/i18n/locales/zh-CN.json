@@ -931,6 +931,8 @@
   "token.resetFailed": "重置本地访问令牌失败",
   "token.currentToken": "当前令牌",
   "token.localOnlyHint": "该令牌只保存在本地数据库中，不会上传到云端服务。",
+  "token.maskedHint": "为降低泄露风险，页面只显示掩码；点击「复制令牌」可获取完整令牌。",
+  "token.copyFailed": "复制令牌失败",
   "token.copy": "复制令牌",
   "token.copied": "已复制",
   "token.reset": "重置令牌",

@@ -4,7 +4,7 @@ import {
   chatCompletion, chatCompletionForChannel,
   imageGeneration, imageGenerationForChannel,
   videoGeneration, videoGenerationForChannel,
-  listChannels, getLocalAccessToken, listModelCombos,
+  listChannels, getLocalAccessTokenStatus, listModelCombos,
 } from "../utils/commands";
 import type { Channel, ModelCombo } from "../utils/types";
 
@@ -113,8 +113,8 @@ export function PlaygroundPage() {
   useEffect(() => {
     (async () => {
       try {
-        const token = await getLocalAccessToken();
-        setGatewayRunning(!!token);
+        const status = await getLocalAccessTokenStatus();
+        setGatewayRunning(status.present);
       } catch {}
     })();
     (async () => {

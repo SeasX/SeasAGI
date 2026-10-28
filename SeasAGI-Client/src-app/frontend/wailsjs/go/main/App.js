@@ -46,6 +46,14 @@ export function ConfirmAction(arg1, arg2) {
   return window['go']['main']['App']['ConfirmAction'](arg1, arg2);
 }
 
+export function CopyGatewaySnippet() {
+  return window['go']['main']['App']['CopyGatewaySnippet']();
+}
+
+export function CopyLocalAccessToken() {
+  return window['go']['main']['App']['CopyLocalAccessToken']();
+}
+
 export function CopyToClipboard(arg1) {
   return window['go']['main']['App']['CopyToClipboard'](arg1);
 }
@@ -194,8 +202,8 @@ export function GetIntentScenarioStats() {
   return window['go']['main']['App']['GetIntentScenarioStats']();
 }
 
-export function GetLocalAccessToken() {
-  return window['go']['main']['App']['GetLocalAccessToken']();
+export function GetLocalAccessTokenStatus() {
+  return window['go']['main']['App']['GetLocalAccessTokenStatus']();
 }
 
 export function GetLocale() {

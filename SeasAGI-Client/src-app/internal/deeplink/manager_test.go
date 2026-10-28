@@ -7,7 +7,7 @@ import (
 
 func TestParseImportProvider(t *testing.T) {
 	m := NewManager()
-	raw := BuildImportProviderURL("my provider", "openai", "https://api.example.com/v1", "sk-123")
+	raw := BuildImportProviderURL("my provider", "openai", "https://api.example.com/v1")
 	action, err := m.Parse(raw)
 	if err != nil {
 		t.Fatalf("Parse returned error: %v", err)
@@ -19,11 +19,30 @@ func TestParseImportProvider(t *testing.T) {
 		"name":     "my provider",
 		"type":     "openai",
 		"base_url": "https://api.example.com/v1",
-		"api_key":  "sk-123",
 	}
 	for k, v := range want {
 		if action.Params[k] != v {
 			t.Errorf("param %q: expected %q, got %q", k, v, action.Params[k])
+		}
+	}
+	if _, ok := action.Params["api_key"]; ok {
+		t.Error("deep link must not carry api_key")
+	}
+}
+
+// TestParseRejectsCredentialParams 验证深链不再承载任何凭证（CL-S23）。
+func TestParseRejectsCredentialParams(t *testing.T) {
+	m := NewManager()
+	for _, raw := range []string{
+		"seasagi://import-provider?name=x&api_key=sk-123",
+		"seasagi://import-provider?name=x&api-key=sk-123",
+		"seasagi://import-provider?name=x&access_token=abc",
+		"seasagi://import-provider?name=x&client_secret=abc",
+		"seasagi://import-provider?name=x&password=abc",
+		"seasagi://open-channel#access_token=abc",
+	} {
+		if _, err := m.Parse(raw); err == nil {
+			t.Errorf("expected %q to be rejected", raw)
 		}
 	}
 }
@@ -104,7 +123,7 @@ func TestHandleDispatchesToRegisteredHandler(t *testing.T) {
 		got = a
 		return nil
 	})
-	if err := m.Handle(BuildImportProviderURL("n", "t", "u", "k")); err != nil {
+	if err := m.Handle(BuildImportProviderURL("n", "t", "u")); err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
 	if got.Type != ActionImportProvider || got.Params["name"] != "n" {

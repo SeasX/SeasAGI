@@ -127,6 +127,7 @@ func TestA2AHTTPMetadata(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/agent.json", nil)
 	req.Host = "127.0.0.1:4318"
+	req.RemoteAddr = "127.0.0.1:54321"
 	srv.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -145,6 +146,7 @@ func TestA2AHTTPSend(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/a2a", body)
 	req.Host = "127.0.0.1:4318"
+	req.RemoteAddr = "127.0.0.1:54321"
 	srv.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -162,6 +164,7 @@ func TestA2AHTTPMethodNotAllowed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/a2a", nil)
 	req.Host = "127.0.0.1:4318"
+	req.RemoteAddr = "127.0.0.1:54321"
 	srv.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -174,6 +177,7 @@ func TestA2AHTTPNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/unknown", nil)
 	req.Host = "127.0.0.1:4318"
+	req.RemoteAddr = "127.0.0.1:54321"
 	srv.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
@@ -202,6 +206,7 @@ func TestA2ALocalOnlyGuard(t *testing.T) {
 
 	remoteHost := httptest.NewRequest(http.MethodGet, "/.well-known/agent.json", nil)
 	remoteHost.Host = "evil.example.com"
+	remoteHost.RemoteAddr = "127.0.0.1:54321"
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, remoteHost)
 	if rec.Code != http.StatusForbidden {
@@ -210,6 +215,7 @@ func TestA2ALocalOnlyGuard(t *testing.T) {
 
 	crossOrigin := httptest.NewRequest(http.MethodGet, "/.well-known/agent.json", nil)
 	crossOrigin.Host = "127.0.0.1:4318"
+	crossOrigin.RemoteAddr = "127.0.0.1:54321"
 	crossOrigin.Header.Set("Origin", "https://evil.example.com")
 	rec = httptest.NewRecorder()
 	srv.ServeHTTP(rec, crossOrigin)
@@ -219,6 +225,7 @@ func TestA2ALocalOnlyGuard(t *testing.T) {
 
 	local := httptest.NewRequest(http.MethodGet, "/.well-known/agent.json", nil)
 	local.Host = "localhost:4318"
+	local.RemoteAddr = "127.0.0.1:54321"
 	local.Header.Set("Origin", "http://localhost:5173")
 	rec = httptest.NewRecorder()
 	srv.ServeHTTP(rec, local)

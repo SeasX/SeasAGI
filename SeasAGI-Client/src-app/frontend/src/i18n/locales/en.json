@@ -931,6 +931,8 @@
   "token.resetFailed": "Failed to reset local access token",
   "token.currentToken": "Current Token",
   "token.localOnlyHint": "This token is stored only in the local database and is never uploaded to the cloud service.",
+  "token.maskedHint": "Only a masked token is shown; click “Copy Token” to copy the full value.",
+  "token.copyFailed": "Failed to copy token",
   "token.copy": "Copy Token",
   "token.copied": "Copied",
   "token.reset": "Reset Token",
