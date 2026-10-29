@@ -42,15 +42,14 @@
 
 <!-- hreflang -->
 <link rel="alternate" hreflang="en" href="https://SeasAGI.SeasX.ai/">
-<link rel="alternate" hreflang="zh-CN" href="https://SeasAGI.SeasX.ai/zh/">
-<link rel="alternate" hreflang="ja" href="https://SeasAGI.SeasX.ai/ja/">
-<link rel="alternate" hreflang="ko" href="https://SeasAGI.SeasX.ai/ko/">
+<link rel="alternate" hreflang="zh-CN" href="https://SeasAGI.SeasX.ai/?lang=zh">
+<link rel="alternate" hreflang="ja" href="https://SeasAGI.SeasX.ai/?lang=ja">
+<link rel="alternate" hreflang="ko" href="https://SeasAGI.SeasX.ai/?lang=ko">
 <link rel="alternate" hreflang="x-default" href="https://SeasAGI.SeasX.ai/">
 
 <!-- Performance -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="preload" href="./assets/fonts.css" as="style">
+<link rel="stylesheet" href="./assets/fonts.css">
 <link rel="preconnect" href="https://github.com">
 <link rel="dns-prefetch" href="https://github.com">
 <link rel="preconnect" href="https://discord.com">
@@ -358,6 +357,7 @@ body.lang-ko .lang-ko-i{display:inline;}
 /* model index */
 .mi-stats{display:flex;flex-wrap:wrap;gap:10px 28px;margin-bottom:24px;font-size:14px;color:var(--text-secondary);}
 .mi-stats strong{color:var(--text-primary);font-family:var(--font-mono);}
+.mi-empty{padding:36px 24px;text-align:center;border:1px dashed var(--border-subtle);border-radius:var(--radius-md);color:var(--text-secondary);font-size:14px;line-height:1.9;}
 .mi-rank{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border-radius:50%;font-family:var(--font-mono);font-size:12px;font-weight:700;color:#0b1220;}
 .mi-rank.top1{background:#f5c542;}
 .mi-rank.top2{background:#c0c8d4;}
@@ -415,7 +415,7 @@ body.lang-ko .lang-ko-i{display:inline;}
       <a href="https://discord.gg/NdMkGtqAA" target="_blank" rel="noopener" aria-label="Discord">💬</a>
     </nav>
     <a class="btn btn-primary btn-sm header-cta" href="#download"><span class="lang-zh-i">下载客户端</span><span class="lang-en-i">Download</span><span class="lang-ja-i">ダウンロード</span><span class="lang-ko-i">다운로드</span></a>
-    <button class="lang-btn" id="langToggle" onclick="toggleLang()">中文</button>
+    <button class="lang-btn" id="langToggle">中文</button>
   </div>
 </header>
 
@@ -432,7 +432,7 @@ body.lang-ko .lang-ko-i{display:inline;}
           <a class="btn btn-primary" href="#download"><span class="lang-zh-i">免费下载客户端</span><span class="lang-en-i">Download Free</span><span class="lang-ja-i">無料ダウンロード</span><span class="lang-ko-i">무료 다운로드</span></a>
           <a class="btn btn-ghost" href="https://github.com/SeasX/SeasAGI" target="_blank" rel="noopener"><span class="lang-zh-i">查看 GitHub</span><span class="lang-en-i">View on GitHub</span><span class="lang-ja-i">GitHub で見る</span><span class="lang-ko-i">GitHub에서 보기</span></a>
           <a class="btn btn-ghost" href="https://discord.gg/NdMkGtqAA" target="_blank" rel="noopener"><span class="lang-zh-i">加入 Discord</span><span class="lang-en-i">Join Discord</span><span class="lang-ja-i">Discord に参加</span><span class="lang-ko-i">Discord 참여</span></a>
-          <a href="https://www.producthunt.com/products/seasagi?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-seasagi" target="_blank" rel="noopener noreferrer"><img alt="SeasAGI - Open-source: Local LLM API Intelligent Gateway | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1235986&amp;theme=light&amp;t=1788028671817"></a>
+          <a href="https://www.producthunt.com/products/seasagi?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-seasagi" target="_blank" rel="noopener noreferrer"><img alt="SeasAGI - Open-source: Local LLM API Intelligent Gateway | Product Hunt" width="250" height="54" src="./assets/producthunt-badge.svg"></a>
         </div>
       </div>
       <div class="hero-visual" aria-hidden="true">
@@ -685,13 +685,21 @@ body.lang-ko .lang-ko-i{display:inline;}
   </section>
 
   <!-- AI Model Index -->
-  <section class="section section-surface" id="model-index" hidden>
+  <section class="section section-surface" id="model-index">
     <div class="container">
       <div class="section-head">
         <span class="eyebrow">AI INDEX</span>
         <h2 class="section-title"><span class="lang-zh-i">AI 模型共识指数</span><span class="lang-en-i">AI Model Consensus Index</span><span class="lang-ja-i">AI モデル コンセンサス指数</span><span class="lang-ko-i">AI 모델 컨센서스 지수</span></h2>
         <p class="section-desc"><span class="lang-zh-i">聚合多家权威评测榜单，按共识加权汇总，以下为综合榜 TOP 15；五大分类完整榜单请见客户端「AI 模型指数」。</span><span class="lang-en-i">Aggregated from multiple authoritative leaderboards with consensus weighting — Overall TOP 15 below; see the full 5-category ranking in the SeasAGI client.</span><span class="lang-ja-i">複数の権威あるランキングをコンセンサス加重で集計し、総合 TOP 15 を表示。全 5 カテゴリの完全なランキングは SeasAGI クライアントで。</span><span class="lang-ko-i">여러 권위 있는 리더보드를 컨센서스 가중치로 집계하여 종합 TOP 15를 표시합니다. 전체 5개 카테고리는 SeasAGI 클라이언트에서 확인하세요.</span></p>
       </div>
+      <!-- 无 JS / 无数据时的兜底态：始终可见，避免出现空表格；取到数据后由脚本切换到榜单 -->
+      <div class="mi-empty" id="miEmpty">
+        <span class="lang-zh-i">指数数据正在同步中，稍后会自动显示；你也可以在客户端查看完整榜单。</span>
+        <span class="lang-en-i">Index data is being synced and will appear automatically. You can also view the full ranking in the client.</span>
+        <span class="lang-ja-i">指数データを同期中です。まもなく自動的に表示されます。完全なランキングはクライアントでもご覧いただけます。</span>
+        <span class="lang-ko-i">지수 데이터를 동기화하는 중이며 곧 자동으로 표시됩니다. 전체 랭킹은 클라이언트에서도 확인할 수 있습니다.</span>
+      </div>
+      <div id="miData" hidden>
       <div class="mi-stats">
         <span><strong id="miStatModels">–</strong> <span class="lang-zh-i">个在榜模型</span><span class="lang-en-i">ranked models</span><span class="lang-ja-i">ランクインモデル</span><span class="lang-ko-i">랭킹 모델</span></span>
         <span><strong id="miStatProviders">–</strong> <span class="lang-zh-i">家厂商</span><span class="lang-en-i">providers</span><span class="lang-ja-i">社のベンダー</span><span class="lang-ko-i">개 공급사</span></span>
@@ -713,6 +721,7 @@ body.lang-ko .lang-ko-i{display:inline;}
           </thead>
           <tbody id="miBody"></tbody>
         </table>
+      </div>
       </div>
       <p class="mi-note"><span class="lang-zh-i">共识指数：多家评测榜单结果的共识加权汇总，分数越高代表跨榜单表现越稳定。价格口径：API 官方定价（¥ / 百万 Token），“–” 表示暂无公开定价。</span><span class="lang-en-i">Consensus score: weighted aggregation across multiple leaderboards; higher means more consistent cross-benchmark performance. Pricing: official API rates (¥ / million tokens); “–” means no public pricing yet.</span><span class="lang-ja-i">コンセンサス指数：複数のランキング結果をコンセンサス加重で集計。高いほど横断的評価で安定した性能を示します。価格：公式 API 定価（¥ / 100万トークン）。「–」は公開価格なし。</span><span class="lang-ko-i">컨센서스 지수: 여러 리더보드 결과의 컨센서스 가중 집계. 높을수록 벤치마크 전반에서 안정적인 성능을 보입니다. 가격: 공식 API 정가(¥ / 백만 토큰), “–”는 공개 가격 없음.</span></p>
       <div class="mi-cta">
@@ -1126,10 +1135,10 @@ body.lang-ko .lang-ko-i{display:inline;}
 <!-- Enterprise Contact Modal -->
 <div class="modal-overlay" id="entModal">
   <div class="modal-box">
-    <div class="modal-close" onclick="hideEntForm()">&times;</div>
+    <div class="modal-close">&times;</div>
     <h3><span class="lang-zh-i">企业版咨询</span><span class="lang-en-i">Enterprise Inquiry</span><span class="lang-ja-i">エンタープライズ版お問い合わせ</span><span class="lang-ko-i">엔터프라이즈 문의</span></h3>
     <p style="color:var(--text-secondary);margin-bottom:16px;font-size:14px;"><span class="lang-zh-i">填写以下信息，我们的团队将在 2 个工作日内与您联系。</span><span class="lang-en-i">Fill out the form and our team will contact you within 2 business days.</span><span class="lang-ja-i">以下の情報をご入力ください。担当チームが 2 営業日以内にご連絡いたします。</span><span class="lang-ko-i">아래 정보를 입력해 주세요. 담당팀이 영업일 기준 2일 이내에 연락드립니다.</span></p>
-    <form id="entForm" onsubmit="event.preventDefault();submitEntForm()">
+    <form id="entForm">
       <div class="form-row"><input type="text" name="contact" placeholder="Your name / 联系人 / お名前 / 이름" required/></div>
       <div class="form-row"><input type="email" name="email" placeholder="Email / 邮箱 / メールアドレス / 이메일" required/></div>
       <div class="form-row"><input type="text" name="cname" placeholder="Company / 公司名称 / 会社名 / 회사명" required/></div>
@@ -1141,65 +1150,6 @@ body.lang-ko .lang-ko-i{display:inline;}
   </div>
 </div>
 
-<script>
-// header scroll shadow
-(function(){var h=document.querySelector(".site-header");if(h){function s(){h.classList.toggle("scrolled",window.scrollY>8);}window.addEventListener("scroll",s,{passive:true});s();}})();
-
-// language toggle (en → zh → ja → ko → en)
-var _langCycle=["en","zh","ja","ko"];
-var _langBtn={en:"中文",zh:"日本語",ja:"한국어",ko:"English"};
-var _langHtml={en:"en",zh:"zh-CN",ja:"ja",ko:"ko"};
-function toggleLang(){var b=document.body;var cur="en";for(var i=0;i<_langCycle.length;i++){if(b.classList.contains("lang-"+_langCycle[i])){cur=_langCycle[i];break;}}for(var j=0;j<_langCycle.length;j++){b.classList.remove("lang-"+_langCycle[j]);}var idx=_langCycle.indexOf(cur);var nxt=_langCycle[(idx+1)%_langCycle.length];if(nxt!=="en"){b.classList.add("lang-"+nxt);}document.getElementById("langToggle").textContent=_langBtn[nxt];document.documentElement.lang=_langHtml[nxt];}
-
-// enterprise modal
-function showEntForm(){document.getElementById("entModal").classList.add("open")}
-function hideEntForm(){document.getElementById("entModal").classList.remove("open")}
-function submitEntForm(){var form=document.getElementById("entForm");var data={company_name:form.cname.value,contact_name:form.contact.value,email:form.email.value,team_size:form.tsize.value,use_case:form.ucase.value,message:form.msg.value};fetch('/api/v1/checkout/enterprise-lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json()}).then(function(r){alert(r.message||r.message_zh||'Submitted');hideEntForm();form.reset()}).catch(function(){alert('Submission failed. Please email us directly.')})}
-document.getElementById("entModal").addEventListener("click",function(e){if(e.target===this)hideEntForm()});
-
-// AI model index — same-origin API, render Overall TOP 15; hide section on failure (graceful degrade)
-(function(){
-  var sec=document.getElementById("model-index");
-  if(!sec)return;
-  function el(tag,cls,text){var n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n}
-  function langs(m){var f=document.createDocumentFragment();var o=["en","zh","ja","ko"];for(var i=0;i<o.length;i++){f.appendChild(el("span","lang-"+o[i]+"-i",m[o[i]]))}return f}
-  var EV={sufficient:{en:"Sufficient",zh:"较充分",ja:"十分",ko:"충분"},accumulating:{en:"Accumulating",zh:"持续积累",ja:"蓄積中",ko:"축적 중"},sensitive:{en:"Sensitive",zh:"证据敏感",ja:"センシティブ",ko:"민감"}};
-  function price(v){return v>0?("¥"+v):"–"}
-  fetch('/api/v1/model-index?category=overall').then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}).then(function(d){
-    var data=d&&d.data?d.data:{};
-    var entries=data.entries||[];
-    if(!entries.length){sec.style.display="none";return}
-    var provs={};for(var i=0;i<entries.length;i++){if(entries[i].provider)provs[entries[i].provider]=1}
-    document.getElementById("miStatModels").textContent=entries.length;
-    document.getElementById("miStatProviders").textContent=Object.keys(provs).length;
-    document.getElementById("miStatUpdated").textContent=(String(data.updated_at||"").slice(0,10))||"–";
-    var body=document.getElementById("miBody");
-    body.innerHTML="";
-    entries.slice(0,15).forEach(function(e){
-      var tr=document.createElement("tr");
-      var tdr=document.createElement("td");
-      tdr.appendChild(el("span","mi-rank"+(e.rank<=3?" top"+e.rank:" plain"),String(e.rank||"–")));
-      tr.appendChild(tdr);
-      var tdm=document.createElement("td");
-      if(e.provider_logo){var img=document.createElement("img");img.className="mi-logo";img.alt="";img.src=e.provider_logo;img.onerror=function(){if(img.parentNode)img.parentNode.removeChild(img)};tdm.appendChild(img)}
-      tdm.appendChild(el("span","mi-model",e.model_name||"–"));
-      tr.appendChild(tdm);
-      tr.appendChild(el("td","mi-provider",e.provider||"–"));
-      tr.appendChild(el("td",null,String(e.release_date||"").slice(0,10)||"–"));
-      var tde=document.createElement("td");
-      var raw=e.evidence_status?String(e.evidence_status):"";
-      var ev=EV[raw]||{en:raw||"–",zh:raw||"–",ja:raw||"–",ko:raw||"–"};
-      tde.appendChild(langs(ev));
-      if(e.eval_count>0){tde.appendChild(document.createTextNode(" · "+e.eval_count))}
-      tr.appendChild(tde);
-      tr.appendChild(el("td",null,price(e.input_price)));
-      tr.appendChild(el("td",null,price(e.output_price)));
-      tr.appendChild(el("td","mi-score",e.consensus_score>0?Number(e.consensus_score).toFixed(1):"–"));
-      body.appendChild(tr);
-    });
-    sec.hidden=false;
-  }).catch(function(){sec.style.display="none"});
-})();
-</script>
+<script src="./assets/app.js"></script>
 </body>
 </html>

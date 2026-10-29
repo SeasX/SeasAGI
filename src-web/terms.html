@@ -8,9 +8,8 @@
 <meta name="description" content="SeasAGI 服务条款 — AI 服务的使用条款、计费政策、退款政策与联系方式。">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://SeasAGI.SeasX.ai/terms.html">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="preload" href="./assets/fonts.css" as="style">
+<link rel="stylesheet" href="./assets/fonts.css">
 <style>
 :root {
   --bg-primary:#0A0F1A; --bg-surface:#121726; --bg-card:#1A2136;
@@ -78,7 +77,7 @@ body.lang-ko .lang-ko-i{display:inline;}
       <span>SeasAGI</span>
     </a>
     <div style="display:flex;align-items:center;gap:16px;">
-      <button class="lang-btn" id="langToggle" onclick="toggleLang()">EN</button>
+      <button class="lang-btn" id="langToggle">EN</button>
       <a href="./index.html" class="back-link">← <span class="lang-zh-i">返回首页</span><span class="lang-en-i">Back to Home</span><span class="lang-ja-i">ホームに戻る</span><span class="lang-ko-i">홈으로</span></a>
     </div>
   </div>
@@ -224,12 +223,6 @@ body.lang-ko .lang-ko-i{display:inline;}
   </div>
 </footer>
 
-<script>
-var _langCycle=["zh","en","ja","ko"];
-var _langBtn={zh:"EN",en:"日本語",ja:"한국어",ko:"中文"};
-var _langHtml={zh:"zh-CN",en:"en",ja:"ja",ko:"ko"};
-function toggleLang(){var b=document.body;var cur="zh";for(var i=0;i<_langCycle.length;i++){if(b.classList.contains("lang-"+_langCycle[i])){cur=_langCycle[i];break;}}var nxt=_langCycle[(_langCycle.indexOf(cur)+1)%_langCycle.length];for(var j=0;j<_langCycle.length;j++){b.classList.remove("lang-"+_langCycle[j]);}if(nxt!=="zh"){b.classList.add("lang-"+nxt);}document.getElementById("langToggle").textContent=_langBtn[nxt];document.documentElement.lang=_langHtml[nxt];}
-</script>
-
+<script src="./assets/lang.js"></script>
 </body>
 </html>
