@@ -355,6 +355,10 @@ body.lang-ko .lang-ko-i{display:inline;}
 .dot.on{background:var(--accent);box-shadow:0 0 6px rgba(34,197,94,.4);}
 
 /* model index */
+.mi-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px;}
+.mi-tab{padding:7px 16px;border:1px solid var(--border-subtle);border-radius:999px;background:var(--bg-card);color:var(--text-secondary);font-size:13px;cursor:pointer;transition:.15s;}
+.mi-tab:hover{color:var(--text-primary);border-color:var(--accent);}
+.mi-tab.active{background:var(--accent);border-color:var(--accent);color:#0b1220;font-weight:600;}
 .mi-stats{display:flex;flex-wrap:wrap;gap:10px 28px;margin-bottom:24px;font-size:14px;color:var(--text-secondary);}
 .mi-stats strong{color:var(--text-primary);font-family:var(--font-mono);}
 .mi-empty{padding:36px 24px;text-align:center;border:1px dashed var(--border-subtle);border-radius:var(--radius-md);color:var(--text-secondary);font-size:14px;line-height:1.9;}
@@ -690,8 +694,10 @@ body.lang-ko .lang-ko-i{display:inline;}
       <div class="section-head">
         <span class="eyebrow">AI INDEX</span>
         <h2 class="section-title"><span class="lang-zh-i">AI 模型共识指数</span><span class="lang-en-i">AI Model Consensus Index</span><span class="lang-ja-i">AI モデル コンセンサス指数</span><span class="lang-ko-i">AI 모델 컨센서스 지수</span></h2>
-        <p class="section-desc"><span class="lang-zh-i">聚合多家权威评测榜单，按共识加权汇总，以下为综合榜 TOP 15；五大分类完整榜单请见客户端「AI 模型指数」。</span><span class="lang-en-i">Aggregated from multiple authoritative leaderboards with consensus weighting — Overall TOP 15 below; see the full 5-category ranking in the SeasAGI client.</span><span class="lang-ja-i">複数の権威あるランキングをコンセンサス加重で集計し、総合 TOP 15 を表示。全 5 カテゴリの完全なランキングは SeasAGI クライアントで。</span><span class="lang-ko-i">여러 권위 있는 리더보드를 컨센서스 가중치로 집계하여 종합 TOP 15를 표시합니다. 전체 5개 카테고리는 SeasAGI 클라이언트에서 확인하세요.</span></p>
+        <p class="section-desc"><span class="lang-zh-i">聚合多家权威评测榜单，按共识加权汇总；可切换分类查看各榜 TOP 15，「综合」为跨分类聚合榜。</span><span class="lang-en-i">Aggregated from multiple authoritative leaderboards with consensus weighting. Switch categories to view each TOP 15; “Overall” is a cross-category aggregate.</span><span class="lang-ja-i">複数の権威あるランキングをコンセンサス加重で集計。カテゴリを切り替えて各 TOP 15 を表示。「総合」は横断カテゴリの集計です。</span><span class="lang-ko-i">여러 권위 있는 리더보드를 컨센서스 가중치로 집계합니다. 카테고리를 전환해 각 TOP 15를 확인하세요. “종합”은 카테고리 통합 집계입니다.</span></p>
       </div>
+      <!-- 分类标签：由脚本按 CATEGORIES 渲染，切换后重新拉取对应分类 -->
+      <div class="mi-tabs" id="miTabs" role="tablist"></div>
       <!-- 无 JS / 无数据时的兜底态：始终可见，避免出现空表格；取到数据后由脚本切换到榜单 -->
       <div class="mi-empty" id="miEmpty">
         <span class="lang-zh-i">指数数据正在同步中，稍后会自动显示；你也可以在客户端查看完整榜单。</span>

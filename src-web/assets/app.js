@@ -41,11 +41,12 @@ if(entModal){
 }
 if(entForm){entForm.addEventListener("submit",function(e){e.preventDefault();submitEntForm();});}
 
-// AI model index — same-origin API, render Overall TOP 15.
+// AI model index — same-origin API，支持分类标签切换（「综合」为后端跨分类聚合榜）。
 // 版块与导航/页脚入口始终可见；无数据或请求失败时显示空状态（#miEmpty）而不是隐藏整段。
 (function(){
   var sec=document.getElementById("model-index");
   if(!sec)return;
+  var tabsBox=document.getElementById("miTabs");
   var dataBox=document.getElementById("miData");
   var emptyBox=document.getElementById("miEmpty");
   function el(tag,cls,text){var n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n}
@@ -54,10 +55,28 @@ if(entForm){entForm.addEventListener("submit",function(e){e.preventDefault();sub
   function showData(){if(dataBox)dataBox.hidden=false;if(emptyBox)emptyBox.hidden=true;}
   var EV={sufficient:{en:"Sufficient",zh:"较充分",ja:"十分",ko:"충분"},accumulating:{en:"Accumulating",zh:"持续积累",ja:"蓄積中",ko:"축적 중"},sensitive:{en:"Sensitive",zh:"证据敏感",ja:"センシティブ",ko:"민감"}};
   function price(v){return v>0?("¥"+v):"–"}
-  fetch('/api/v1/model-index?category=overall').then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}).then(function(d){
-    var data=d&&d.data?d.data:{};
-    var entries=data.entries||[];
-    if(!entries.length){showEmpty();return}
+  // 与后端 validCategories 对齐；"overall" 由后端跨分类聚合产生。
+  var CATEGORIES=[
+    {key:"overall",en:"Overall",zh:"综合",ja:"総合",ko:"종합"},
+    {key:"coding",en:"Coding",zh:"编程",ja:"コーディング",ko:"코딩"},
+    {key:"reasoning",en:"Reasoning",zh:"推理",ja:"推論",ko:"추론"},
+    {key:"knowledge",en:"Knowledge",zh:"知识",ja:"知識",ko:"지식"},
+    {key:"professional",en:"Professional",zh:"专业办公",ja:"専門業務",ko:"전문 업무"},
+    {key:"vision",en:"Vision",zh:"视觉",ja:"視覚",ko:"비전"},
+    {key:"multilingual",en:"Multilingual",zh:"多语言",ja:"多言語",ko:"다국어"}
+  ];
+  var tabEls={};
+  function setActive(cat){for(var k in tabEls){if(tabEls[k])tabEls[k].classList.toggle("active",k===cat);}}
+  function renderTabs(){
+    if(!tabsBox)return;
+    for(var i=0;i<CATEGORIES.length;i++){(function(cat){
+      var b=el("button","mi-tab");b.type="button";b.setAttribute("role","tab");
+      b.appendChild(langs(cat));
+      b.addEventListener("click",function(){load(cat.key)});
+      tabsBox.appendChild(b);tabEls[cat.key]=b;
+    })(CATEGORIES[i]);}
+  }
+  function render(entries,data){
     var provs={};for(var i=0;i<entries.length;i++){if(entries[i].provider)provs[entries[i].provider]=1}
     document.getElementById("miStatModels").textContent=entries.length;
     document.getElementById("miStatProviders").textContent=Object.keys(provs).length;
@@ -86,7 +105,18 @@ if(entForm){entForm.addEventListener("submit",function(e){e.preventDefault();sub
       tr.appendChild(el("td","mi-score",e.consensus_score>0?Number(e.consensus_score).toFixed(1):"–"));
       body.appendChild(tr);
     });
-    showData();
-  }).catch(function(){showEmpty()});
+  }
+  function load(cat){
+    setActive(cat);
+    fetch('/api/v1/model-index?category='+encodeURIComponent(cat)).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}).then(function(d){
+      var data=d&&d.data?d.data:{};
+      var entries=data.entries||[];
+      if(!entries.length){showEmpty();return}
+      render(entries,data);
+      showData();
+    }).catch(function(){showEmpty()});
+  }
+  renderTabs();
+  load("overall");
 })();
 })();
