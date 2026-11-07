@@ -1,3 +1,11 @@
+// Package batch 提供 Batch API 的文件系统持久化实现（Batch 记录与逐行检查点）。
+//
+// 状态：experimental（实验性），尚未接入生产路径：全仓没有任何路由、执行器或
+// 命令引用本包，仅有本包测试。不要按「已可用的 Batch API」对外暴露。
+// 复用前需先补齐：
+//  1. 跨进程写锁与原子写（当前仅进程内互斥，多个实例会互相覆盖）；
+//  2. 过期清理与磁盘配额（DeleteCompletedBatches 需外部定时调用）；
+//  3. 逐行处理应改用 ApplyCheckpointUpdates 批量提交，避免每行一次 load+save。
 package batch
 
 import "time"
@@ -6,14 +14,14 @@ import "time"
 type BatchStatus string
 
 const (
-	StatusValidating  BatchStatus = "validating"
-	StatusFailed      BatchStatus = "failed"
-	StatusInProgress  BatchStatus = "in_progress"
-	StatusFinalizing  BatchStatus = "finalizing"
-	StatusCompleted   BatchStatus = "completed"
-	StatusExpired     BatchStatus = "expired"
-	StatusCancelling  BatchStatus = "cancelling"
-	StatusCancelled   BatchStatus = "cancelled"
+	StatusValidating BatchStatus = "validating"
+	StatusFailed     BatchStatus = "failed"
+	StatusInProgress BatchStatus = "in_progress"
+	StatusFinalizing BatchStatus = "finalizing"
+	StatusCompleted  BatchStatus = "completed"
+	StatusExpired    BatchStatus = "expired"
+	StatusCancelling BatchStatus = "cancelling"
+	StatusCancelled  BatchStatus = "cancelled"
 )
 
 // CheckpointStatus 检查点状态。
@@ -56,21 +64,21 @@ type BatchRecord struct {
 
 // BatchItemCheckpoint 检查点记录（支持断点续传）。
 type BatchItemCheckpoint struct {
-	BatchID    string            `json:"batch_id"`
-	LineNumber int               `json:"line_number"`
-	CustomID   string            `json:"custom_id,omitempty"`
-	Status     CheckpointStatus  `json:"status"`
-	Result     interface{}       `json:"result,omitempty"`
-	Error      interface{}       `json:"error,omitempty"`
-	CreatedAt  int64             `json:"created_at"`
-	UpdatedAt  int64             `json:"updated_at"`
+	BatchID    string           `json:"batch_id"`
+	LineNumber int              `json:"line_number"`
+	CustomID   string           `json:"custom_id,omitempty"`
+	Status     CheckpointStatus `json:"status"`
+	Result     interface{}      `json:"result,omitempty"`
+	Error      interface{}      `json:"error,omitempty"`
+	CreatedAt  int64            `json:"created_at"`
+	UpdatedAt  int64            `json:"updated_at"`
 }
 
 // CursorPage 游标分页结果。
 type CursorPage struct {
-	Items []BatchRecord `json:"items"`
-	After string        `json:"after,omitempty"` // 下一页游标（最后一条的 ID）
-	HasMore bool        `json:"has_more"`
+	Items   []BatchRecord `json:"items"`
+	After   string        `json:"after,omitempty"` // 下一页游标（最后一条的 ID）
+	HasMore bool          `json:"has_more"`
 }
 
 // ValidTransitions 状态机合法转换。

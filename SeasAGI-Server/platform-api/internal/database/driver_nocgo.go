@@ -9,5 +9,5 @@ import (
 )
 
 func openSQLite(dbPath string) (*sql.DB, error) {
-	return sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	return sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)")
 }

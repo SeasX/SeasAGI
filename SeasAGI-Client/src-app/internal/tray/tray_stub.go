@@ -16,3 +16,6 @@ func setActiveChannel(id string) {
 
 func setReopenHandler(fn func()) {
 }
+
+func showPlatformNotification(title, body string) {
+}

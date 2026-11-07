@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -10,10 +11,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/channel"
+	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/timeutil"
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/trace"
+	"github.com/gin-gonic/gin"
 )
+
+// 请求体上限：普通 JSON 32MB，multipart（音频/文件）64MB，内存缓存 16MB 剩余落盘。
+// 使用变量便于测试覆盖，生产环境不应修改。
+var (
+	maxJSONBodyBytes       int64 = 32 << 20
+	maxMultipartBodyBytes  int64 = 64 << 20
+	maxMultipartMemorySize int64 = 16 << 20
+)
+
+// upstreamClient 复用连接池；只限制响应头等待时间，不设置覆盖整个响应体的总超时，
+// 避免长回答/流式响应在 120s 处被截断。
+var upstreamClient = func() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 120 * time.Second
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.IdleConnTimeout = 90 * time.Second
+	return &http.Client{Transport: transport}
+}()
 
 type ChatRequest struct {
 	Model    string                   `json:"model"`
@@ -44,17 +64,66 @@ func recordTrace(traceID, tenantID, userID, deviceID, channelID, model, method, 
 		StatusCode: statusCode,
 		LatencyMs:  latencyMs,
 		ClientIP:   clientIP,
-		CreatedAt:  time.Now().Format(time.RFC3339),
+		CreatedAt:  timeutil.NowSQLite(),
 	})
 }
 
-func ChatCompletions(c *gin.Context) {
-	bodyBytes, err := io.ReadAll(c.Request.Body)
+// readJSONBody 读取 JSON 请求体并施加大小上限；失败时已写入响应，调用方直接返回。
+func readJSONBody(c *gin.Context) ([]byte, bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxJSONBodyBytes)
+	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+			return nil, false
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
+		return nil, false
+	}
+	return body, true
+}
+
+// readMultipartForm 施加 multipart 大小上限并解析表单；失败时已写入响应。
+func readMultipartForm(c *gin.Context) (*multipart.Form, bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxMultipartBodyBytes)
+	if err := c.Request.ParseMultipartForm(maxMultipartMemorySize); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+			return nil, false
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid multipart form"})
+		return nil, false
+	}
+	return c.Request.MultipartForm, true
+}
+
+// copyStream 按帧转发上游响应并逐帧 flush，避免流式响应被缓冲导致首字延迟。
+func copyStream(c *gin.Context, src io.Reader) {
+	flusher, _ := c.Writer.(http.Flusher)
+	buf := make([]byte, 4096)
+	for {
+		n, readErr := src.Read(buf)
+		if n > 0 {
+			if _, writeErr := c.Writer.Write(buf[:n]); writeErr != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		if readErr != nil {
+			return
+		}
+	}
+}
+
+func ChatCompletions(c *gin.Context) {
+	bodyBytes, ok := readJSONBody(c)
+	if !ok {
 		return
 	}
-
 	var req ChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -111,7 +180,7 @@ func ChatCompletions(c *gin.Context) {
 		upstreamReq.Header.Set("Accept", "text/event-stream")
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := upstreamClient
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
 		if channelStore != nil {
@@ -152,7 +221,10 @@ func ChatCompletions(c *gin.Context) {
 		}
 	}
 	c.Writer.WriteHeader(resp.StatusCode)
-	io.Copy(c.Writer, resp.Body)
+	if flusher, ok := c.Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	copyStream(c, resp.Body)
 }
 
 func ListModels(c *gin.Context) {
@@ -223,9 +295,8 @@ func CreateTranscription(c *gin.Context) {
 }
 
 func relayJSON(c *gin.Context, upstreamPath, capability string) {
-	bodyBytes, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
+	bodyBytes, ok := readJSONBody(c)
+	if !ok {
 		return
 	}
 
@@ -266,7 +337,7 @@ func relayJSON(c *gin.Context, upstreamPath, capability string) {
 		upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := upstreamClient
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
 		updateChannelHealth(resolvedChannelID, false, 0, err.Error())
@@ -287,10 +358,18 @@ func relayJSON(c *gin.Context, upstreamPath, capability string) {
 		}
 	}
 	c.Writer.WriteHeader(resp.StatusCode)
-	io.Copy(c.Writer, resp.Body)
+	if flusher, ok := c.Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	copyStream(c, resp.Body)
 }
 
 func relayMultipart(c *gin.Context, upstreamPath, capability string) {
+	form, ok := readMultipartForm(c)
+	if !ok {
+		return
+	}
+
 	channelID := c.GetString("channel_id")
 	userID := c.GetString("user_id")
 	deviceID := c.GetString("device_id")
@@ -308,11 +387,6 @@ func relayMultipart(c *gin.Context, upstreamPath, capability string) {
 
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
-	form, err := c.MultipartForm()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid multipart form"})
-		return
-	}
 
 	for fieldName, files := range form.File {
 		for _, file := range files {
@@ -348,7 +422,7 @@ func relayMultipart(c *gin.Context, upstreamPath, capability string) {
 		upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := upstreamClient
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
 		updateChannelHealth(resolvedChannelID, false, 0, err.Error())
@@ -369,7 +443,10 @@ func relayMultipart(c *gin.Context, upstreamPath, capability string) {
 		}
 	}
 	c.Writer.WriteHeader(resp.StatusCode)
-	io.Copy(c.Writer, resp.Body)
+	if flusher, ok := c.Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	copyStream(c, resp.Body)
 }
 
 func resolveUpstream(channelID, model, upstreamPath string) (string, string, string, string) {

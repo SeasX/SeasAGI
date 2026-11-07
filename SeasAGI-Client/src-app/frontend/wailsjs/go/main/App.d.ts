@@ -36,6 +36,10 @@ export function ClearSelectedGrant():Promise<void>;
 
 export function ConfirmAction(arg1:string,arg2:string):Promise<boolean>;
 
+export function CopyGatewaySnippet():Promise<void>;
+
+export function CopyLocalAccessToken():Promise<void>;
+
 export function CopyToClipboard(arg1:string):Promise<void>;
 
 export function CreateCheckoutSession(arg1:string,arg2:Array<number>):Promise<Record<string, any>>;
@@ -56,9 +60,13 @@ export function DeletePromptPreset(arg1:string,arg2:string):Promise<void>;
 
 export function DeleteSession(arg1:string,arg2:string):Promise<void>;
 
+export function DisableMarketNode():Promise<void>;
+
 export function DiscoverModels(arg1:string):Promise<Array<discovery.DiscoveredModel>>;
 
 export function ExportConfig():Promise<string>;
+
+export function ExportLocalAssets():Promise<Array<Record<string, any>>>;
 
 export function FetchActiveGrants():Promise<Array<Record<string, any>>>;
 
@@ -67,6 +75,8 @@ export function FetchCloudCombos():Promise<Array<Record<string, any>>>;
 export function FetchEnterpriseChannels():Promise<Array<Record<string, any>>>;
 
 export function FetchFreeChannels():Promise<Array<Record<string, any>>>;
+
+export function FetchMITMRoutingFromEnterprise():Promise<Record<string, any>>;
 
 export function FetchMITMTargetsFromEnterprise():Promise<Record<string, any>>;
 
@@ -104,7 +114,7 @@ export function GetEvalScorecard(arg1:string):Promise<Record<string, any>>;
 
 export function GetIntentScenarioStats():Promise<Array<Record<string, any>>>;
 
-export function GetLocalAccessToken():Promise<string>;
+export function GetLocalAccessTokenStatus():Promise<Record<string, any>>;
 
 export function GetLocale():Promise<string>;
 
@@ -114,15 +124,21 @@ export function GetMCPAuditLog():Promise<Array<Record<string, any>>>;
 
 export function GetMCPGatewayTools():Promise<Array<Record<string, any>>>;
 
+export function GetMITMEnterpriseRules():Promise<Array<Record<string, any>>>;
+
 export function GetMITMEnvHint():Promise<Record<string, string>>;
 
 export function GetMITMRecentIntercepts(arg1:number):Promise<Array<Record<string, any>>>;
+
+export function GetMITMRoutingConfig():Promise<Record<string, any>>;
 
 export function GetMITMRules():Promise<Array<string>>;
 
 export function GetMITMStatus():Promise<Record<string, any>>;
 
 export function GetMITMTargets():Promise<Array<Record<string, any>>>;
+
+export function GetMarketNodeStatus():Promise<Record<string, any>>;
 
 export function GetOAuthProviders():Promise<Array<auth.OAuthProvider>>;
 
@@ -139,8 +155,6 @@ export function GetPerfAuditReport():Promise<Record<string, any>>;
 export function GetPlans():Promise<Array<Record<string, any>>>;
 
 export function GetPlatformAPIBaseURL():Promise<string>;
-
-export function GetPlatformToken():Promise<string>;
 
 export function GetPluginAuditLog():Promise<Array<Record<string, any>>>;
 
@@ -214,6 +228,8 @@ export function ListModelCombos():Promise<Array<config.ModelCombo>>;
 
 export function ListModelPricing():Promise<Array<usage.ModelPricing>>;
 
+export function ListMyAssets():Promise<Array<Record<string, any>>>;
+
 export function ListPlugins():Promise<Array<Record<string, any>>>;
 
 export function ListPresetsByCategory(arg1:string):Promise<Array<presets.ProviderPreset>>;
@@ -248,13 +264,15 @@ export function RecordUsage(arg1:string,arg2:string,arg3:string,arg4:number,arg5
 
 export function Register(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function RegisterMarketNode(arg1:string,arg2:Array<string>,arg3:Array<string>):Promise<Record<string, any>>;
+
 export function RemoveMITMRule(arg1:string):Promise<void>;
 
 export function RenameComboTemplate(arg1:string,arg2:string):Promise<void>;
 
 export function ReorderChannels(arg1:Array<string>):Promise<void>;
 
-export function ResetLocalAccessToken():Promise<string>;
+export function ResetLocalAccessToken():Promise<Record<string, any>>;
 
 export function RunDiagnostics():Promise<Record<string, any>>;
 
@@ -296,6 +314,8 @@ export function SetLogRotator(arg1:logging.LogRotator):Promise<void>;
 
 export function SetMITMManager(arg1:mitm.Manager):Promise<void>;
 
+export function SetMITMRoutingConfig(arg1:Record<string, any>):Promise<void>;
+
 export function SetOptimizationConfig(arg1:Record<string, any>):Promise<void>;
 
 export function SetPlatformAPIBaseURL(arg1:string):Promise<void>;
@@ -323,6 +343,8 @@ export function StopLocalGateway():Promise<void>;
 export function StopMITM():Promise<void>;
 
 export function StopTunnel():Promise<void>;
+
+export function SyncAssetsToCloud(arg1:Array<Record<string, any>>):Promise<Record<string, any>>;
 
 export function SyncCustomChannelsToCloud(arg1:Array<Record<string, any>>):Promise<Record<string, any>>;
 

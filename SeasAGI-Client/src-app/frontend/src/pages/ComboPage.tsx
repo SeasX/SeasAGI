@@ -1,15 +1,62 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useAppStore } from "../stores/appStore";
 import * as cmd from "../utils/commands";
 import { getErrorMessage } from "../utils/errors";
-import type { Channel, ModelCombo, ModelComboStep, ProviderHealthSummary, QuickStrategy, QuickStrategyAlias } from "../utils/types";
+import type { Channel, MITMRoutingRule, ModelCombo, ModelComboStep, ProviderHealthSummary, QuickStrategy, QuickStrategyAlias } from "../utils/types";
 import { useTranslation } from "../i18n";
 import { validateForm, comboFormSchema } from "../utils/validation";
 
 type ComboTab = "combos" | "templates";
+
+/* ── P1-9：Token 市场资产（Grant）引用辅助 ── */
+
+// 与后端 config.MarketGrantChannelPrefix 一致：`grant://{grant_id}` 虚拟渠道。
+const GRANT_CHANNEL_PREFIX = "grant://";
+
+function grantIdFromChannel(channelId?: string): string {
+  return channelId && channelId.startsWith(GRANT_CHANNEL_PREFIX)
+    ? channelId.slice(GRANT_CHANNEL_PREFIX.length)
+    : "";
+}
+
+type GrantState = "expired" | "depleted" | "active";
+
+function grantStateOf(grant?: Record<string, any>): GrantState {
+  if (!grant) return "active";
+  const status = String(grant.status || "").toLowerCase();
+  const expiresAt = grant.expires_at ? new Date(grant.expires_at) : null;
+  if (status === "expired" || (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() < Date.now())) {
+    return "expired";
+  }
+  const quotaLeft = Number(grant.remaining_quota ?? 0);
+  const tokensLeft = Number(grant.remaining_tokens ?? 0);
+  if (status === "exhausted" || status === "depleted" || (quotaLeft <= 0 && tokensLeft <= 0)) return "depleted";
+  return "active";
+}
+
+function grantStateBadge(state: GrantState): { cls: string; key: string } {
+  if (state === "expired") return { cls: "badge-red", key: "combo.marketAssetExpired" };
+  if (state === "depleted") return { cls: "badge-red", key: "combo.marketAssetDepleted" };
+  return { cls: "badge-green", key: "combo.marketAssetActive" };
+}
+
+function formatGrantExpiry(expiresAt?: string): string {
+  if (!expiresAt) return "-";
+  const d = new Date(expiresAt);
+  return Number.isNaN(d.getTime()) ? "-" : d.toLocaleDateString();
+}
+
+// 步骤展示文案：Token 市场资产步骤显示为「市场资产:{id} / 模型」
+function formatStepLabel(step: ModelComboStep, t: (key: string) => string): string {
+  if (step.channel_id && step.channel_id.startsWith(GRANT_CHANNEL_PREFIX)) {
+    return `${t("combo.marketAssetSelectGroup")}:${grantIdFromChannel(step.channel_id).slice(0, 8)} / ${step.model}`;
+  }
+  return step.channel_id ? `${step.channel_id} / ${step.model}` : step.model;
+}
 
 const emptyDraft = (): ModelCombo => ({
   name: "",
@@ -132,6 +179,12 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
   const [syncMsg, setSyncMsg] = useState("");
   // M4.3: 编辑器打开时拉取 Provider 健康度，供雷达图与步骤健康点使用
   const [providerHealth, setProviderHealth] = useState<ProviderHealthSummary[]>([]);
+  // P1-9: Token 市场已购授权（Grant），供 Combo 步骤以 grant:// 引用
+  const [grants, setGrants] = useState<Record<string, any>[]>([]);
+  // P3-17：反向引用——哪些 MITM 路由规则指向当前 Combo
+  const [mitmRules, setMitmRules] = useState<MITMRoutingRule[]>([]);
+  const [searchParams] = useSearchParams();
+  const deepLinkDone = useRef(false);
 
   const loadPageData = async () => {
     setLoading(true);
@@ -198,6 +251,20 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
     void cmd.getProviderHealthSummary().then((h) => setProviderHealth(h || [])).catch(() => setProviderHealth([]));
   }, [editing !== null]);
 
+  // P1-9: 登录后加载 Token 市场资产，供编辑器引用与余量/过期展示
+  useEffect(() => {
+    if (!auth.is_logged_in) {
+      setGrants([]);
+      return;
+    }
+    void cmd.fetchActiveGrants().then((g) => setGrants(g || [])).catch(() => setGrants([]));
+  }, [auth.is_logged_in]);
+
+  // P3-17：加载 MITM 路由规则，用于展示「哪些规则指向本 Combo」。
+  useEffect(() => {
+    void cmd.getMITMRoutingConfig().then((cfg) => setMitmRules(cfg.rules || [])).catch(() => setMitmRules([]));
+  }, []);
+
   // Merge local and cloud combos for display, dedup by logical_name
   const allCombos = useMemo(() => {
     const localSet = new Set(combos.map((c) => c.name));
@@ -256,6 +323,27 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
     setTagsInput("");
   };
 
+  // P3-17：深链 ?combo=NAME —— 从 MITM 规则卡「查看该 Combo 配置」直接打开编辑器。
+  useEffect(() => {
+    if (deepLinkDone.current) return;
+    const cname = searchParams.get("combo");
+    if (!cname || !allCombos.length) return;
+    const target = allCombos.find((c) => c.name === cname);
+    if (!target) return;
+    deepLinkDone.current = true;
+    setActiveTab("combos");
+    openEdit(target);
+  }, [searchParams, allCombos]);
+
+  // P3-17：指向当前编辑 Combo 的 MITM 规则（反向引用）。
+  const referencingRules = useMemo(
+    () =>
+      editing
+        ? mitmRules.filter((r) => r.enabled && r.action === "combo" && r.combo_name === editing.name)
+        : [],
+    [editing, mitmRules],
+  );
+
   const updateStep = (index: number, key: "channel_id" | "model", value: string) => {
     if (!editing) return;
     const nextSteps = editing.steps.map((step, stepIndex) => (stepIndex === index ? { ...step, [key]: value } : step));
@@ -308,6 +396,18 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
     setEditing({
       ...editing,
       steps: [...(editing.steps || []), { channel_id: "", model: "" }],
+    });
+  };
+
+  // P1-9: 将 Token 市场资产作为一步加入组合（channel_id = grant://{id}）
+  const addGrantStep = (grantId: string) => {
+    if (!editing) return;
+    if (editing.steps.some((s) => s.channel_id === GRANT_CHANNEL_PREFIX + grantId)) return;
+    setEditing({
+      ...editing,
+      // 引入市场资产步骤时默认开启市场优先（P3-21）。
+      market_priority: editing.market_priority !== false,
+      steps: [...(editing.steps || []), { channel_id: GRANT_CHANNEL_PREFIX + grantId, model: "" }],
     });
   };
 
@@ -711,7 +811,7 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
                       <div className="combo-models">
                         {(combo.steps || []).map((step, index) => (
                           <span key={`${combo.name}-${index}`} className="model-tag">
-                            {step.channel_id ? `${step.channel_id} / ${step.model}` : step.model}
+                            {formatStepLabel(step, t)}
                           </span>
                         ))}
                       </div>
@@ -895,9 +995,77 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
                   onChange={(e) => setEditing({ ...editing, sticky_uses: Number(e.target.value) || 1 })}
                 />
               </div>
+              {/* P3-21：市场优先策略 */}
+              <div className="form-group">
+                <label>{t("combo.marketPriority")}</label>
+                <label className="checkbox-label" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={editing.market_priority !== false}
+                    onChange={(e) => setEditing({ ...editing, market_priority: e.target.checked })}
+                  />
+                  <span className="hint" style={{ marginBottom: 0, fontSize: 12 }}>
+                    {editing.market_priority !== false ? "先试市场资产，枯竭回退自有 Key" : "忽略市场资产，仅用自有 Key"}
+                  </span>
+                </label>
+              </div>
             </div>
 
+            {/* P3-17：反向引用——指向本 Combo 的 MITM 规则 */}
+            {editingSource === "edit" && referencingRules.length > 0 && (
+              <div className="info-msg" style={{ marginBottom: 8 }}>
+                被 {referencingRules.length} 条 MITM 路由规则引用：
+                {referencingRules.map((_, i) => ` #${i + 1}`).join("、")}
+                <Link to="/settings?tab=mitm" style={{ marginLeft: 8 }}>查看 →</Link>
+              </div>
+            )}
+
             <StrategyRadar steps={editing.steps} health={providerHealth} t={t} />
+
+            {/* P1-9: Token 市场资产分组 */}
+            <div className="combo-market-assets">
+              <div className="section-title">{t("combo.marketAssets")}</div>
+              <p className="hint">{t("combo.marketAssetsHint")}</p>
+              {!auth.is_logged_in ? (
+                <p className="hint">{t("combo.marketAssetsLogin")}</p>
+              ) : grants.length === 0 ? (
+                <p className="hint">{t("combo.marketAssetsEmpty")}</p>
+              ) : (
+                <div className="market-asset-list">
+                  {grants.map((g) => {
+                    const gid = String(g.grant_id || "");
+                    const state = grantStateOf(g);
+                    const badge = grantStateBadge(state);
+                    const already = editing.steps.some((s) => s.channel_id === GRANT_CHANNEL_PREFIX + gid);
+                    return (
+                      <div key={gid} className="market-asset-item">
+                        <span className="market-asset-name">Grant {gid.slice(0, 12)}</span>
+                        <span className={`badge ${badge.cls}`}>{t(badge.key)}</span>
+                        <span className="hint" style={{ marginBottom: 0 }}>
+                          {t("combo.marketAssetRemaining")}：${Number(g.remaining_quota ?? 0).toFixed(2)} ·{" "}
+                          {Number(g.remaining_tokens ?? 0).toLocaleString()} tokens
+                        </span>
+                        <span className="hint" style={{ marginBottom: 0 }}>
+                          {t("combo.marketAssetExpires")} {formatGrantExpiry(g.expires_at)}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-outline btn-xs"
+                          disabled={already}
+                          onClick={() => addGrantStep(gid)}
+                        >
+                          {already ? "✓" : t("combo.marketAssetAdd")}
+                        </button>
+                        {/* P3-22：快捷续费——跳转 Token 市场扩容 / 续期 */}
+                        <Link to="/token-market" className="btn-outline btn-xs" title="前往 Token 市场续费 / 扩容">
+                          {t("combo.marketAssetRecharge")}
+                        </Link>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={editing.steps.map((_, i) => `step-${i}`)} strategy={verticalListSortingStrategy}>
@@ -905,7 +1073,7 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
                   <div className="section-title">{t("combo.stepChain")}</div>
                   {editing.steps.map((step, index) => (
                     <div key={`step-wrap-${index}`}>
-                      <SortableStepCard id={`step-${index}`} step={step} index={index} channels={channels} health={providerHealth} onUpdate={updateStep} onRemove={removeStep} onUpdateMeta={updateStepMeta} onAddProvider={addStepProvider} onRemoveProvider={removeStepProvider} onToggleChannel={toggleStepChannel} t={t} />
+                      <SortableStepCard id={`step-${index}`} step={step} index={index} channels={channels} grants={grants} health={providerHealth} onUpdate={updateStep} onRemove={removeStep} onUpdateMeta={updateStepMeta} onAddProvider={addStepProvider} onRemoveProvider={removeStepProvider} onToggleChannel={toggleStepChannel} t={t} />
                       {index < editing.steps.length - 1 && (
                         <div className="combo-step-flow" aria-hidden="true">
                           <span className="combo-step-flow-line" />
@@ -938,11 +1106,12 @@ export function ComboPage({ embedded, showTemplatesTab }: { embedded?: boolean; 
   );
 }
 
-function SortableStepCard({ id, step, index, channels, health, onUpdate, onRemove, onUpdateMeta, onAddProvider, onRemoveProvider, onToggleChannel, t }: {
+function SortableStepCard({ id, step, index, channels, grants, health, onUpdate, onRemove, onUpdateMeta, onAddProvider, onRemoveProvider, onToggleChannel, t }: {
   id: string;
   step: ModelComboStep;
   index: number;
   channels: Channel[];
+  grants: Record<string, any>[];
   health: ProviderHealthSummary[];
   onUpdate: (index: number, key: "channel_id" | "model", value: string) => void;
   onRemove: (index: number) => void;
@@ -1004,6 +1173,12 @@ function SortableStepCard({ id, step, index, channels, health, onUpdate, onRemov
         ? "step-health-dot warn"
         : "step-health-dot bad";
 
+  // P1-9：识别 grant:// 市场资产步骤并做状态预警（过期/耗尽/缺失）
+  const grantId = grantIdFromChannel(step.channel_id);
+  const stepGrant = grantId ? grants.find((g) => String(g.grant_id) === grantId) : undefined;
+  const grantMissing = !!grantId && !stepGrant;
+  const grantWarn = grantMissing || (stepGrant ? grantStateOf(stepGrant) !== "active" : false);
+
   return (
     <div ref={setNodeRef} style={style} className={`combo-step-card ${isDragging ? "is-dragging" : ""}`}>
       <div className="combo-step-drag-handle" {...attributes} {...listeners}>
@@ -1023,6 +1198,18 @@ function SortableStepCard({ id, step, index, channels, health, onUpdate, onRemov
                 {channel.display_name || channel.channel_id}
               </option>
             ))}
+            {grants.length > 0 && (
+              <optgroup label={t("combo.marketAssetSelectGroup")}>
+                {grants.map((g) => {
+                  const gid = String(g.grant_id || "");
+                  return (
+                    <option key={gid} value={GRANT_CHANNEL_PREFIX + gid}>
+                      Grant {gid.slice(0, 12)} · {t(grantStateBadge(grantStateOf(g)).key)}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            )}
           </select>
         </div>
         <div className="form-group">
@@ -1030,6 +1217,11 @@ function SortableStepCard({ id, step, index, channels, health, onUpdate, onRemov
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <input value={step.model} onChange={(e) => onUpdate(index, "model", e.target.value)} placeholder={t("combo.modelPlaceholder")} style={{ flex: 1 }} />
             {step.model && <span className={`cost-tier-badge ${costTier.cls}`} title={t("combo.costEstimator")}>{t(costTier.key)}</span>}
+            {grantWarn && (
+              <span className="badge badge-red" title={t("combo.marketAssetStepWarn")}>
+                ⚠ {t("combo.marketAssetStepWarn")}
+              </span>
+            )}
             {healthDotCls && (
               <span
                 className={healthDotCls}

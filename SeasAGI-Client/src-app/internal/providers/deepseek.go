@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"time"
 )
 
 type DeepSeekExecutor struct{}
@@ -15,7 +14,7 @@ func (d *DeepSeekExecutor) Name() string {
 }
 
 func (d *DeepSeekExecutor) ChatCompletions(ctx context.Context, config *ProviderConfig, req *UpstreamRequest) (*UpstreamResponse, error) {
-	client := &http.Client{Timeout: 180 * time.Second}
+	client := sharedHTTPClient
 
 	body := map[string]any{
 		"model":    req.Model,
@@ -62,7 +61,7 @@ func (d *DeepSeekExecutor) ChatCompletions(ctx context.Context, config *Provider
 }
 
 func (d *DeepSeekExecutor) ListModels(ctx context.Context, config *ProviderConfig) ([]ModelInfo, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := metadataHTTPClient
 
 	baseURL := config.BaseURL
 	if baseURL == "" {

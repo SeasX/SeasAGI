@@ -2,18 +2,18 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import { useTeamStore, type Strategy, type ComboTemplate, type WebhookItem } from "../stores/teamStore";
-import { platformRequest } from "../utils/commands";
+import { platformRequest, asPlatformRecord } from "../utils/commands";
 import { useTranslation } from "../i18n";
 
 type TabId = "overview" | "members" | "usage" | "strategy" | "billing" | "webhook";
 
-const apiFetch = async (path: string, options?: { method?: string; body?: unknown }) => {
+const apiFetch = async (path: string, options?: { method?: string; body?: unknown }): Promise<Record<string, any>> => {
   const res = await platformRequest(options?.method ?? "GET", path, options?.body);
   if (res.status >= 400) {
     const errBody = typeof res.body === "string" ? res.body : res.body ? JSON.stringify(res.body) : "";
     throw new Error(`API error ${res.status}: ${errBody}`);
   }
-  return res.body;
+  return asPlatformRecord(res.body);
 };
 
 export function TeamWorkspacePage() {
@@ -127,7 +127,6 @@ export function TeamWorkspacePage() {
         method: "POST",
         body: JSON.stringify({ role: inviteLinkRole, expires_in: inviteLinkExpiresIn, max_uses: inviteLinkMaxUses }),
       });
-      store.createInviteLink(inviteLinkRole, inviteLinkExpiresIn, inviteLinkMaxUses);
       setInviteLinkDialog(false);
       await fetchInviteLinks();
     } catch (e: any) {
@@ -135,8 +134,15 @@ export function TeamWorkspacePage() {
     }
   };
 
-  const handleCopyInviteLink = (token: string) => {
-    navigator.clipboard.writeText(window.location.origin + "/invite/" + token);
+  // 邀请链接只使用服务端返回的完整链接字段，不在本地拼接或兜底伪造。
+  const getInviteLinkURL = (link: any): string => {
+    const value = link?.url ?? link?.invite_url ?? link?.invite_link;
+    return typeof value === "string" ? value.trim() : "";
+  };
+
+  const handleCopyInviteLink = (url: string) => {
+    if (!url) return;
+    navigator.clipboard.writeText(url);
   };
 
   const handleDeleteInviteLink = async (linkId: string) => {
@@ -504,10 +510,14 @@ export function TeamWorkspacePage() {
           <div className="section-heading">
             <h2>{t("team.inviteLinks")}</h2>
           </div>
-          {serverInviteLinks.map((link: any) => (
+          {serverInviteLinks.map((link: any) => {
+            const inviteURL = getInviteLinkURL(link);
+            return (
             <div key={link.link_id} className="member-card">
               <div style={{ flex: 1, fontSize: 13 }}>
-                <code style={{ fontSize: 12 }}>{link.token.substring(0, 16)}...</code>
+                <code style={{ fontSize: 12 }}>
+                  {inviteURL ? `${inviteURL.slice(0, 48)}${inviteURL.length > 48 ? "..." : ""}` : t("team.inviteLinkUnavailable")}
+                </code>
                 <span className="member-meta" style={{ marginLeft: 8 }}>
                   <span className={`member-role role-${link.role}`}>{link.role}</span>
                   {link.max_uses && <span>· {t("team.maxUses", { count: link.max_uses })}</span>}
@@ -516,11 +526,19 @@ export function TeamWorkspacePage() {
                 </span>
               </div>
               <div style={{ display: "flex", gap: 4 }}>
-                <button className="btn-secondary btn-sm" onClick={() => handleCopyInviteLink(link.token)}>{t("team.copy")}</button>
+                <button
+                  className="btn-secondary btn-sm"
+                  onClick={() => handleCopyInviteLink(inviteURL)}
+                  disabled={!inviteURL}
+                  aria-label={t("team.copyInviteLink")}
+                >
+                  {t("team.copy")}
+                </button>
                 <button className="btn-text" style={{ color: "var(--red)" }} onClick={() => handleDeleteInviteLink(link.link_id)}>{t("team.delete")}</button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </>
@@ -650,7 +668,7 @@ export function TeamWorkspacePage() {
                 <div className="member-info">
                   <div className="member-email">{s.name}</div>
                   <div className="member-meta">
-                    <span className="member-role role-{s.strategy_type}">{s.strategy_type}</span>
+                    <span className={`member-role role-${s.strategy_type}`}>{s.strategy_type}</span>
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{s.updated_at?.substring(0, 10)}</span>
                   </div>
                 </div>

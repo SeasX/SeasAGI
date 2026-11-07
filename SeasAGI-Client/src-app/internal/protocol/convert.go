@@ -157,6 +157,8 @@ type anthropicStreamWriter struct {
 	stopReason string
 	usageIn    int64
 	usageOut   int64
+	// contentBuf 累计已输出的文本/参数内容，用于上游缺失 usage 时本地估算。
+	contentBuf strings.Builder
 }
 
 func writeAnthropicStream(w io.Writer, r io.Reader, model string) {
@@ -273,6 +275,7 @@ func (s *anthropicStreamWriter) handleChunk(chunk map[string]any) {
 			s.blockOpen = true
 			s.blockType = "text"
 		}
+		s.contentBuf.WriteString(text)
 		s.event("content_block_delta", map[string]any{
 			"type":  "content_block_delta",
 			"index": s.nextIndex - 1,
@@ -313,6 +316,7 @@ func (s *anthropicStreamWriter) handleChunk(chunk map[string]any) {
 			}
 			fn, _ := tc["function"].(map[string]any)
 			if args, ok := fn["arguments"].(string); ok && args != "" {
+				s.contentBuf.WriteString(args)
 				s.event("content_block_delta", map[string]any{
 					"type":  "content_block_delta",
 					"index": s.nextIndex - 1,
@@ -326,13 +330,29 @@ func (s *anthropicStreamWriter) handleChunk(chunk map[string]any) {
 func (s *anthropicStreamWriter) finish() {
 	s.ensureMessageStart(nil)
 	s.closeBlock()
+
+	outTokens := s.usageOut
+	estimated := false
+	if outTokens <= 0 && s.contentBuf.Len() > 0 {
+		// 上游未提供 usage 时按已输出内容本地估算，避免计量恒为 0。
+		outTokens = int64(EstimateTokens(s.contentBuf.String()))
+		estimated = true
+	}
+	usage := map[string]any{
+		"input_tokens":  s.usageIn,
+		"output_tokens": outTokens,
+	}
+	if estimated {
+		usage["cost_estimated"] = true
+	}
+
 	s.event("message_delta", map[string]any{
 		"type": "message_delta",
 		"delta": map[string]any{
 			"stop_reason":   anthropicStopReason(s.stopReason, s.stopReason == "tool_calls"),
 			"stop_sequence": nil,
 		},
-		"usage": map[string]any{"output_tokens": s.usageOut},
+		"usage": usage,
 	})
 	s.event("message_stop", map[string]any{"type": "message_stop"})
 }
@@ -343,7 +363,25 @@ func writeResponsesStream(w io.Writer, r io.Reader, model string) {
 	_, _ = io.WriteString(w, CreateResponseCreatedEvent(model))
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	var outTokens int
+
+	var inputTokens, outputTokens int
+	usageSeen := false
+	var contentBuf strings.Builder
+
+	emitCompleted := func() {
+		out := outputTokens
+		estimated := false
+		if out <= 0 && contentBuf.Len() > 0 {
+			// 上游未在流中返回 usage 时本地估算，避免计量恒为 0。
+			out = EstimateTokens(contentBuf.String())
+			estimated = true
+		}
+		if !usageSeen && out > 0 {
+			estimated = true
+		}
+		_, _ = io.WriteString(w, CreateResponseCompletedEventEx(model, inputTokens, out, estimated))
+	}
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
@@ -351,14 +389,59 @@ func writeResponsesStream(w io.Writer, r io.Reader, model string) {
 			continue
 		}
 		if trimmed == "data: [DONE]" {
-			_, _ = io.WriteString(w, CreateResponseCompletedEvent(model, 0, outTokens))
+			emitCompleted()
 			return
+		}
+		if data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:")); data != "" {
+			var chunk map[string]any
+			if json.Unmarshal([]byte(data), &chunk) == nil {
+				if in, out, ok := ChatStreamUsage(chunk); ok {
+					if in > 0 {
+						inputTokens = in
+						usageSeen = true
+					}
+					if out > 0 {
+						outputTokens = out
+						usageSeen = true
+					}
+				}
+				if choices, ok := chunk["choices"].([]any); ok && len(choices) > 0 {
+					if choice, ok := choices[0].(map[string]any); ok {
+						if delta, ok := choice["delta"].(map[string]any); ok {
+							if text, ok := delta["content"].(string); ok {
+								contentBuf.WriteString(text)
+							}
+						}
+					}
+				}
+			}
 		}
 		if converted, ok := TranslateStream(line); ok {
 			_, _ = io.WriteString(w, converted)
 		}
 	}
-	_, _ = io.WriteString(w, CreateResponseCompletedEvent(model, 0, outTokens))
+	emitCompleted()
+}
+
+// EstimateTokens 粗略估算文本 token 数：CJK 字符约 1 token/字，其余按 4 字符/token。
+// 仅在上游未返回 usage 时作为兜底，估算结果会带 cost_estimated 标记。
+func EstimateTokens(text string) int {
+	if text == "" {
+		return 0
+	}
+	cjk, other := 0, 0
+	for _, r := range text {
+		if r >= 0x2E80 {
+			cjk++
+		} else {
+			other++
+		}
+	}
+	total := cjk + (other+3)/4
+	if total <= 0 {
+		total = 1
+	}
+	return total
 }
 
 func toFloat(v any) float64 {

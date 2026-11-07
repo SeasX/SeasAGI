@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/SeasAGI/SeasAGI-Client/internal/buildinfo"
+	"github.com/SeasAGI/SeasAGI-Client/internal/httpguard"
 	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
 )
 
@@ -47,7 +49,7 @@ func (s *Server) Start(ctx context.Context) error {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"name":    "SeasAGI Web UI",
-			"version": "0.2.0",
+			"version": buildinfo.Version,
 			"mode":    "web",
 		})
 	})
@@ -64,7 +66,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	server := &http.Server{
-		Handler: mux,
+		Handler: httpguard.LocalOnly(mux),
 		BaseContext: func(_ net.Listener) context.Context {
 			return ctx
 		},

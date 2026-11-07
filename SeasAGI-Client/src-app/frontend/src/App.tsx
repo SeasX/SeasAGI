@@ -19,6 +19,8 @@ import { TokenListingDetailPage } from "./pages/TokenListingDetailPage";
 import { TokenScanTradePage } from "./pages/TokenScanTradePage";
 import { TokenMyOrdersPage } from "./pages/TokenMyOrdersPage";
 import { TokenMySettlementsPage } from "./pages/TokenMySettlementsPage";
+import { TokenMySubscriptionsPage } from "./pages/TokenMySubscriptionsPage";
+import { TokenProviderEarningsPage } from "./pages/TokenProviderEarningsPage";
 import { TranslatorPage } from "./pages/TranslatorPage";
 import { DiagnosticsPage } from "./pages/DiagnosticsPage";
 import { PluginsPage } from "./pages/PluginsPage";
@@ -52,6 +54,8 @@ export default function App() {
             <Route path="/token-market/scan-trade" element={<TokenScanTradePage />} />
             <Route path="/token-market/my-orders" element={<TokenMyOrdersPage />} />
             <Route path="/token-market/my-settlements" element={<TokenMySettlementsPage />} />
+            <Route path="/token-market/my-subscriptions" element={<TokenMySubscriptionsPage />} />
+            <Route path="/token-market/provider-earnings" element={<TokenProviderEarningsPage />} />
             <Route path="/translator" element={<TranslatorPage />} />
             <Route path="/diagnostics" element={<DiagnosticsPage />} />
             <Route path="/plugins" element={<PluginsPage />} />

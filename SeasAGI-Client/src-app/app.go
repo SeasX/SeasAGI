@@ -3,14 +3,21 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/url"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +27,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/auth"
+	"github.com/SeasAGI/SeasAGI-Client/internal/buildinfo"
 	"github.com/SeasAGI/SeasAGI-Client/internal/config"
 	"github.com/SeasAGI/SeasAGI-Client/internal/configio"
 	"github.com/SeasAGI/SeasAGI-Client/internal/deeplink"
@@ -46,6 +54,7 @@ import (
 	"github.com/SeasAGI/SeasAGI-Client/internal/sync"
 	"github.com/SeasAGI/SeasAGI-Client/internal/tunnel"
 	"github.com/SeasAGI/SeasAGI-Client/internal/updater"
+	"github.com/SeasAGI/SeasAGI-Client/internal/urlguard"
 	"github.com/SeasAGI/SeasAGI-Client/internal/usage"
 )
 
@@ -126,12 +135,13 @@ func NewApp(
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	auth.SetPlatformAPIBaseURL(a.configSvc.GetPlatformAPIBaseURL())
+	a.restoreMarketNode()
 }
 
 func (a *App) GetAppInfo() map[string]any {
 	return map[string]any{
 		"name":    "SeasAGI",
-		"version": "0.2.0",
+		"version": buildinfo.Version,
 	}
 }
 
@@ -181,7 +191,7 @@ func (a *App) TestMITMDomain(domain string) map[string]any {
 
 	// 通过本地代理发起 HTTPS 请求测试连通性
 	// 使用 MITM CA 证书池验证 TLS，避免 "tls: failed to verify certificate" 错误
-	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", status.ProxyPort))
+	proxyURL, _ := neturl.Parse(fmt.Sprintf("http://127.0.0.1:%d", status.ProxyPort))
 
 	tlsConfig := &tls.Config{}
 	if caPool := a.mitmMgr.CertPool(); caPool != nil {
@@ -832,13 +842,18 @@ func (a *App) GetPlatformAPIBaseURL() string {
 	return a.configSvc.GetPlatformAPIBaseURL()
 }
 
-func (a *App) GetPlatformToken() string {
-	return a.authSvc.GetPlatformToken()
-}
-
 func (a *App) SetPlatformAPIBaseURL(url string) error {
 	if url == "" {
 		return fmt.Errorf("platform API base URL cannot be empty")
+	}
+	// 平台令牌会随每个请求发出，必须限制为 HTTPS（仅回环允许 http）且不得指向链路本地（CL-S19）。
+	if err := urlguard.ValidateSecureURL(url, true); err != nil {
+		return err
+	}
+	if u, err := neturl.Parse(url); err != nil {
+		return fmt.Errorf("invalid platform API base URL: %w", err)
+	} else if err := urlguard.RejectLinkLocalHost(u.Host); err != nil {
+		return err
 	}
 	if err := a.configSvc.SetPlatformAPIBaseURL(url); err != nil {
 		return err
@@ -984,6 +999,17 @@ func (a *App) afterPlatformLogin() error {
 
 	// Sync local data to cloud (best-effort)
 	_ = a.syncLocalDataToCloud()
+
+	// P4-24：登录成功后立即同步企业下发的 MITM 路由规则（best-effort）。
+	go func() {
+		token := ""
+		if a.authSvc.IsLoggedIn() {
+			token = a.authSvc.GetPlatformToken()
+		}
+		if err := mitm.FetchRoutingRulesFromEnterprise(a.ctx, token); err != nil {
+			logging.Debugf("fetch enterprise mitm routing rules after login: %v", err)
+		}
+	}()
 
 	if !a.gatewaySvc.IsRunning() {
 		go a.gatewaySvc.Start(a.ctx)
@@ -1267,13 +1293,22 @@ func (a *App) DiscoverModels(channelID string) ([]discovery.DiscoveredModel, err
 }
 
 func (a *App) FetchModelsFromURL(modelsURL, apiKey string) (map[string]any, error) {
+	// 用户填写的地址会附带渠道 Key：限制协议与目标，并禁止跨主权重定向（CL-S19）。
+	if err := urlguard.ValidateSecureURL(modelsURL, true); err != nil {
+		return nil, err
+	}
+	if u, err := neturl.Parse(modelsURL); err != nil {
+		return nil, fmt.Errorf("invalid models URL: %w", err)
+	} else if err := urlguard.RejectLinkLocalHost(u.Host); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(a.ctx, http.MethodGet, modelsURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: urlguard.SecureRedirect}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch models: %w", err)
@@ -1341,6 +1376,365 @@ func (a *App) SyncCustomChannelsToCloud(channels []map[string]any) (map[string]a
 	return result, nil
 }
 
+// SyncAssetsToCloud 把本地可上架资产（含凭证）同步到企业端资产注册表。
+// 企业端立即用 KMS 信封加密落库，客户端不保留额外副本。
+func (a *App) SyncAssetsToCloud(assets []map[string]any) (map[string]any, error) {
+	if !a.authSvc.IsLoggedIn() {
+		return nil, fmt.Errorf("not logged in")
+	}
+
+	baseURL := a.configSvc.GetPlatformAPIBaseURL()
+	token := a.authSvc.GetPlatformToken()
+
+	bodyBytes, err := json.Marshal(map[string]any{"assets": assets})
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode assets: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(a.ctx, http.MethodPost,
+		baseURL+"/user-assets/sync", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		errMsg, _ := result["error"].(string)
+		return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, errMsg)
+	}
+	return result, nil
+}
+
+// ListMyAssets 拉取企业端资产注册表（不返回凭证）。
+func (a *App) ListMyAssets() ([]map[string]any, error) {
+	if !a.authSvc.IsLoggedIn() {
+		return nil, fmt.Errorf("not logged in")
+	}
+
+	baseURL := a.configSvc.GetPlatformAPIBaseURL()
+	token := a.authSvc.GetPlatformToken()
+
+	req, err := http.NewRequestWithContext(a.ctx, http.MethodGet, baseURL+"/user-assets", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var payload struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("server returned %d", resp.StatusCode)
+	}
+	return payload.Data, nil
+}
+
+// ExportLocalAssets 从本地通道生成可上架资产清单（含加密凭证与指纹）。
+//
+// 指纹 = SHA-256(api_key) 前 16 字节十六进制，不可逆，仅用于企业端识别同一凭证；
+// 这样企业端无需知道明文即可完成「同一资产的唯一注册与所有权校验」。
+// 凭证只走平台 RSA-OAEP 公钥信封（api_key_enc）：拿不到公钥或加密失败时整体失败，
+// 绝不回退明文（CL-S15）；OAuth 会话类通道不含凭证，仅登记资产元数据。
+func (a *App) ExportLocalAssets() ([]map[string]any, error) {
+	// 走受控凭证读取（keychain），脱敏渠道列表不含密钥、会导出空清单。
+	channels, err := a.configSvc.ListChannelsWithCredentials()
+	if err != nil {
+		return nil, err
+	}
+
+	assets := make([]map[string]any, 0, len(channels))
+	// 平台公钥按需获取：只有需要上送 API Key 时才要求登录态/公钥可用。
+	var pubKey *rsa.PublicKey
+	for _, ch := range channels {
+		key := strings.TrimSpace(ch.APIKey)
+		if key == "" && len(ch.APIKeys) > 0 {
+			key = strings.TrimSpace(ch.APIKeys[0])
+		}
+		if strings.TrimSpace(ch.BaseURL) == "" || !ch.Enabled {
+			continue
+		}
+		// OAuth 会话类通道没有 API Key：仅能通过 A 端节点模式交付，凭证不出本机。
+		if key == "" {
+			if strings.TrimSpace(ch.OAuthRefreshToken) == "" {
+				continue
+			}
+			sum := sha256.Sum256([]byte("oauth:" + ch.ChannelID))
+			assets = append(assets, map[string]any{
+				"token_fingerprint": hex.EncodeToString(sum[:16]),
+				"label":             ch.DisplayName,
+				"provider_type":     ch.ProviderType,
+				"wire_protocol":     wireProtocolForChannel(ch),
+				"auth_type":         "oauth",
+				"base_url":          strings.TrimRight(ch.BaseURL, "/"),
+				"models":            ch.Models,
+			})
+			continue
+		}
+		sum := sha256.Sum256([]byte(key))
+		if pubKey == nil {
+			pubKey, err = a.fetchAssetPublicKey()
+			if err != nil {
+				return nil, fmt.Errorf("refusing to export assets without platform encryption key: %w", err)
+			}
+		}
+		enc, err := encryptWithPublicKey(pubKey, key)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt credential for channel %s: %w", ch.ChannelID, err)
+		}
+		if enc == "" {
+			return nil, fmt.Errorf("encrypt credential for channel %s: empty ciphertext", ch.ChannelID)
+		}
+		assets = append(assets, map[string]any{
+			"token_fingerprint": hex.EncodeToString(sum[:16]),
+			"label":             ch.DisplayName,
+			"provider_type":     ch.ProviderType,
+			"wire_protocol":     wireProtocolForChannel(ch),
+			"auth_type":         "api_key",
+			"base_url":          strings.TrimRight(ch.BaseURL, "/"),
+			"models":            ch.Models,
+			"api_key_enc":       enc,
+		})
+	}
+	return assets, nil
+}
+
+// fetchAssetPublicKey 获取企业端资产公钥（RSA-OAEP-SHA256）。
+func (a *App) fetchAssetPublicKey() (*rsa.PublicKey, error) {
+	status, body, err := a.authSvc.DoPlatformRequest(http.MethodGet, "/user-assets/pubkey", nil)
+	if err != nil || status >= 400 {
+		return nil, fmt.Errorf("asset public key unavailable")
+	}
+	var payload struct {
+		Data struct {
+			PublicKey string `json:"public_key"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode([]byte(payload.Data.PublicKey))
+	if block == nil {
+		return nil, fmt.Errorf("invalid public key pem")
+	}
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	pub, ok := parsed.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("unexpected public key type")
+	}
+	return pub, nil
+}
+
+func encryptWithPublicKey(pub *rsa.PublicKey, plain string) (string, error) {
+	if pub == nil || plain == "" {
+		return "", fmt.Errorf("public key unavailable")
+	}
+	ciphertext, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, pub, []byte(plain), nil)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// wireProtocolForChannel 依据 provider 与 base_url 推断线协议。
+func wireProtocolForChannel(ch config.Channel) string {
+	provider := strings.ToLower(ch.ProviderType)
+	base := strings.ToLower(ch.BaseURL)
+	switch {
+	case strings.Contains(provider, "anthropic") || strings.Contains(base, "anthropic.com"):
+		return "anthropic"
+	case strings.Contains(provider, "gemini") || strings.Contains(provider, "vertex") ||
+		strings.Contains(provider, "google") || strings.Contains(base, "generativelanguage"):
+		return "gemini"
+	case strings.Contains(provider, "responses"):
+		return "openai-responses"
+	default:
+		return "openai-chat"
+	}
+}
+
+// marketNodeSecretName 是 A 端节点共享密钥在系统钥匙串中的键名（不落配置文件）。
+const marketNodeSecretName = "market_node_secret"
+
+// nodeHeartbeatRunning 保证同一进程只有一个节点心跳协程。
+var nodeHeartbeatRunning int32
+
+// RegisterMarketNode 注册（或更新）A 端节点并开启心跳。
+//
+// 节点地址需由用户填写可被企业 relay 访问的地址（Tunnel 公网地址或内网反代）；
+// 共享密钥仅写入系统钥匙串，企业端只保存 node_id 与哈希后的转发密钥。
+func (a *App) RegisterMarketNode(nodeURL string, models, protocols []string) (map[string]any, error) {
+	nodeURL = strings.TrimRight(strings.TrimSpace(nodeURL), "/")
+	if nodeURL == "" {
+		return nil, fmt.Errorf("node URL is required")
+	}
+	if !strings.HasPrefix(nodeURL, "http://") && !strings.HasPrefix(nodeURL, "https://") {
+		return nil, fmt.Errorf("node URL must start with http:// or https://")
+	}
+
+	data, err := a.registerNodeOnPlatform(nodeURL, models, protocols)
+	if err != nil {
+		return nil, err
+	}
+	if nodeID, _ := data["node_id"].(string); nodeID != "" {
+		cfg := config.MarketNodeConfig{
+			NodeID:        nodeID,
+			NodeURL:       nodeURL,
+			ListenPort:    a.gatewaySvc.GetListenPort(),
+			Models:        models,
+			WireProtocols: protocols,
+			Enabled:       true,
+		}
+		if err := a.configSvc.SetMarketNodeConfig(cfg); err != nil {
+			return nil, err
+		}
+	}
+	a.startNodeHeartbeat()
+	return a.GetMarketNodeStatus(), nil
+}
+
+// GetMarketNodeStatus 返回本地节点配置与平台侧注册状态。
+func (a *App) GetMarketNodeStatus() map[string]any {
+	cfg := a.configSvc.GetMarketNodeConfig()
+	out := map[string]any{
+		"enabled":         cfg.Enabled && gateway.NodeSecretConfigured(),
+		"node_id":         cfg.NodeID,
+		"node_url":        cfg.NodeURL,
+		"models":          cfg.Models,
+		"wire_protocols":  cfg.WireProtocols,
+		"listen_port":     a.gatewaySvc.GetListenPort(),
+		"gateway_running": a.gatewaySvc.IsRunning(),
+	}
+	if a.authSvc.IsLoggedIn() {
+		if status, body, err := a.authSvc.DoPlatformRequest(http.MethodGet, "/nodes/me", nil); err == nil && status < 400 {
+			var payload struct {
+				Data map[string]any `json:"data"`
+			}
+			if json.Unmarshal(body, &payload) == nil && payload.Data != nil {
+				out["registered"] = true
+				out["remote"] = payload.Data
+			}
+		}
+	}
+	return out
+}
+
+// DisableMarketNode 注销节点：停止心跳、清空本地密钥与配置。
+func (a *App) DisableMarketNode() error {
+	if a.authSvc.IsLoggedIn() {
+		// 平台侧注销失败不阻断本地关闭，避免残留密钥继续可用。
+		_, _, _ = a.authSvc.DoPlatformRequest(http.MethodDelete, "/nodes/me", nil)
+	}
+	_ = keychain.DeleteSecret(marketNodeSecretName)
+	gateway.SetNodeSecret("")
+	cfg := a.configSvc.GetMarketNodeConfig()
+	cfg.NodeID = ""
+	cfg.Enabled = false
+	return a.configSvc.SetMarketNodeConfig(cfg)
+}
+
+// restoreMarketNode 在启动时恢复节点密钥并继续心跳；密钥缺失时尝试重新注册。
+func (a *App) restoreMarketNode() {
+	cfg := a.configSvc.GetMarketNodeConfig()
+	if !cfg.Enabled || strings.TrimSpace(cfg.NodeURL) == "" {
+		return
+	}
+	if secret, err := keychain.GetSecret(marketNodeSecretName); err == nil && secret != "" {
+		gateway.SetNodeSecret(secret)
+		a.startNodeHeartbeat()
+		return
+	}
+	go func() {
+		if !a.authSvc.IsLoggedIn() {
+			return
+		}
+		if _, err := a.registerNodeOnPlatform(cfg.NodeURL, cfg.Models, cfg.WireProtocols); err == nil {
+			a.startNodeHeartbeat()
+		}
+	}()
+}
+
+func (a *App) startNodeHeartbeat() {
+	if !atomic.CompareAndSwapInt32(&nodeHeartbeatRunning, 0, 1) {
+		return
+	}
+	go func() {
+		defer atomic.StoreInt32(&nodeHeartbeatRunning, 0)
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-ticker.C:
+				cfg := a.configSvc.GetMarketNodeConfig()
+				if !cfg.Enabled || strings.TrimSpace(cfg.NodeURL) == "" {
+					return
+				}
+				_, _ = a.registerNodeOnPlatform(cfg.NodeURL, cfg.Models, cfg.WireProtocols)
+			}
+		}
+	}()
+}
+
+// registerNodeOnPlatform 调用平台注册接口，并把返回的共享密钥写入钥匙串与网关。
+func (a *App) registerNodeOnPlatform(nodeURL string, models, protocols []string) (map[string]any, error) {
+	if !a.authSvc.IsLoggedIn() {
+		return nil, fmt.Errorf("not logged in")
+	}
+	payload, err := json.Marshal(map[string]any{
+		"node_url":       nodeURL,
+		"display_name":   "SeasAGI Client Node",
+		"models":         models,
+		"wire_protocols": protocols,
+	})
+	if err != nil {
+		return nil, err
+	}
+	status, body, err := a.authSvc.DoPlatformRequest(http.MethodPost, "/nodes/register", payload)
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Data  map[string]any `json:"data"`
+		Error string         `json:"error"`
+	}
+	_ = json.Unmarshal(body, &parsed)
+	if status >= 400 {
+		return nil, fmt.Errorf("register node failed (%d): %s", status, parsed.Error)
+	}
+	if parsed.Data == nil {
+		return nil, fmt.Errorf("empty node registration response")
+	}
+	if secret, ok := parsed.Data["node_secret"].(string); ok && secret != "" {
+		_ = keychain.SaveSecret(marketNodeSecretName, secret)
+		gateway.SetNodeSecret(secret)
+	}
+	return parsed.Data, nil
+}
+
 func (a *App) ListLogs(limit, offset int) ([]logs.RequestLog, error) {
 	return a.logSvc.ListLogs(limit, offset)
 }
@@ -1375,21 +1769,58 @@ func (a *App) GetComboByName(name string) config.ModelCombo {
 	return c
 }
 
-func (a *App) GetLocalAccessToken() (string, error) {
-	return a.localTokenStore.GetOrCreate()
+// GetLocalAccessTokenStatus 返回本地令牌是否存在与掩码值。
+// 渲染层不再持有完整令牌，复制动作由后端直接写入系统剪贴板（CL-S5）。
+func (a *App) GetLocalAccessTokenStatus() (map[string]any, error) {
+	token, err := a.localTokenStore.Get()
+	if err != nil || token == "" {
+		token, err = a.localTokenStore.GetOrCreate()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"present": token != "", "masked": maskToken(token)}, nil
 }
 
-func (a *App) ResetLocalAccessToken() (string, error) {
+// CopyLocalAccessToken 把完整本地令牌写入系统剪贴板；明文不经过渲染层。
+func (a *App) CopyLocalAccessToken() error {
+	token, err := a.localTokenStore.GetOrCreate()
+	if err != nil {
+		return err
+	}
+	return runtime.ClipboardSetText(a.ctx, token)
+}
+
+// CopyGatewaySnippet 复制接入片段（Base URL + API Key），明文由后端拼接。
+func (a *App) CopyGatewaySnippet() error {
+	token, err := a.localTokenStore.GetOrCreate()
+	if err != nil {
+		return err
+	}
+	text := fmt.Sprintf("Base URL: http://127.0.0.1:%d/v1\nAPI Key: %s", a.gatewaySvc.GetListenPort(), token)
+	return runtime.ClipboardSetText(a.ctx, text)
+}
+
+// ResetLocalAccessToken 轮换本地令牌并返回新的掩码状态（不返回明文）。
+func (a *App) ResetLocalAccessToken() (map[string]any, error) {
 	token, err := a.localTokenStore.Reset()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	a.gatewaySvc.SetAccessToken(token)
 	// MITM 拦截转发注入的令牌需同步更新，避免被接管请求因旧令牌 401。
 	if a.mitmMgr != nil {
 		a.mitmMgr.SetAccessToken(token)
 	}
-	return token, nil
+	return map[string]any{"present": true, "masked": maskToken(token)}, nil
+}
+
+// maskToken 仅保留首尾各 4 位，避免渲染层拿到可用凭证。
+func maskToken(token string) string {
+	if len(token) <= 8 {
+		return strings.Repeat("•", len(token))
+	}
+	return token[:4] + "••••" + token[len(token)-4:]
 }
 
 func (a *App) SetAutoLaunch(enabled bool) error {
@@ -2284,15 +2715,24 @@ func (a *App) ChatCompletion(messages []map[string]any, model string) (map[strin
 	result["_gateway_status"] = resp.StatusCode
 	result["_gateway_port"] = gatewayPort
 
-	// Build curl command for debugging
+	// Build curl command for debugging。
+	// 安全：真实令牌绝不回传给前端（会被截图/复制外泄），统一使用环境变量占位符，
+	// 用户在自己的终端执行时再导出同名变量即可复现。
 	result["_curl_command"] = buildCurlCommand(
 		fmt.Sprintf("http://127.0.0.1:%d/v1/chat/completions", gatewayPort),
-		"Bearer "+token,
+		curlChannelKeyAuthHeader,
 		string(bodyBytes),
 	)
 
 	return result, nil
 }
+
+// curlChannelKeyAuthHeader 是 Playground 回传 curl 命令时使用的上游渠道 Key 占位符。
+// 真实的渠道 Key / 本机令牌只保留在进程内，绝不出现在任何回传数据里。
+const curlChannelKeyAuthHeader = "Bearer $SEASAGI_CHANNEL_KEY"
+
+// curlLocalTokenAuthHeader 是访问本机网关时使用的令牌占位符（CL-S2）。
+const curlLocalTokenAuthHeader = "Bearer $SEASAGI_LOCAL_TOKEN"
 
 func buildCurlCommand(url, authHeader, bodyJSON string) string {
 	escapedBody := strings.ReplaceAll(bodyJSON, "'", "'\\''")
@@ -2350,10 +2790,12 @@ func (a *App) ChatCompletionForChannel(channelID string, messages []map[string]a
 	result["_channel_name"] = ch.DisplayName
 	result["_status_code"] = resp.StatusCode
 
-	// Build curl command for debugging
+	// Build curl command for debugging。
+	// 安全：上游渠道 Key 绝不能出现在回传内容中（Playground 截图/日志会外泄），
+	// 只返回环境变量占位符。
 	result["_curl_command"] = buildCurlCommand(
 		baseURL+"/chat/completions",
-		"Bearer "+apiKey,
+		curlChannelKeyAuthHeader,
 		string(bodyBytes),
 	)
 
@@ -2410,9 +2852,10 @@ func (a *App) ImageGeneration(prompt string, model string, params map[string]any
 
 	result["_gateway_status"] = resp.StatusCode
 	result["_gateway_port"] = gatewayPort
+	// 安全：本机网关令牌同样不得回传前端，只给环境变量占位符（CL-S2）。
 	result["_curl_command"] = buildCurlCommand(
 		fmt.Sprintf("http://127.0.0.1:%d/v1/images/generations", gatewayPort),
-		"Bearer "+token,
+		curlLocalTokenAuthHeader,
 		string(bodyBytes),
 	)
 
@@ -2472,9 +2915,10 @@ func (a *App) ImageGenerationForChannel(channelID string, prompt string, model s
 	result["_channel_id"] = channelID
 	result["_channel_name"] = ch.DisplayName
 	result["_status_code"] = resp.StatusCode
+	// 安全：上游渠道 Key 不得回传前端（截图/日志外泄），只给环境变量占位符（CL-S2）。
 	result["_curl_command"] = buildCurlCommand(
 		baseURL+"/images/generations",
-		"Bearer "+apiKey,
+		curlChannelKeyAuthHeader,
 		string(bodyBytes),
 	)
 
@@ -2531,9 +2975,10 @@ func (a *App) VideoGeneration(prompt string, model string, params map[string]any
 
 	result["_gateway_status"] = resp.StatusCode
 	result["_gateway_port"] = gatewayPort
+	// 安全：本机网关令牌同样不得回传前端，只给环境变量占位符（CL-S2）。
 	result["_curl_command"] = buildCurlCommand(
 		fmt.Sprintf("http://127.0.0.1:%d/v1/videos/generations", gatewayPort),
-		"Bearer "+token,
+		curlLocalTokenAuthHeader,
 		string(bodyBytes),
 	)
 
@@ -2593,9 +3038,10 @@ func (a *App) VideoGenerationForChannel(channelID string, prompt string, model s
 	result["_channel_id"] = channelID
 	result["_channel_name"] = ch.DisplayName
 	result["_status_code"] = resp.StatusCode
+	// 安全：上游渠道 Key 不得回传前端（截图/日志外泄），只给环境变量占位符（CL-S2）。
 	result["_curl_command"] = buildCurlCommand(
 		baseURL+"/videos/generations",
-		"Bearer "+apiKey,
+		curlChannelKeyAuthHeader,
 		string(bodyBytes),
 	)
 
@@ -3018,6 +3464,131 @@ func (a *App) SetRateLimitConfig(cfg map[string]any) error {
 		}
 	}
 	return a.configSvc.SetRateLimitConfig(parsed)
+}
+
+// GetMITMRoutingConfig 返回 MITM 接管请求的路由映射配置。
+func (a *App) GetMITMRoutingConfig() map[string]any {
+	cfg := a.configSvc.GetMITMRoutingConfig()
+	rules := make([]map[string]any, 0, len(cfg.Rules))
+	for _, r := range cfg.Rules {
+		rules = append(rules, map[string]any{
+			"id":            r.ID,
+			"enabled":       r.Enabled,
+			"priority":      r.Priority,
+			"target_id":     r.TargetID,
+			"endpoint_path": r.EndpointPath,
+			"request_model": r.RequestModel,
+			"action":        r.Action,
+			"combo_name":    r.ComboName,
+			"model":         r.Model,
+			"constraints":   r.Constraints,
+			"source":        r.Source,
+		})
+	}
+	return map[string]any{
+		"enabled":            cfg.Enabled,
+		"default_action":     cfg.DefaultAction,
+		"default_combo_name": cfg.DefaultCombo,
+		"default_model":      cfg.DefaultModel,
+		"security_mode":      cfg.SecurityMode,
+		"rules":              rules,
+	}
+}
+
+// GetMITMEnterpriseRules 返回企业端下发的 MITM 路由规则（只读、置底）。
+func (a *App) GetMITMEnterpriseRules() []map[string]any {
+	entRules := mitm.EnterpriseRoutingRules()
+	rules := make([]map[string]any, 0, len(entRules))
+	for _, r := range entRules {
+		rules = append(rules, map[string]any{
+			"id":            r.ID,
+			"enabled":       r.Enabled,
+			"priority":      r.Priority,
+			"target_id":     r.TargetID,
+			"endpoint_path": r.EndpointPath,
+			"request_model": r.RequestModel,
+			"action":        r.Action,
+			"combo_name":    r.ComboName,
+			"model":         r.Model,
+			"constraints":   r.Constraints,
+			"source":        r.Source,
+		})
+	}
+	return rules
+}
+
+// FetchMITMRoutingFromEnterprise 从企业服务端拉取默认 MITM 路由规则（与 FetchMITMTargetsFromEnterprise 同风格）。
+func (a *App) FetchMITMRoutingFromEnterprise() map[string]any {
+	token := ""
+	if a.authSvc.IsLoggedIn() {
+		token = a.authSvc.GetPlatformToken()
+	}
+	if err := mitm.FetchRoutingRulesFromEnterprise(a.ctx, token); err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}
+	}
+	return map[string]any{"ok": true, "count": len(mitm.EnterpriseRoutingRules())}
+}
+
+// SetMITMRoutingConfig 设置 MITM 接管请求的路由映射配置（校验失败返回错误，不落盘）。
+func (a *App) SetMITMRoutingConfig(cfg map[string]any) error {
+	parsed := config.MITMRoutingConfig{}
+	if v, ok := cfg["enabled"]; ok {
+		parsed.Enabled, _ = v.(bool)
+	}
+	if v, ok := cfg["default_action"].(string); ok {
+		parsed.DefaultAction = v
+	}
+	if v, ok := cfg["default_combo_name"].(string); ok {
+		parsed.DefaultCombo = v
+	}
+	if v, ok := cfg["default_model"].(string); ok {
+		parsed.DefaultModel = v
+	}
+	if v, ok := cfg["security_mode"].(string); ok {
+		parsed.SecurityMode = v
+	}
+	if raw, ok := cfg["rules"].([]any); ok {
+		parsed.Rules = make([]config.MITMRoutingRule, 0, len(raw))
+		for _, item := range raw {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			rule := config.MITMRoutingRule{}
+			if v, ok := m["id"].(string); ok {
+				rule.ID = v
+			}
+			if v, ok := m["enabled"].(bool); ok {
+				rule.Enabled = v
+			}
+			if v, ok := m["priority"]; ok {
+				rule.Priority, _ = toInt(v)
+			}
+			if v, ok := m["target_id"].(string); ok {
+				rule.TargetID = v
+			}
+			if v, ok := m["endpoint_path"].(string); ok {
+				rule.EndpointPath = v
+			}
+			if v, ok := m["request_model"].(string); ok {
+				rule.RequestModel = v
+			}
+			if v, ok := m["action"].(string); ok {
+				rule.Action = v
+			}
+			if v, ok := m["combo_name"].(string); ok {
+				rule.ComboName = v
+			}
+			if v, ok := m["model"].(string); ok {
+				rule.Model = v
+			}
+			if v, ok := m["constraints"].(map[string]any); ok {
+				rule.Constraints = v
+			}
+			parsed.Rules = append(parsed.Rules, rule)
+		}
+	}
+	return a.configSvc.SetMITMRoutingConfig(parsed)
 }
 
 // SetMITMManager 注入 MITM Manager 实例。

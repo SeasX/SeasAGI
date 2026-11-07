@@ -37,6 +37,8 @@ func (s *Service) load() {
 	if err != nil {
 		return
 	}
+	// 预设文件视为私密数据，启动时收紧既有文件权限。
+	_ = os.Chmod(s.path, 0o600)
 	var loaded []PromptPreset
 	if err := json.Unmarshal(data, &loaded); err != nil {
 		return
@@ -49,10 +51,18 @@ func (s *Service) persist() {
 	if err != nil {
 		return
 	}
-	os.MkdirAll(filepath.Dir(s.path), 0755)
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return
+	}
 	tmpFile := s.path + ".tmp"
-	_ = os.WriteFile(tmpFile, data, 0644)
-	_ = os.Rename(tmpFile, s.path)
+	if err := os.WriteFile(tmpFile, data, 0o600); err != nil {
+		return
+	}
+	_ = os.Chmod(tmpFile, 0o600)
+	if err := os.Rename(tmpFile, s.path); err != nil {
+		return
+	}
+	_ = os.Chmod(s.path, 0o600)
 }
 
 func (s *Service) ListPresets() []PromptPreset {

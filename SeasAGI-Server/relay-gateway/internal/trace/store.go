@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/logging"
+	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/timeutil"
 )
 
 type Record struct {
@@ -88,6 +89,8 @@ func (s *TraceStore) QueryByTraceID(traceID string) (*Record, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 兼容历史 RFC3339 数据：读取时统一为 SQLite 时间格式。
+	rec.CreatedAt = timeutil.Normalize(rec.CreatedAt)
 	return &rec, nil
 }
 
@@ -136,11 +139,13 @@ func (s *TraceStore) QueryRecent(limit int) ([]Record, error) {
 	return scanRecords(rows)
 }
 
+// PurgeBefore 删除早于指定时间的 trace。
+// 使用 datetime() 比较，兼容历史 RFC3339 与 SQLite 空格格式混存的数据。
 func (s *TraceStore) PurgeBefore(before time.Time) (int64, error) {
 	if s == nil || s.db == nil {
 		return 0, nil
 	}
-	result, err := s.db.Exec(`DELETE FROM trace_records WHERE created_at < ?`, before.Format(time.RFC3339))
+	result, err := s.db.Exec(`DELETE FROM trace_records WHERE datetime(created_at) < datetime(?)`, timeutil.FormatSQLite(before))
 	if err != nil {
 		return 0, err
 	}
@@ -154,6 +159,8 @@ func scanRecords(rows *sql.Rows) ([]Record, error) {
 		if err := rows.Scan(&rec.TraceID, &rec.UserID, &rec.DeviceID, &rec.TenantID, &rec.ChannelID, &rec.Model, &rec.Method, &rec.Path, &rec.StatusCode, &rec.LatencyMs, &rec.ClientIP, &rec.CreatedAt); err != nil {
 			continue
 		}
+		// 兼容历史 RFC3339 数据：读取时统一为 SQLite 时间格式。
+		rec.CreatedAt = timeutil.Normalize(rec.CreatedAt)
 		items = append(items, rec)
 	}
 	return items, nil

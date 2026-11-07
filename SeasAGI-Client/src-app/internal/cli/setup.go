@@ -67,9 +67,9 @@ func SetupConfig(toolName, gatewayURL, apiKey string) error {
 		return fmt.Errorf("unknown CLI tool: %s", toolName)
 	}
 
-	// 确保目录存在
+	// 确保目录存在；配置中含 api_key，目录仅限当前用户访问。
 	dir := filepath.Dir(tool.ConfigPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
@@ -96,8 +96,12 @@ func SetupConfig(toolName, gatewayURL, apiKey string) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(tool.ConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(tool.ConfigPath, data, 0o600); err != nil {
 		return fmt.Errorf("write config: %w", err)
+	}
+	// 既有配置文件可能是旧版本以 0644 写入的，显式收紧权限。
+	if err := os.Chmod(tool.ConfigPath, 0o600); err != nil {
+		return fmt.Errorf("chmod config: %w", err)
 	}
 
 	return nil

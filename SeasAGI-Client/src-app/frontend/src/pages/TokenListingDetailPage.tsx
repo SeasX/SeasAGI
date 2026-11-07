@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { platformRequest } from "../utils/commands";
+import { platformRequest, asPlatformRecord } from "../utils/commands";
 import { useTranslation } from "../i18n";
 import type { MarketListing } from "../stores/marketStore";
 
@@ -29,6 +29,10 @@ export function TokenListingDetailPage() {
   const [purchasing, setPurchasing] = useState(false);
   // 下单操作错误（独立于页面级 error，避免整页被错误信息替换）
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  // 订阅参数：listings 的价格为周价，月付按 4 周计费（与服务端 CreateSubscription 一致）
+  const [period, setPeriod] = useState<"weekly" | "monthly">("weekly");
+  const [autoRenew, setAutoRenew] = useState(true);
+  const [subscribeNotice, setSubscribeNotice] = useState<string | null>(null);
   const [sellerReviews, setSellerReviews] = useState<SellerReviewData | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   // 我的市场余额：用于下单前提示余额是否充足
@@ -41,11 +45,11 @@ export function TokenListingDetailPage() {
       try {
         const resp = await platformRequest("GET", `/token-market/listings/${id}`);
         if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
-        const data = resp.body;
-        setListing(data.data);
+        const data = asPlatformRecord(resp.body);
+        setListing(data.data as MarketListing);
         // 拉取我的市场余额（下单前置提示）
         platformRequest("GET", "/token-market/account")
-          .then((r) => (r.status < 400 ? r.body : null))
+          .then((r) => (r.status < 400 ? asPlatformRecord(r.body) : null))
           .then((d) => {
             if (typeof d?.data?.balance === "number") setMyBalance(d.data.balance);
           })
@@ -69,8 +73,8 @@ export function TokenListingDetailPage() {
     try {
       const resp = await platformRequest("GET", `/token-market/sellers/${sellerID}/reviews`);
       if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
-      const data = resp.body;
-      setSellerReviews(data.data);
+      const data = asPlatformRecord(resp.body);
+      setSellerReviews(data.data as SellerReviewData);
     } catch {
       setSellerReviews(null);
     } finally {
@@ -85,12 +89,36 @@ export function TokenListingDetailPage() {
     try {
       const resp = await platformRequest("POST", "/token-market/orders", { listing_id: listing.listing_id });
       if (resp.status >= 400) {
-        const errData = resp.body || {};
-        throw new Error(errData.error || `HTTP ${resp.status}`);
+        const errData = asPlatformRecord(resp.body);
+        throw new Error(String(errData.error || `HTTP ${resp.status}`));
       }
-      const data = resp.body;
+      const data = asPlatformRecord(resp.body);
       // 跳转到扫码交易页
       navigate(`/token-market/scan-trade?order=${data.data.order_id}`);
+    } catch (err) {
+      setPurchaseError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  // 订阅型上架必须走 /subscriptions：买断接口会按周价授予整仓额度并锁死上架。
+  const handleSubscribe = async () => {
+    if (!listing) return;
+    setPurchasing(true);
+    setPurchaseError(null);
+    setSubscribeNotice(null);
+    try {
+      const resp = await platformRequest("POST", "/token-market/subscriptions", {
+        listing_id: listing.listing_id,
+        period,
+        auto_renew: autoRenew,
+      });
+      if (resp.status >= 400) {
+        const errData = asPlatformRecord(resp.body);
+        throw new Error(String(errData.error || `HTTP ${resp.status}`));
+      }
+      setSubscribeNotice(t("tokenMarket.subscriptionCreatedHint"));
     } catch (err) {
       setPurchaseError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -102,14 +130,23 @@ export function TokenListingDetailPage() {
   if (error) return <div className="page-container"><div className="form-error">{error}</div></div>;
   if (!listing) return <div className="page-container"><div className="empty-state"><p>{t("tokenMarket.listingNotFound")}</p></div></div>;
 
-  // 成交价：fixed_price 为原价；discount 为折扣后实付价（与服务端 CreateOrder 计算一致）
-  const dealAmount = listing.sale_type === "fixed_price"
-    ? listing.price
-    : listing.price * (1 - listing.discount_rate);
-  const displayPrice = listing.sale_type === "fixed_price"
-    ? `${listing.price} ${listing.currency}`
-    : `${dealAmount.toFixed(2)} ${listing.currency}（${(listing.discount_rate * 100).toFixed(0)}% ${t("tokenMarket.off")}）`;
+  const isSubscription = listing.sale_type === "subscription";
+  // 成交价：fixed_price 为原价；discount 为折扣后实付价；subscription 为所选周期费用
+  //（listing.price 是周价，月付 = 4 周，与服务端 CreateSubscription 的计算一致）。
+  const weeklyPrice = listing.price;
+  const dealAmount = isSubscription
+    ? (period === "monthly" ? weeklyPrice * 4 : weeklyPrice)
+    : listing.sale_type === "fixed_price"
+      ? listing.price
+      : listing.price * (1 - listing.discount_rate);
+  const periodLabel = period === "monthly" ? t("tokenMarket.monthly") : t("tokenMarket.weekly");
+  const displayPrice = isSubscription
+    ? `${dealAmount.toFixed(2)} ${listing.currency} / ${periodLabel}`
+    : listing.sale_type === "fixed_price"
+      ? `${listing.price} ${listing.currency}`
+      : `${dealAmount.toFixed(2)} ${listing.currency}（${(listing.discount_rate * 100).toFixed(0)}% ${t("tokenMarket.off")}）`;
   const insufficient = myBalance !== null && myBalance < dealAmount;
+  const remainingSlots = Math.max((listing.capacity ?? 1) - (listing.active_subscriptions ?? 0), 0);
 
   return (
     <div className="page-container">
@@ -127,12 +164,57 @@ export function TokenListingDetailPage() {
         </div>
         <div className="detail-row">
           <span className="detail-key">{t("tokenMarket.saleType")}</span>
-          <span className="detail-value">{listing.sale_type === "fixed_price" ? t("tokenMarket.fixedPrice") : t("tokenMarket.discount")}</span>
+          <span className="detail-value">
+            {isSubscription
+              ? t("tokenMarket.subscribe")
+              : listing.sale_type === "fixed_price"
+                ? t("tokenMarket.fixedPrice")
+                : t("tokenMarket.discount")}
+          </span>
         </div>
         <div className="detail-row">
           <span className="detail-key">{t("tokenMarket.price")}</span>
           <span className="detail-value price-value">{displayPrice}</span>
         </div>
+        {isSubscription && (
+          <>
+            <div className="detail-row">
+              <span className="detail-key">{t("tokenMarket.quotaPerSlot")}</span>
+              <span className="detail-value">${(listing.quota_per_slot_usd ?? 0).toFixed(2)}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-key">{t("tokenMarket.capacity")}</span>
+              <span className="detail-value">
+                {t("tokenMarket.remainingSlots", { left: String(remainingSlots), total: String(listing.capacity ?? 1) })}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-key">{t("tokenMarket.period")}</span>
+              <span className="detail-value">
+                <select
+                  className="input"
+                  value={period}
+                  onChange={(e) => setPeriod(e.target.value as "weekly" | "monthly")}
+                  disabled={purchasing}
+                >
+                  <option value="weekly">{t("tokenMarket.weekly")}</option>
+                  <option value="monthly">{t("tokenMarket.monthly")}</option>
+                </select>
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-key">{t("tokenMarket.autoRenew")}</span>
+              <span className="detail-value">
+                <input
+                  type="checkbox"
+                  checked={autoRenew}
+                  onChange={(e) => setAutoRenew(e.target.checked)}
+                  disabled={purchasing}
+                />
+              </span>
+            </div>
+          </>
+        )}
         {listing.available_quota > 0 && (
           <div className="detail-row">
             <span className="detail-key">{t("tokenMarket.quotaYouReceive")}</span>
@@ -161,15 +243,30 @@ export function TokenListingDetailPage() {
                 <span className="detail-value">${myBalance.toFixed(2)}</span>
               </div>
             )}
+            {isSubscription && remainingSlots <= 0 && (
+              <div className="form-error" style={{ marginBottom: "8px" }}>
+                {t("tokenMarket.remainingSlots", { left: "0", total: String(listing.capacity ?? 1) })}
+              </div>
+            )}
             <button
               className="btn btn-primary"
-              onClick={handlePurchase}
-              disabled={purchasing || insufficient}
+              onClick={isSubscription ? handleSubscribe : handlePurchase}
+              disabled={purchasing || insufficient || (isSubscription && remainingSlots <= 0)}
             >
-              {purchasing ? t("common.processing") : t("tokenMarket.purchase")}
+              {purchasing
+                ? t("common.processing")
+                : isSubscription
+                  ? t("tokenMarket.subscribeNow")
+                  : t("tokenMarket.purchase")}
             </button>
+            {isSubscription && (
+              <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "8px" }}>
+                {t("tokenMarket.subscriptionNote")}
+              </p>
+            )}
           </div>
         )}
+        {subscribeNotice && <div className="form-success">{subscribeNotice}</div>}
         {purchaseError && <div className="form-error">{purchaseError}</div>}
       </div>
 

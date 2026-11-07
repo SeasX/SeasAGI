@@ -2,6 +2,7 @@ package mitm
 
 import (
 	"context"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -85,7 +86,18 @@ func (m *mockSystemProxySetter) CurrentAddr() (string, error) {
 	return m.addr, nil
 }
 
-func setupTestManager(t *testing.T) *Manager {
+// freePort 预留一个空闲端口，避免并发测试争用固定 8080。
+func freePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve port: %v", err)
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+func setupTestManagerWithPort(t *testing.T, port int) *Manager {
 	t.Helper()
 	dir := t.TempDir()
 	ca, err := NewCA(dir)
@@ -93,8 +105,13 @@ func setupTestManager(t *testing.T) *Manager {
 		t.Fatalf("NewCA: %v", err)
 	}
 	rules := NewDefaultRules()
-	mgr := NewManager(ca, rules, "http://127.0.0.1:9999") // 不存在的 gateway，测试不实际转发
+	mgr := NewManagerWithPort(ca, rules, "http://127.0.0.1:9999", port) // 不存在的 gateway，测试不实际转发
 	return mgr
+}
+
+func setupTestManager(t *testing.T) *Manager {
+	t.Helper()
+	return setupTestManagerWithPort(t, freePort(t))
 }
 
 func TestStartStopLifecycle(t *testing.T) {
@@ -155,7 +172,8 @@ func TestStopIdempotent(t *testing.T) {
 }
 
 func TestGetStatus(t *testing.T) {
-	mgr := setupTestManager(t)
+	port := freePort(t)
+	mgr := setupTestManagerWithPort(t, port)
 	ctx := context.Background()
 
 	_ = mgr.Start(ctx)
@@ -165,8 +183,8 @@ func TestGetStatus(t *testing.T) {
 	if status.State != StateRunning {
 		t.Errorf("state: got %s, want running", status.State)
 	}
-	if status.ProxyPort != 8080 {
-		t.Errorf("proxy_port: got %d, want 8080", status.ProxyPort)
+	if status.ProxyPort != port {
+		t.Errorf("proxy_port: got %d, want %d", status.ProxyPort, port)
 	}
 	if status.RulesCount != len(defaultRuleDomains) {
 		t.Errorf("rules_count: got %d, want %d", status.RulesCount, len(defaultRuleDomains))
@@ -210,7 +228,7 @@ func TestStartProxyFailureRollback(t *testing.T) {
 
 	// 第二个 Manager 尝试用同一端口
 	rules := NewDefaultRules()
-	mgr2 := NewManager(ca, rules, "http://127.0.0.1:9999")
+	mgr2 := NewManagerWithPort(ca, rules, "http://127.0.0.1:9999", mgr1.status.ProxyPort)
 
 	if err := mgr2.Start(ctx); err == nil {
 		t.Fatal("Start should return error when proxy fails to bind")
@@ -318,7 +336,7 @@ func TestStartCleansResidualSystemProxy(t *testing.T) {
 	proxy := &mockSystemProxySetter{}
 	// 模拟遗留自本客户端的系统代理（地址指向本地 MITM 端口）
 	proxy.active = true
-	proxy.addr = "127.0.0.1:8080"
+	proxy.addr = mgr.proxyAddr
 	mgr.SetSystemProxySetter(proxy)
 
 	ctx := context.Background()
@@ -411,18 +429,18 @@ func TestStartProxyNotHealthyGate(t *testing.T) {
 		t.Fatalf("NewCA: %v", err)
 	}
 	rules := NewDefaultRules()
-	mgr := NewManager(ca, rules, "http://127.0.0.1:9999")
-
 	proxy := &mockSystemProxySetter{}
-	mgr.SetSystemProxySetter(proxy)
 
-	// 先占用 8080 端口使 Proxy 启动失败
+	// 先占用同一端口使 Proxy 启动失败
 	mgr1 := setupTestManager(t)
 	ctx := context.Background()
 	_ = mgr1.Start(ctx)
 	time.Sleep(50 * time.Millisecond)
 
 	// mgr2 启动会因端口占用失败，proxy 不健康，不应设置系统代理
+	mgr := NewManagerWithPort(ca, rules, "http://127.0.0.1:9999", mgr1.status.ProxyPort)
+	mgr.SetSystemProxySetter(proxy)
+
 	if err := mgr.Start(ctx); err == nil {
 		t.Fatal("Start should return error when proxy is unhealthy")
 	}

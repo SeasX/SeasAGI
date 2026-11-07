@@ -25,6 +25,14 @@ import (
 	"github.com/SeasAGI/SeasAGI-Client/internal/usage"
 )
 
+// 请求体上限，避免客户端用超大请求打爆内存（CL-13）。
+const (
+	// maxJSONRequestBody JSON/文本请求体上限（32MB）。
+	maxJSONRequestBody int64 = 32 << 20
+	// maxMultipartRequestBody multipart 请求体上限；音频/文件上传单独放宽到 64MB。
+	maxMultipartRequestBody int64 = 64 << 20
+)
+
 type Service struct {
 	mu              sync.RWMutex
 	running         bool
@@ -61,7 +69,8 @@ type Service struct {
 	// Request-level rate limiter (RPM/TPM/min-interval/global concurrency)
 	rateLimiter *rateLimiter
 	// HTTP client for grant relay routing
-	grantHTTPClient *http.Client
+	grantHTTPClient     *http.Client
+	grantHTTPClientOnce sync.Once
 }
 
 // ComboRouteMetrics tracks route-level metrics per combo
@@ -108,20 +117,14 @@ func NewService(
 
 	healthChecker := providers.NewHealthChecker(
 		func() []providers.HealthChannelInfo {
-			channels, _ := configSvc.ListChannels()
-			infos := make([]providers.HealthChannelInfo, 0, len(channels))
-			for _, ch := range channels {
-				infos = append(infos, providers.HealthChannelInfo{
-					ChannelID:    ch.ChannelID,
-					ChannelType:  ch.ChannelType,
-					ProviderType: ch.ProviderType,
-					BaseURL:      ch.BaseURL,
-					APIKey:       ch.APIKey,
-					Enabled:      ch.Enabled,
-					HealthStatus: ch.HealthStatus,
-				})
+			// 健康检查必须使用真实凭证：ListChannelsWithCredentials 会从内存/keychain
+			// 解析 Key，避免脱敏空 Key 导致正常渠道被误判 unhealthy（CL-05）。
+			channels, err := configSvc.ListChannelsWithCredentials()
+			if err != nil {
+				logging.Warningf("health check: load channel credentials failed: %v", err)
+				return nil
 			}
-			return infos
+			return healthChannelInfos(channels)
 		},
 		configSvc.UpdateChannelHealth,
 	)
@@ -160,6 +163,8 @@ func NewService(
 		stateStore:      stateStore,
 		security:        newSecurityGuard(),
 		rateLimiter:     newRateLimiter(),
+		// Grant 中继 HTTP 客户端在构造期初始化，避免首批并发请求懒初始化产生数据竞争（CL-09）。
+		grantHTTPClient: &http.Client{Timeout: 300 * time.Second},
 	}
 
 	// Start auto-save if state store is available
@@ -169,6 +174,10 @@ func NewService(
 
 	// Initialize OAuth token refresher (P2-21)
 	svc.oauthRefresher = providers.NewOAuthTokenRefresher(60 * time.Second)
+	// 提供方轮换 refresh token 后回写 keychain，重启后仍使用最新令牌（CL-11）。
+	svc.oauthRefresher.SetRefreshTokenPersist(func(channelID, refreshToken string) error {
+		return keychain.SaveSecret("oauth_refresh_"+channelID, refreshToken)
+	})
 
 	// Initialize per-channel concurrency limiter (P2-23)
 	svc.concurrencyLimiter = providers.NewConcurrencyLimiter()
@@ -187,6 +196,51 @@ func NewService(
 	return svc
 }
 
+// healthChannelInfos 把渠道转换为健康检查输入。没有可校验凭证的渠道
+// （OAuth-only、平台托管、以及 keychain 读取失败的渠道）直接跳过：健康检查
+// 只能探测 API Key 型渠道，跳过可避免每 5 分钟把正常渠道误写成 unhealthy。
+func healthChannelInfos(channels []config.Channel) []providers.HealthChannelInfo {
+	infos := make([]providers.HealthChannelInfo, 0, len(channels))
+	for _, ch := range channels {
+		if ch.ChannelType == "platform" {
+			continue
+		}
+		apiKey := strings.TrimSpace(ch.APIKey)
+		if apiKey == "" {
+			for _, key := range ch.APIKeys {
+				if strings.TrimSpace(key) != "" {
+					apiKey = strings.TrimSpace(key)
+					break
+				}
+			}
+		}
+		// OAuth 会话类渠道没有 API Key，ListModels 无法携带刷新令牌，跳过而不是误判。
+		if apiKey == "" {
+			continue
+		}
+		infos = append(infos, providers.HealthChannelInfo{
+			ChannelID:    ch.ChannelID,
+			ChannelType:  ch.ChannelType,
+			ProviderType: ch.ProviderType,
+			BaseURL:      ch.BaseURL,
+			APIKey:       apiKey,
+			Enabled:      ch.Enabled,
+			HealthStatus: ch.HealthStatus,
+		})
+	}
+	return infos
+}
+
+// grantClient 返回 Grant 中继 HTTP 客户端（构造期已初始化，once 兜底测试字面量）。
+func (s *Service) grantClient() *http.Client {
+	s.grantHTTPClientOnce.Do(func() {
+		if s.grantHTTPClient == nil {
+			s.grantHTTPClient = &http.Client{Timeout: 300 * time.Second}
+		}
+	})
+	return s.grantHTTPClient
+}
+
 func (s *Service) Start(ctx context.Context) error {
 	s.mu.Lock()
 	if s.running {
@@ -200,6 +254,7 @@ func (s *Service) Start(ctx context.Context) error {
 	mux.HandleFunc("/v1/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("/v1/messages", s.handleAnthropicMessages)
 	mux.HandleFunc("/v1/responses", s.handleResponses)
+	mux.HandleFunc("/v1beta/", s.handleGemini)
 	mux.HandleFunc("/v1/embeddings", s.handleEmbeddings)
 	mux.HandleFunc("/v1/images/generations", s.handleImageGenerations)
 	mux.HandleFunc("/v1/audio/speech", s.handleTTS)
@@ -211,9 +266,16 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	mux.HandleFunc("/v1/ws", s.wsBridge.HandleWS)
 
+	// A 端节点入口（P2-1）：仅接受企业 relay 的签名请求，不暴露本地 /v1/* 匿名访问。
+	mux.HandleFunc("/node/", s.NodeProxy)
+	mux.HandleFunc("/node", s.NodeProxy)
+
 	server := &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", s.listenPort),
-		Handler: mux,
+		Addr:              fmt.Sprintf("127.0.0.1:%d", s.listenPort),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	s.mu.Lock()
@@ -358,13 +420,45 @@ func (s *Service) handleResponses(w http.ResponseWriter, r *http.Request) {
 	s.handleChat(w, r, protocol.FormatOpenAIResponses)
 }
 
+// geminiPathCtxKey 携带从 /v1beta/models/{model}:{action} 解析出的模型与动作。
+type geminiPathCtxKey struct{}
+
+type geminiPathInfo struct {
+	Model  string
+	Action string
+}
+
+// handleGemini 处理 Gemini / AI Studio 原生路径（/v1beta/models/*），
+// 供被接管的 Gemini SDK 走订阅授权转发。
+// Gemini 原生请求把模型放在 URL 中（body 通常不含 model），这里先解析路径注入 payload。
+func (s *Service) handleGemini(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "only generateContent/streamGenerateContent are supported")
+		return
+	}
+	model, action := protocol.ParseGeminiPath(r.URL.Path)
+	if model == "" {
+		writeJSONError(w, http.StatusBadRequest, "model is required: /v1beta/models/{model}:generateContent")
+		return
+	}
+	r = r.WithContext(context.WithValue(r.Context(), geminiPathCtxKey{}, geminiPathInfo{Model: model, Action: action}))
+	s.handleChat(w, r, protocol.FormatGemini)
+}
+
 // handleChat 是聊天补全主链路。forcedSourceFormat 为空时按请求体自动探测协议；
 // 非空时按指定协议解析（用于 /v1/messages、/v1/responses 专用路由）。
 func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourceFormat protocol.Format) {
-	if !s.validateToken(r) {
-		writeJSONError(w, http.StatusUnauthorized, "Invalid access token")
-		return
+	authorized := s.validateToken(r)
+	if !authorized {
+		// A 端节点入口已在 NodeProxy 校验 HMAC 签名，无需本地访问令牌。
+		if v, _ := r.Context().Value(nodeAuthCtxKey{}).(bool); !v {
+			writeJSONError(w, http.StatusUnauthorized, "Invalid access token")
+			return
+		}
 	}
+
+	// 把调用方请求头注入 context，供 Grant 转发透传协议版本头（anthropic-version 等）。
+	r = r.WithContext(context.WithValue(r.Context(), grantHeaderCtxKey{}, r.Header))
 
 	// 请求级限流预检：月度成本硬上限 / RPM / TPM / 最小间隔 / 全局并发。
 	release, allowed := s.checkRateLimits(w)
@@ -377,14 +471,31 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 	// 检测，再按需对 messages 做 PII/DLP 脱敏（PII、PEM 私钥块、secret 赋值行），
 	// 防止敏感信息泄露给第三方 LLM。
 
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Failed to read request body")
+	// 请求体上限：超过上限直接 413，避免无界读取造成内存放大（CL-13）。
+	bodyBytes, ok := readLimitedBody(w, r, maxJSONRequestBody)
+	if !ok {
 		return
 	}
 
 	var rawBody map[string]any
 	_ = json.Unmarshal(bodyBytes, &rawBody)
+
+	// Gemini 原生请求把模型放在 URL 路径中，body 通常不含 model：
+	// 注入后再走统一解析链路，否则必然 400（P0-10）。
+	if info, ok := r.Context().Value(geminiPathCtxKey{}).(geminiPathInfo); ok && info.Model != "" {
+		if rawBody == nil {
+			rawBody = map[string]any{}
+		}
+		if m, _ := rawBody["model"].(string); strings.TrimSpace(m) == "" {
+			rawBody["model"] = info.Model
+		}
+		if info.Action == "streamGenerateContent" {
+			rawBody["stream"] = true
+		}
+		if remarshaled, mErr := json.Marshal(rawBody); mErr == nil {
+			bodyBytes = remarshaled
+		}
+	}
 
 	// 脱敏会原地改写 rawBody 中的 messages；命中后重新序列化请求体，确保 BYOK 与
 	// Grant 中继两条转发路径都拿到脱敏后的内容。
@@ -420,8 +531,29 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 
 	cfg := s.configSvc.GetConfig()
 
+	// 工具发出的原始模型名（在任何改写之前），用于 MITM 匹配与日志。
+	requestedModel := req.Model
+
 	if cfg.DefaultComboName != "" && req.Model == cfg.DefaultModel {
 		req.Model = cfg.DefaultComboName
+	}
+
+	// MITM 路由决策：命中「改写」动作后覆盖 req.Model（优先级高于默认 Combo 兜底，
+	// 与「MITM 规则 > DefaultModel→DefaultComboName」的优先级链一致）。
+	mitm := mitmDecision{}
+	if cfg.MITMRouting != nil {
+		mitm = resolveMITMRoute(r.Header, effectiveMITMRouting(*cfg.MITMRouting), requestedModel)
+		// 头部一致性校验（P2-13）：strict 模式拒绝，lenient 模式仅告警放行。
+		if mitm.HeaderMismatch {
+			if cfg.MITMRouting.SecurityMode == config.MITMSecurityStrict {
+				writeJSONError(w, http.StatusForbidden, "MITM header mismatch: target does not match original host")
+				return
+			}
+			logging.Warningf("mitm header mismatch: target=%s host=%s (lenient, passthrough)", mitm.Target, r.Header.Get(config.HeaderMITMHost))
+		}
+		if mitm.Matched && mitm.GrantID == "" {
+			req.Model = mitm.ResolvedTarget
+		}
 	}
 
 	if rawBody != nil {
@@ -496,6 +628,12 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 			appliedConstraints["data_policy"] = v
 		}
 	}
+	// 合并 MITM 映射注入的请求级约束（规则显式配置优先于请求体）。
+	if len(mitm.Constraints) > 0 {
+		for k, v := range mitm.Constraints {
+			appliedConstraints[k] = v
+		}
+	}
 
 	// 调试注入开关（仅本地 Playground 使用）：命中后在非流式响应附加 _combo_steps/_intent
 	debugTrace := false
@@ -523,27 +661,8 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 		plan = s.resolver.FilterCandidatesByConstraints(plan, appliedConstraints)
 	}
 
-	if len(plan) > 0 {
-		providerType := plan[0].Channel.ProviderType
-		if protocol.ShouldPassthrough(req.SourceFormat, providerType) {
-			if rawBody != nil {
-				passthroughBytes, marshalErr := json.Marshal(rawBody)
-				if marshalErr == nil {
-					req.Extra = map[string]any{"_passthrough_body": passthroughBytes}
-				}
-			}
-		}
-	}
-
-	needsReasoning := false
-	if len(plan) > 0 {
-		providerType := plan[0].Channel.ProviderType
-		needsReasoning = protocol.NeedsReasoningContent(providerType, req.Model)
-		if needsReasoning {
-			req.Messages = protocol.InjectReasoningPlaceholder(req.Messages)
-		}
-	}
-
+	// 注意：needsReasoning 不能用「首选渠道」预判（CL-14）——回退到其它厂商时
+	// 会注入错误的 reasoning 占位/合并推理。改为在确定实际使用的渠道后重算（见下方 usedStep）。
 	start := time.Now()
 	sessionKey := s.resolver.GetSessionKey(req.Messages)
 	status := "failure"
@@ -579,10 +698,18 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 			inputTokens = tokenValue(usageObj, "prompt_tokens", "input_tokens")
 			outputTokens = tokenValue(usageObj, "completion_tokens", "output_tokens")
 		}
-		// 仅失败请求保留脱敏后的请求体快照，便于排障/审计；成功请求不落盘以免膨胀。
+		// 默认不落请求体/prompt；只有显式打开调试开关才记录失败请求的脱敏快照（CL-S13）。
 		requestPayload := ""
-		if status != "success" && rawBody != nil {
+		if status != "success" && rawBody != nil && logging.PayloadLoggingEnabled() {
 			requestPayload = logging.ProtectPayloadForLog(rawBody)
+		}
+		// MITM 可观测：仅在请求带 MITM 标记时记录来源与改写链路。
+		mitmTarget, mitmRuleID, mitmRequested, mitmResolved := "", "", "", ""
+		if mitm.Intercepted {
+			mitmTarget = mitm.Target
+			mitmRuleID = mitm.RuleID
+			mitmRequested = requestedModel
+			mitmResolved = mitm.ResolvedTarget
 		}
 		_ = s.logSvc.RecordLog(logs.RequestLog{
 			RequestID:          fmt.Sprintf("req_%d", time.Now().UnixNano()),
@@ -602,6 +729,11 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 			ErrorMessage:       errMessage,
 			AppliedConstraints: constraintsJSON,
 			IntentScenario:     intentScenario,
+			MITMTarget:         mitmTarget,
+			MITMRuleID:         mitmRuleID,
+			RequestedModel:     mitmRequested,
+			ResolvedTarget:     mitmResolved,
+			MITMHeaderMismatch: mitm.HeaderMismatch,
 			RequestPayload:     requestPayload,
 		})
 		s.recordUsageAndTokens(capture, usageMeta{
@@ -627,11 +759,32 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 		logging.Warningf("prompt injection detected: severity=%s model=%s", injection.Severity, req.Model)
 	}
 
-	// P8: Grant routing — if user has an active grant, route through enterprise relay
+	// MITM 规则直选订阅资产（market_asset）：命中后直接经企业 relay 转发该 Grant。
+	if mitm.GrantID != "" {
+		relayURL := s.configSvc.GetSelectedGrantRelayURL()
+		if relayURL == "" {
+			writeJSONError(w, http.StatusBadGateway, "token market relay url is not configured")
+			return
+		}
+		resp, gerr := s.forwardViaGrant(r.Context(), relayURL, mitm.GrantID, req.SourceFormat, "", r.URL.Path, bodyBytes)
+		if gerr == nil {
+			status = "success"
+			selectedChannelID = config.MarketGrantChannelPrefix + mitm.GrantID
+			selectedChannelName = "Token Market Relay"
+			defer resp.Body.Close()
+			s.proxyResponse(w, resp)
+			return
+		}
+		logging.Warningf("mitm market_asset relay failed: %v; falling back to normal routing", gerr)
+	}
+
+	// P8: Grant routing — if user has an active grant, route through enterprise relay.
+	// 优先级统一（§4.9-4）：MITM 规则命中改写时，跳过全局 Grant 短路，改用改写后的
+	// Combo/模型路由，避免改写被全局开关绕过。
 	grantRelayURL := s.configSvc.GetSelectedGrantRelayURL()
 	grantID := s.configSvc.GetSelectedGrantID()
-	if grantRelayURL != "" && grantID != "" {
-		resp, err := s.forwardViaGrant(r.Context(), grantRelayURL, grantID, bodyBytes)
+	if grantRelayURL != "" && grantID != "" && !mitm.Matched {
+		resp, err := s.forwardViaGrant(r.Context(), grantRelayURL, grantID, req.SourceFormat, "", r.URL.Path, bodyBytes)
 		if err == nil {
 			status = "success"
 			selectedChannelID = "grant_" + grantID
@@ -643,6 +796,48 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 		// Grant routing failed, fall through to normal BYOK routing
 	}
 
+	// Combo 内嵌 Token 市场资产：将计划中的 grant:// 虚拟渠道经企业 relay 转发；
+	// 全部失败时回退到其余（自有 Key）步骤。市场优先（P3-21）可关闭：
+	// 显式 market_priority=false 时忽略市场资产，直接走自有 Key 步骤。
+	if grantSteps, rest := splitMarketGrantSteps(plan); len(grantSteps) > 0 {
+		combo, ok := s.configSvc.GetModelCombo(normalizedModel)
+		marketFirst := marketFirstForCombo(combo, ok)
+		if marketFirst {
+			for _, step := range grantSteps {
+				gid := grantIDFromChannelID(step.Channel.ChannelID)
+				if gid == "" || step.Channel.BaseURL == "" {
+					continue
+				}
+				resp, gerr := s.forwardViaGrant(r.Context(), step.Channel.BaseURL, gid, req.SourceFormat,
+					step.UpstreamModel, r.URL.Path, bodyBytes)
+				if gerr != nil {
+					continue
+				}
+				status = "success"
+				selectedChannelID = step.Channel.ChannelID
+				selectedChannelName = "Token Market Relay"
+				selectedUpstreamModel = step.UpstreamModel
+				defer resp.Body.Close()
+				s.proxyResponse(w, resp)
+				return
+			}
+		}
+		// 未启用市场优先（或全部 grant 步骤失败）→ 回退到自有 Key 步骤。
+		plan = rest
+		if len(plan) == 0 {
+			status = "failure"
+			code := "grant_relay_error"
+			message := "all token market grant routes failed"
+			if !marketFirst {
+				message = "market assets disabled for this combo and no fallback channel available"
+			}
+			errCode = &code
+			errMessage = &message
+			writeJSONError(w, http.StatusBadGateway, message)
+			return
+		}
+	}
+
 	resp, usedStep, attempts, forwardErr := s.forwardRequest(r.Context(), plan, req, sessionKey)
 	routeSteps = attempts
 	routeTrace = summarizeAttemptTrace(attempts)
@@ -651,6 +846,9 @@ func (s *Service) handleChat(w http.ResponseWriter, r *http.Request, forcedSourc
 		selectedChannelName = usedStep.Channel.DisplayName
 		selectedUpstreamModel = usedStep.UpstreamModel
 	}
+	// 按实际命中的渠道/上游模型判断是否需要 reasoning 处理，避免回退后仍按首选渠道判定（CL-14）。
+	needsReasoning := usedStep != nil &&
+		protocol.NeedsReasoningContent(usedStep.Channel.ProviderType, usedStep.UpstreamModel)
 	if forwardErr != nil {
 		// Record failure metrics for the combo
 		s.recordComboMetrics(normalizedModel, len(attempts), status == "success")
@@ -839,6 +1037,38 @@ func (r *bodyRecorder) snapshot() (int, []byte) {
 	return r.status, r.buf.Bytes()
 }
 
+// releaseOnCloseBody 在响应体关闭（流结束）时归还渠道并发槽位。流式请求的 Body
+// 会一直存活到客户端读完，槽位也随之一直占用，使 MaxConcurrent 对流式真正生效（CL-15）。
+type releaseOnCloseBody struct {
+	io.ReadCloser
+	once    sync.Once
+	release func()
+}
+
+func (b *releaseOnCloseBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(b.release)
+	return err
+}
+
+// messagesWithReasoningPlaceholder 返回注入了 reasoning_content 占位符的 messages 副本。
+// 只复制最后一条消息，避免污染原始请求：某候选渠道失败回退到其它厂商时，原始
+// messages 仍保持干净（CL-14）。
+func messagesWithReasoningPlaceholder(messages []map[string]any) []map[string]any {
+	if len(messages) == 0 {
+		return messages
+	}
+	copied := make([]map[string]any, len(messages))
+	copy(copied, messages)
+	lastIdx := len(copied) - 1
+	last := make(map[string]any, len(copied[lastIdx])+1)
+	for key, value := range copied[lastIdx] {
+		last[key] = value
+	}
+	copied[lastIdx] = last
+	return protocol.InjectReasoningPlaceholder(copied)
+}
+
 // forwardRequest tries each candidate step in order.
 // When consecutive candidates share the same StepRole, they are treated as step-internal fallbacks.
 // Request constraints (max_price, max_latency_ms, data_policy) are checked before sending.
@@ -927,6 +1157,17 @@ func (s *Service) forwardRequest(ctx context.Context, candidates []routing.PlanS
 			lastErr = fmt.Errorf("channel %s at concurrency limit", step.Channel.ChannelID)
 			continue
 		}
+		// 流式请求下槽位必须持有到响应体读完/关闭，否则 MaxConcurrent 对流式形同虚设（CL-15）。
+		var releaseOnce sync.Once
+		releaseSlot := func() {
+			releaseOnce.Do(func() { s.concurrencyLimiter.Release(step.Channel.ChannelID) })
+		}
+
+		// reasoning 占位符按本候选渠道判定：不修改原始请求，回退到其它厂商时不受影响（CL-14）。
+		messages := req.Messages
+		if protocol.NeedsReasoningContent(step.Channel.ProviderType, step.UpstreamModel) {
+			messages = messagesWithReasoningPlaceholder(req.Messages)
+		}
 
 		executor := providers.ResolveExecutor(providerCfg)
 		var upstreamResp *providers.UpstreamResponse
@@ -951,7 +1192,7 @@ func (s *Service) forwardRequest(ctx context.Context, candidates []routing.PlanS
 				attemptStart := time.Now()
 				resp, err := executor.ChatCompletions(ctx, &cfg, &providers.UpstreamRequest{
 					Model:    step.UpstreamModel,
-					Messages: req.Messages,
+					Messages: messages,
 					Stream:   req.Stream,
 					Extra:    req.Extra,
 				})
@@ -972,7 +1213,7 @@ func (s *Service) forwardRequest(ctx context.Context, candidates []routing.PlanS
 			attemptStart := time.Now()
 			upstreamResp, execErr = executor.ChatCompletions(ctx, providerCfg, &providers.UpstreamRequest{
 				Model:    step.UpstreamModel,
-				Messages: req.Messages,
+				Messages: messages,
 				Stream:   req.Stream,
 				Extra:    req.Extra,
 			})
@@ -980,20 +1221,27 @@ func (s *Service) forwardRequest(ctx context.Context, candidates []routing.PlanS
 				routing.RecordLatency(step.Channel.ChannelID, float64(time.Since(attemptStart).Milliseconds()))
 			}
 		}
-		s.concurrencyLimiter.Release(step.Channel.ChannelID)
-
 		if execErr == nil {
 			cb.RecordSuccess()
 			s.recordPenaltySuccess(step)
 			s.resolver.RecordSessionStep(sessionKey, step)
 			attempt.Status = "success"
 			attempts = append(attempts, attempt)
+			body := upstreamResp.Body
+			if body != nil {
+				// 槽位所有权转移给响应体：只有 Body.Close（或流结束关闭）才释放（CL-15）。
+				body = &releaseOnCloseBody{ReadCloser: body, release: releaseSlot}
+			} else {
+				releaseSlot()
+			}
 			return &http.Response{
 				StatusCode: upstreamResp.Status,
 				Header:     upstreamResp.Headers,
-				Body:       upstreamResp.Body,
+				Body:       body,
 			}, &step, attempts, nil
 		}
+		// 失败/回退：立即归还槽位，避免错误路径泄漏并发配额。
+		releaseSlot()
 
 		// 熔断只对服务端/网络类错误计数，避免单个坏 key 触发的 4xx 把整渠道熔断。
 		if circuitBreakerCounts(execErr) {
@@ -1003,7 +1251,8 @@ func (s *Service) forwardRequest(ctx context.Context, candidates []routing.PlanS
 		if cooldownSkipped > 0 {
 			errMsg = fmt.Sprintf("%s (%d key(s) skipped on cooldown)", errMsg, cooldownSkipped)
 		}
-		attempt.Error = errMsg
+		// 上游错误体可能回显 key，落库/回前端前统一脱敏（CL-S13）。
+		attempt.Error = s.sanitizeClientError(errMsg)
 		lastErr = execErr
 
 		err = execErr
@@ -1087,6 +1336,22 @@ func copyHeaders(dst, src http.Header) {
 	}
 }
 
+// readLimitedBody 读取带大小上限的请求体；超限返回 413 且 ok=false（CL-13）。
+func readLimitedBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+			return nil, false
+		}
+		writeJSONError(w, http.StatusBadRequest, "Failed to read request body")
+		return nil, false
+	}
+	return body, true
+}
+
 func writeJSONError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -1111,9 +1376,14 @@ func (s *Service) providerConfigForChannel(channel config.Channel) (*providers.P
 
 	// OAuth token refresh (P2-21): if channel has OAuth config, ensure valid token
 	if channel.OAuthRefreshToken != "" && channel.OAuthTokenURL != "" {
+		// 优先使用内存中最新轮换的 refresh token，避免重复使用已失效的旧令牌（CL-11）。
+		refreshToken := channel.OAuthRefreshToken
+		if cached := s.oauthRefresher.GetToken(channel.ChannelID); cached != nil && cached.RefreshToken != "" {
+			refreshToken = cached.RefreshToken
+		}
 		token, err := s.oauthRefresher.EnsureValidToken(
 			channel.ChannelID,
-			channel.OAuthRefreshToken,
+			refreshToken,
 			channel.OAuthClientID,
 			channel.OAuthClientSecret,
 			channel.OAuthTokenURL,
@@ -1338,34 +1608,84 @@ func flattenMessagesContent(messages []map[string]any) []map[string]any {
 	return messages
 }
 
-// forwardViaGrant routes a chat completions request through the enterprise relay gateway
-// using the user's active Token Market grant. The relay gateway resolves the grant's
-// escrow API key and forwards the request to the upstream provider.
-func (s *Service) forwardViaGrant(ctx context.Context, relayURL, grantID string, bodyBytes []byte) (*http.Response, error) {
-	if s.grantHTTPClient == nil {
-		s.grantHTTPClient = &http.Client{Timeout: 120 * time.Second}
+// forwardViaGrant routes a request through the enterprise relay gateway using the
+// user's active Token Market grant.
+//
+// 协议与模型处理：
+//   - 按请求来源协议选择 relay 端点（/relay/messages、/relay/responses、/relay/gemini/*、
+//     /relay/chat/completions），由 relay 透传到 A 的上游；响应保持同一协议，客户端无需转换。
+//   - upstreamModel 非空时改写请求体 model，并附 X-Upstream-Model 供 relay 记账与覆盖。
+func (s *Service) forwardViaGrant(ctx context.Context, relayURL, grantID string, sourceFormat protocol.Format,
+	upstreamModel, requestedPath string, bodyBytes []byte) (*http.Response, error) {
+	client := s.grantClient()
+
+	body := bodyBytes
+	if upstreamModel != "" {
+		var payload map[string]any
+		if err := json.Unmarshal(bodyBytes, &payload); err == nil {
+			payload["model"] = upstreamModel
+			if out, err := json.Marshal(payload); err == nil {
+				body = out
+			}
+		}
 	}
 
-	url := strings.TrimRight(relayURL, "/") + "/relay/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
+	url := strings.TrimRight(relayURL, "/") + grantRelayPath(sourceFormat, requestedPath)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+s.authSvc.GetPlatformToken())
 	req.Header.Set("X-Grant-Id", grantID)
+	if upstreamModel != "" {
+		req.Header.Set("X-Upstream-Model", upstreamModel)
+	}
+	// 透传 SDK 依赖的协议版本头。
+	for _, h := range []string{"anthropic-version", "anthropic-beta", "openai-beta", "x-goog-user-project"} {
+		if v := reqHeaderValue(ctx, h); v != "" {
+			req.Header.Set(h, v)
+		}
+	}
 
-	resp, err := s.grantHTTPClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		bodyBytes, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("grant relay returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("grant relay returned %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 	return resp, nil
 }
+
+// grantRelayPath 按来源协议选择 relay 端点。
+func grantRelayPath(sourceFormat protocol.Format, requestedPath string) string {
+	switch sourceFormat {
+	case protocol.FormatAnthropic:
+		return "/relay/messages"
+	case protocol.FormatOpenAIResponses:
+		return "/relay/responses"
+	case protocol.FormatGemini:
+		if requestedPath != "" {
+			return "/relay/gemini" + requestedPath
+		}
+		return "/relay/gemini"
+	default:
+		return "/relay/chat/completions"
+	}
+}
+
+// reqHeaderValue 从 context 中取调用方请求头（由 handleChat 注入）。
+func reqHeaderValue(ctx context.Context, key string) string {
+	if h, ok := ctx.Value(grantHeaderCtxKey{}).(http.Header); ok {
+		return h.Get(key)
+	}
+	return ""
+}
+
+type grantHeaderCtxKey struct{}
 
 // proxyResponse copies an upstream HTTP response to the client ResponseWriter.
 func (s *Service) proxyResponse(w http.ResponseWriter, resp *http.Response) {

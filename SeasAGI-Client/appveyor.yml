@@ -14,7 +14,7 @@ init:
   - cmd: cd C:\projects\seasagi-client
 
 environment:
-  SEASAGI_VERSION: 0.2.0
+  SEASAGI_VERSION: 0.2.5
   GOPATH: $(HOME)/go
   GOROOT: /usr/local/go
   # Wails platform override (auto-detected per OS below)
@@ -111,7 +111,7 @@ build_script:
   - sh: |
       echo "Building Wails app for ${WAILS_PLATFORM:-darwin/amd64}..."
       cd src-app
-      wails build -s -platform "${WAILS_PLATFORM:-darwin/amd64}" -ldflags "-s -w" -o SeasAGI
+      wails build -s -platform "${WAILS_PLATFORM:-darwin/amd64}" -ldflags "-s -w -X github.com/SeasAGI/SeasAGI-Client/internal/buildinfo.Version=$SEASAGI_VERSION" -o SeasAGI
       echo "Build complete"
       ls -la build/bin/ 2>/dev/null || echo "build/bin/ not found (check artifact path)"
       cd ..
@@ -120,7 +120,7 @@ build_script:
       if ($env:APPVEYOR_BUILD_WORKER_IMAGE -match "Visual Studio") {
         Write-Host "Building Wails app for Windows..."
         cd src-app
-        wails build -s -platform "windows/amd64" -ldflags "-s -w" -o SeasAGI
+        wails build -s -platform "windows/amd64" -ldflags "-s -w -X github.com/SeasAGI/SeasAGI-Client/internal/buildinfo.Version=$env:SEASAGI_VERSION" -o SeasAGI
         Write-Host "Build complete"
         Get-ChildItem build\bin\ -ErrorAction SilentlyContinue
         cd ..

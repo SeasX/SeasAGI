@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/keychain"
+	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
+	"github.com/SeasAGI/SeasAGI-Client/internal/urlguard"
 	"github.com/SeasAGI/SeasAGI-Client/internal/usage"
 )
 
@@ -39,8 +42,21 @@ type AppConfig struct {
 	DefaultComboName      string              `json:"default_combo_name,omitempty"`
 	RateLimit             *RateLimitConfig    `json:"rate_limit,omitempty"`
 	Security              *SecurityConfig     `json:"security,omitempty"`
+	MITMRouting           *MITMRoutingConfig  `json:"mitm_routing,omitempty"`
 	SelectedGrantID       string              `json:"selected_grant_id,omitempty"`
 	SelectedGrantRelayURL string              `json:"selected_grant_relay_url,omitempty"`
+	// MarketNode 是 A 端节点（Inbound Relay）配置；共享密钥只存系统钥匙串，不落配置文件。
+	MarketNode *MarketNodeConfig `json:"market_node,omitempty"`
+}
+
+// MarketNodeConfig 描述 A 端节点的注册信息与监听端口。
+type MarketNodeConfig struct {
+	NodeID        string   `json:"node_id,omitempty"`
+	NodeURL       string   `json:"node_url,omitempty"`
+	ListenPort    int      `json:"listen_port,omitempty"`
+	Models        []string `json:"models,omitempty"`
+	WireProtocols []string `json:"wire_protocols,omitempty"`
+	Enabled       bool     `json:"enabled"`
 }
 
 // RateLimitConfig 全局速率限制配置，借鉴 OmniRoute per-connection rateLimitOverrides。
@@ -75,6 +91,77 @@ type SecurityConfig struct {
 	PIIMaskingEnabled     bool   `json:"pii_masking_enabled"`     // 对请求 messages 做 PII/DLP 脱敏（默认关闭）
 	PromptInjectionAction string `json:"prompt_injection_action"` // off | log | block（默认 log）
 	ErrorSanitizeEnabled  bool   `json:"error_sanitize_enabled"`  // 对外错误信息脱敏（默认开启）
+}
+
+// MITM 路由动作。
+const (
+	MITMActionPassThrough = "passthrough"  // 不改写（默认）
+	MITMActionCombo       = "combo"        // 改写为 Combo 名
+	MITMActionModel       = "model"        // 改写为逻辑模型名
+	MITMActionMarketAsset = "market_asset" // 直选 Token 市场订阅资产（grant_id）
+)
+
+// MITM 规则来源：本地规则（可编辑、置顶）与企业下发规则（只读、置底）。
+const (
+	MITMRuleSourceLocal      = "local"
+	MITMRuleSourceEnterprise = "enterprise"
+)
+
+// MITM 头部一致性校验模式：
+//   - lenient（默认）：仅记审计日志，不阻断请求；
+//   - strict：`Target` 与 `Original-Host` 不一致时拒绝并返回 4xx。
+const (
+	MITMSecurityLenient = "lenient"
+	MITMSecurityStrict  = "strict"
+)
+
+// MarketGrantChannelPrefix 是 Combo 步骤中引用 Token 市场资产（Grant）的虚拟渠道前缀，
+// 形如 `grant://{grant_id}`。由 resolver 识别为虚拟渠道并经企业 relay 转发。
+const MarketGrantChannelPrefix = "grant://"
+
+// MITM 来源标记头：由 MITM proxy 注入，gateway 侧据此做「来源 → 目标」路由映射。
+const (
+	HeaderMITMSource   = "X-SeasAGI-MITM"
+	HeaderMITMTarget   = "X-SeasAGI-MITM-Target"
+	HeaderMITMHost     = "X-SeasAGI-MITM-Original-Host"
+	HeaderMITMEndpoint = "X-SeasAGI-MITM-Endpoint"
+)
+
+// IsMarketGrantChannelID 判断渠道 ID 是否为 Token 市场 Grant 引用。
+func IsMarketGrantChannelID(channelID string) bool {
+	return strings.HasPrefix(channelID, MarketGrantChannelPrefix)
+}
+
+// MITMRoutingConfig MITM 接管请求的路由映射策略。默认（nil / Enabled=false）行为与未启用
+// 时完全一致。
+type MITMRoutingConfig struct {
+	Enabled bool `json:"enabled"`
+	// DefaultAction 未命中任何规则时的动作：passthrough（默认）| combo | model。
+	DefaultAction string `json:"default_action"`
+	DefaultCombo  string `json:"default_combo_name,omitempty"`
+	DefaultModel  string `json:"default_model,omitempty"`
+	// SecurityMode 头部一致性校验模式：lenient（默认，仅审计）| strict（拒绝 4xx）。
+	SecurityMode string            `json:"security_mode,omitempty"`
+	Rules        []MITMRoutingRule `json:"rules,omitempty"`
+}
+
+// MITMRoutingRule 单条「来源 → 目标」映射规则。
+type MITMRoutingRule struct {
+	ID           string `json:"id"`
+	Enabled      bool   `json:"enabled"`
+	Priority     int    `json:"priority"`                // 小者优先；同级按配置顺序
+	TargetID     string `json:"target_id,omitempty"`     // 来源工具；空/`*` = 任意
+	EndpointPath string `json:"endpoint_path,omitempty"` // 路径前缀；空 = 任意
+	RequestModel string `json:"request_model,omitempty"` // 请求模型；空 = 任意；支持 `*` 后缀通配
+	Action       string `json:"action"`                  // combo | model | market_asset | passthrough
+	ComboName    string `json:"combo_name,omitempty"`    // action=combo
+	Model        string `json:"model,omitempty"`         // action=model（逻辑模型名）
+	// GrantID 用于 action=market_asset：直选某个 Token 市场订阅资产。
+	GrantID string `json:"grant_id,omitempty"`
+	// Constraints 随映射注入的请求级约束（复用 FilterCandidatesByConstraints）。
+	Constraints map[string]any `json:"constraints,omitempty"`
+	// Source 规则来源：local（默认，可编辑、置顶）| enterprise（企业下发、只读、置底）。
+	Source string `json:"source,omitempty"`
 }
 
 type OptimizationConfig struct {
@@ -126,6 +213,9 @@ type ModelCombo struct {
 	Status        string           `json:"status,omitempty"`
 	Source        string           `json:"source,omitempty"`
 	Version       int              `json:"version,omitempty"`
+	// MarketPriority 控制 grant:// 市场资产步骤的优先级（P3-21）：
+	// nil/true = 市场优先（先试市场资产，枯竭回退自有 Key）；显式 false = 忽略市场资产，仅用自有 Key。
+	MarketPriority *bool `json:"market_priority,omitempty"`
 }
 
 type RetryConfig struct {
@@ -159,11 +249,137 @@ type Channel struct {
 	OAuthTokenURL          string            `json:"oauth_token_url,omitempty"`
 }
 
+// ChannelPublic 是渠道的对外白名单 DTO：只包含展示/路由所需的非敏感字段，
+// 任何凭证（单/多 API Key、OAuth refresh token、client secret）都不在其中。
+// 列表与配置导出统一经它构造，避免 sanitizeChannel 漏字段导致凭证外泄（CL-S1）。
+type ChannelPublic struct {
+	ChannelID              string            `json:"channel_id"`
+	ChannelType            string            `json:"channel_type"`
+	ProviderType           string            `json:"provider_type"`
+	DisplayName            string            `json:"display_name"`
+	BaseURL                string            `json:"base_url"`
+	Enabled                bool              `json:"enabled"`
+	HealthStatus           string            `json:"health_status"`
+	Source                 string            `json:"source,omitempty"`
+	ProviderSpecificConfig map[string]string `json:"provider_specific_config"`
+	SupportedModalities    []string          `json:"supported_modalities,omitempty"`
+	Models                 []string          `json:"models,omitempty"`
+	RetryConfig            *RetryConfig      `json:"retry_config,omitempty"`
+	Weight                 int               `json:"weight,omitempty"`
+	Priority               int               `json:"priority,omitempty"`
+	MaxConcurrent          int               `json:"max_concurrent,omitempty"`
+	// OAuth 非敏感元数据：客户端 id 与 token 端点可用于展示，凭证本身不外传。
+	OAuthClientID string `json:"oauth_client_id,omitempty"`
+	OAuthTokenURL string `json:"oauth_token_url,omitempty"`
+	// AuthType 描述该渠道使用的鉴权方式：api_key / oauth / none。
+	AuthType string `json:"auth_type,omitempty"`
+}
+
+// Public 从完整渠道提取对外展示字段（凭证一律丢弃）。
+func (ch Channel) Public() ChannelPublic {
+	authType := "none"
+	switch {
+	case ch.OAuthRefreshToken != "" || ch.OAuthTokenURL != "":
+		authType = "oauth"
+	case ch.APIKey != "" || len(ch.APIKeys) > 0:
+		authType = "api_key"
+	}
+	return ChannelPublic{
+		ChannelID:              ch.ChannelID,
+		ChannelType:            ch.ChannelType,
+		ProviderType:           ch.ProviderType,
+		DisplayName:            ch.DisplayName,
+		BaseURL:                ch.BaseURL,
+		Enabled:                ch.Enabled,
+		HealthStatus:           ch.HealthStatus,
+		Source:                 ch.Source,
+		ProviderSpecificConfig: ch.ProviderSpecificConfig,
+		SupportedModalities:    ch.SupportedModalities,
+		Models:                 ch.Models,
+		RetryConfig:            ch.RetryConfig,
+		Weight:                 ch.Weight,
+		Priority:               ch.Priority,
+		MaxConcurrent:          ch.MaxConcurrent,
+		OAuthClientID:          ch.OAuthClientID,
+		OAuthTokenURL:          ch.OAuthTokenURL,
+		AuthType:               authType,
+	}
+}
+
+// toChannel 把白名单 DTO 还原为 Channel（凭证字段为零值），供保持 []Channel API 兼容的列表接口使用。
+func (p ChannelPublic) toChannel() Channel {
+	return Channel{
+		ChannelID:              p.ChannelID,
+		ChannelType:            p.ChannelType,
+		ProviderType:           p.ProviderType,
+		DisplayName:            p.DisplayName,
+		BaseURL:                p.BaseURL,
+		Enabled:                p.Enabled,
+		HealthStatus:           p.HealthStatus,
+		Source:                 p.Source,
+		ProviderSpecificConfig: p.ProviderSpecificConfig,
+		SupportedModalities:    p.SupportedModalities,
+		Models:                 p.Models,
+		RetryConfig:            p.RetryConfig,
+		Weight:                 p.Weight,
+		Priority:               p.Priority,
+		MaxConcurrent:          p.MaxConcurrent,
+		OAuthClientID:          p.OAuthClientID,
+		OAuthTokenURL:          p.OAuthTokenURL,
+	}
+}
+
+// credentialStore 抽象系统安全存储，便于在测试中注入写入失败，验证 fail-closed（CL-S3）。
+type credentialStore interface {
+	SaveChannelKey(channelID, apiKey string) error
+	GetChannelKey(channelID string) (string, error)
+	SaveChannelKeys(channelID string, apiKeys []string) error
+	GetChannelKeys(channelID string) ([]string, error)
+	SaveSecret(name, value string) error
+	GetSecret(name string) (string, error)
+}
+
+// keychainCredentialStore 生产实现：委托给 macOS 钥匙串 / 环境变量。
+type keychainCredentialStore struct{}
+
+func (keychainCredentialStore) SaveChannelKey(channelID, apiKey string) error {
+	return keychain.SaveChannelKey(channelID, apiKey)
+}
+func (keychainCredentialStore) GetChannelKey(channelID string) (string, error) {
+	return keychain.GetChannelKey(channelID)
+}
+func (keychainCredentialStore) SaveChannelKeys(channelID string, apiKeys []string) error {
+	return keychain.SaveChannelKeys(channelID, apiKeys)
+}
+func (keychainCredentialStore) GetChannelKeys(channelID string) ([]string, error) {
+	return keychain.GetChannelKeys(channelID)
+}
+func (keychainCredentialStore) SaveSecret(name, value string) error {
+	return keychain.SaveSecret(name, value)
+}
+func (keychainCredentialStore) GetSecret(name string) (string, error) {
+	return keychain.GetSecret(name)
+}
+
+// pendingChannelSecrets 是 keychain 写入失败时保留的待重试凭证副本。
+type pendingChannelSecrets struct {
+	apiKey            string
+	apiKeys           []string
+	oauthRefreshToken string
+	oauthClientSecret string
+}
+
 type Service struct {
 	mu       sync.RWMutex
 	config   AppConfig
 	channels []Channel
 	path     string
+	// secrets 凭证安全存储（默认 keychain）；测试可注入失败实现。
+	secrets credentialStore
+	// pendingSecrets 记录 keychain 写入失败、等待下次保存重试的凭证（fail-closed，不清空内存）。
+	pendingSecrets map[string]pendingChannelSecrets
+	// savedSecretSig 记录各渠道上次成功写入 keychain 的凭证签名，避免每次保存重复写钥匙串。
+	savedSecretSig map[string]string
 }
 
 type persistedState struct {
@@ -178,9 +394,12 @@ func NewService(cfg AppConfig) *Service {
 // NewServiceWithPath 与 NewService 相同，但配置持久化到指定路径（测试隔离用）。
 func NewServiceWithPath(cfg AppConfig, path string) *Service {
 	svc := &Service{
-		config:   cfg,
-		channels: []Channel{},
-		path:     path,
+		config:         cfg,
+		channels:       []Channel{},
+		path:           path,
+		secrets:        keychainCredentialStore{},
+		pendingSecrets: make(map[string]pendingChannelSecrets),
+		savedSecretSig: make(map[string]string),
 	}
 	_ = svc.load()
 	svc.ensureOptimizationConfig()
@@ -462,6 +681,102 @@ func (s *Service) SetSecurityConfig(cfg SecurityConfig) error {
 	return s.saveLocked()
 }
 
+// GetMITMRoutingConfig 返回 MITM 路由映射配置。未配置时返回 passthrough 默认值。
+func (s *Service) GetMITMRoutingConfig() MITMRoutingConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.config.MITMRouting == nil {
+		return MITMRoutingConfig{DefaultAction: MITMActionPassThrough}
+	}
+	return *s.config.MITMRouting
+}
+
+// SetMITMRoutingConfig 校验并持久化 MITM 路由映射配置。
+func (s *Service) SetMITMRoutingConfig(cfg MITMRoutingConfig) error {
+	normalized, err := normalizeMITMRoutingConfig(cfg)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.MITMRouting = &normalized
+	return s.saveLocked()
+}
+
+func isValidMITMAction(action string) bool {
+	switch action {
+	case MITMActionPassThrough, MITMActionCombo, MITMActionModel, MITMActionMarketAsset:
+		return true
+	}
+	return false
+}
+
+func normalizeMITMRoutingConfig(cfg MITMRoutingConfig) (MITMRoutingConfig, error) {
+	cfg.DefaultAction = strings.ToLower(strings.TrimSpace(cfg.DefaultAction))
+	if cfg.DefaultAction == "" {
+		cfg.DefaultAction = MITMActionPassThrough
+	}
+	if !isValidMITMAction(cfg.DefaultAction) {
+		return cfg, fmt.Errorf("invalid mitm default_action: %s", cfg.DefaultAction)
+	}
+	cfg.DefaultCombo = strings.TrimSpace(cfg.DefaultCombo)
+	cfg.DefaultModel = strings.TrimSpace(cfg.DefaultModel)
+	if cfg.DefaultAction == MITMActionCombo && cfg.DefaultCombo == "" {
+		return cfg, errors.New("mitm default_action=combo requires default_combo_name")
+	}
+	if cfg.DefaultAction == MITMActionModel && cfg.DefaultModel == "" {
+		return cfg, errors.New("mitm default_action=model requires default_model")
+	}
+
+	cfg.SecurityMode = strings.ToLower(strings.TrimSpace(cfg.SecurityMode))
+	if cfg.SecurityMode == "" {
+		cfg.SecurityMode = MITMSecurityLenient
+	}
+	if cfg.SecurityMode != MITMSecurityLenient && cfg.SecurityMode != MITMSecurityStrict {
+		return cfg, fmt.Errorf("invalid mitm security_mode: %s", cfg.SecurityMode)
+	}
+
+	seen := make(map[string]struct{}, len(cfg.Rules))
+	rules := make([]MITMRoutingRule, 0, len(cfg.Rules))
+	for _, rule := range cfg.Rules {
+		rule.ID = strings.TrimSpace(rule.ID)
+		if rule.ID == "" {
+			rule.ID = generateComboID()
+		}
+		if _, dup := seen[rule.ID]; dup {
+			continue
+		}
+		seen[rule.ID] = struct{}{}
+		rule.TargetID = strings.TrimSpace(rule.TargetID)
+		rule.EndpointPath = strings.TrimSpace(rule.EndpointPath)
+		rule.RequestModel = strings.TrimSpace(rule.RequestModel)
+		rule.ComboName = strings.TrimSpace(rule.ComboName)
+		rule.Model = strings.TrimSpace(rule.Model)
+		rule.GrantID = strings.TrimSpace(rule.GrantID)
+		// 持久化的始终为本地规则（企业规则另存于内存，不落盘）。
+		rule.Source = MITMRuleSourceLocal
+		rule.Action = strings.ToLower(strings.TrimSpace(rule.Action))
+		if rule.Action == "" {
+			rule.Action = MITMActionPassThrough
+		}
+		if !isValidMITMAction(rule.Action) {
+			return cfg, fmt.Errorf("invalid mitm rule action: %s", rule.Action)
+		}
+		if rule.Action == MITMActionCombo && rule.ComboName == "" {
+			return cfg, fmt.Errorf("mitm rule %s action=combo requires combo_name", rule.ID)
+		}
+		if rule.Action == MITMActionModel && rule.Model == "" {
+			return cfg, fmt.Errorf("mitm rule %s action=model requires model", rule.ID)
+		}
+		if rule.Action == MITMActionMarketAsset && rule.GrantID == "" {
+			return cfg, fmt.Errorf("mitm rule %s action=market_asset requires grant_id", rule.ID)
+		}
+		rules = append(rules, rule)
+	}
+	cfg.Rules = rules
+	return cfg, nil
+}
+
 // SetRTKConfig 设置并持久化 RTK Token 压缩配置。
 func (s *Service) SetRTKConfig(enabled bool, maxOutputChars int) error {
 	s.mu.Lock()
@@ -514,11 +829,41 @@ func (s *Service) GetPlatformAPIBaseURL() string {
 	return s.config.PlatformAPIBaseURL
 }
 
-func (s *Service) SetPlatformAPIBaseURL(url string) error {
+func (s *Service) SetPlatformAPIBaseURL(rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	// 平台 API 地址会携带访问令牌，仅允许 https（本机回环可用 http）且不得指向链路本地地址。
+	if err := urlguard.ValidateSecureURL(rawURL, true); err != nil {
+		return fmt.Errorf("invalid platform api base url: %w", err)
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid platform api base url: %w", err)
+	}
+	if err := urlguard.RejectLinkLocalHost(u.Host); err != nil {
+		return fmt.Errorf("invalid platform api base url: %w", err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.config.PlatformAPIBaseURL = url
+	s.config.PlatformAPIBaseURL = rawURL
 	return s.saveLocked()
+}
+
+// validateChannelBaseURL 校验渠道 BaseURL；空值表示沿用渠道默认端点，直接跳过。
+func validateChannelBaseURL(rawURL string) error {
+	if strings.TrimSpace(rawURL) == "" {
+		return nil
+	}
+	if err := urlguard.ValidateSecureURL(rawURL, true); err != nil {
+		return fmt.Errorf("invalid base_url: %w", err)
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid base_url: %w", err)
+	}
+	if err := urlguard.RejectLinkLocalHost(u.Host); err != nil {
+		return fmt.Errorf("invalid base_url: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) GetSelectedGrantID() string {
@@ -541,15 +886,87 @@ func (s *Service) SetSelectedGrant(grantID, relayURL string) error {
 	return s.saveLocked()
 }
 
-func (s *Service) ListChannels() ([]Channel, error) {
+// GetMarketNodeConfig 返回 A 端节点配置（副本）；未配置时返回零值。
+func (s *Service) GetMarketNodeConfig() MarketNodeConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.config.MarketNode == nil {
+		return MarketNodeConfig{}
+	}
+	return *s.config.MarketNode
+}
+
+// SetMarketNodeConfig 持久化 A 端节点配置。共享密钥不在此处，仅存于系统钥匙串。
+func (s *Service) SetMarketNodeConfig(cfg MarketNodeConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copied := cfg
+	s.config.MarketNode = &copied
+	return s.saveLocked()
+}
+
+// ListChannelsPublic 返回白名单 DTO 列表，供前端展示与配置导出使用（不含任何凭证）。
+func (s *Service) ListChannelsPublic() ([]ChannelPublic, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make([]Channel, 0, len(s.channels))
+	result := make([]ChannelPublic, 0, len(s.channels))
 	for _, ch := range s.channels {
-		result = append(result, sanitizeChannel(ch))
+		result = append(result, ch.Public())
 	}
 	return result, nil
+}
+
+// ListChannels 保持原有 []Channel API 兼容；所有凭证字段均被白名单剔除（CL-S1）。
+func (s *Service) ListChannels() ([]Channel, error) {
+	public, err := s.ListChannelsPublic()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Channel, 0, len(public))
+	for _, pub := range public {
+		result = append(result, pub.toChannel())
+	}
+	return result, nil
+}
+
+// ListChannelsWithCredentials 返回带真实凭证的渠道副本，仅供进程内受控用途
+// （健康检查、资产导出）使用。凭证优先取内存副本，缺失时从 keychain 读取，
+// 绝不直接暴露给前端。
+func (s *Service) ListChannelsWithCredentials() ([]Channel, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.listChannelsWithCredentialsLocked(), nil
+}
+
+func (s *Service) listChannelsWithCredentialsLocked() []Channel {
+	store := s.credentialStore()
+	result := make([]Channel, 0, len(s.channels))
+	for _, ch := range s.channels {
+		resolved := ch
+		if resolved.APIKey == "" {
+			if v, err := store.GetChannelKey(ch.ChannelID); err == nil {
+				resolved.APIKey = v
+			}
+		}
+		if len(resolved.APIKeys) == 0 {
+			if keys, err := store.GetChannelKeys(ch.ChannelID); err == nil && len(keys) > 0 {
+				resolved.APIKeys = keys
+			}
+		}
+		if resolved.OAuthRefreshToken == "" {
+			if v, err := store.GetSecret(oauthRefreshKeyName(ch.ChannelID)); err == nil {
+				resolved.OAuthRefreshToken = v
+			}
+		}
+		if resolved.OAuthClientSecret == "" {
+			if v, err := store.GetSecret(oauthClientSecretKeyName(ch.ChannelID)); err == nil {
+				resolved.OAuthClientSecret = v
+			}
+		}
+		result = append(result, resolved)
+	}
+	return result
 }
 
 // NormalizeChannelWeights validates and normalizes Weight and MaxConcurrent for
@@ -593,6 +1010,10 @@ func (s *Service) ValidateChannelWeights() error {
 }
 
 func (s *Service) SaveCustomChannel(ch Channel) (string, error) {
+	// 渠道地址会被用于携带 API Key 的出站请求，先校验再落盘，避免 SSRF/明文传输。
+	if err := validateChannelBaseURL(ch.BaseURL); err != nil {
+		return "", err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -652,6 +1073,11 @@ func (s *Service) DeleteCustomChannel(channelID string) error {
 	if s.config.DefaultChannelID == channelID {
 		s.config.DefaultChannelID = ""
 	}
+	// 同步清理系统安全存储中的渠道凭证，避免残留可用的孤立密钥。
+	_ = keychain.DeleteChannelKey(channelID)
+	_ = keychain.DeleteChannelKeys(channelID)
+	_ = keychain.DeleteSecret(oauthRefreshKeyName(channelID))
+	_ = keychain.DeleteSecret(oauthClientSecretKeyName(channelID))
 	return s.saveLocked()
 }
 
@@ -1101,6 +1527,13 @@ func (s *Service) UpsertPlatformChannels(channels []Channel) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// 平台下发的渠道同样会携带凭证出站，逐条校验 BaseURL（空值跳过）。
+	for _, ch := range channels {
+		if err := validateChannelBaseURL(ch.BaseURL); err != nil {
+			return fmt.Errorf("platform channel %s: %w", ch.ChannelID, err)
+		}
+	}
+
 	customChannels := make([]Channel, 0, len(s.channels))
 	for _, ch := range s.channels {
 		if ch.ChannelType != "platform" {
@@ -1297,34 +1730,164 @@ func (s *Service) load() error {
 	return nil
 }
 
-// restoreChannelSecretsLocked 恢复渠道多 key 到内存。config.json 不再持久化明文 key，
-// 因此多 key 统一存放在 keychain；同时兼容旧配置里残留的明文 key（迁移进 keychain）。
+// restoreChannelSecretsLocked 恢复渠道密钥到内存。config.json 不再持久化明文凭证，
+// 单/多 API Key 与 OAuth 令牌统一存放在 keychain；同时兼容旧配置里残留的明文（迁移进 keychain）。
+// 迁移写入失败只告警、不清空内存凭证，后续保存会重试。
 // 调用方需持有 s.mu。
 func (s *Service) restoreChannelSecretsLocked() {
+	store := s.credentialStore()
+	if s.savedSecretSig == nil {
+		s.savedSecretSig = make(map[string]string)
+	}
 	for i := range s.channels {
-		if len(s.channels[i].APIKeys) > 0 {
-			// 旧配置里的明文多 key：迁移到 keychain，后续保存不再落盘。
-			_ = keychain.SaveChannelKeys(s.channels[i].ChannelID, s.channels[i].APIKeys)
-			continue
+		ch := &s.channels[i]
+		migrationFailed := false
+		if len(ch.APIKeys) > 0 {
+			if err := store.SaveChannelKeys(ch.ChannelID, ch.APIKeys); err != nil {
+				migrationFailed = true
+				logging.Warningf("config: migrate channel keys for %s failed: %v", ch.ChannelID, err)
+			}
+		} else if keys, err := store.GetChannelKeys(ch.ChannelID); err == nil && len(keys) > 0 {
+			ch.APIKeys = keys
 		}
-		keys, err := keychain.GetChannelKeys(s.channels[i].ChannelID)
-		if err != nil || len(keys) == 0 {
-			continue
+
+		// 仅配置了单 key 的旧渠道同样要迁移进安全存储：否则签名已含该 key，
+		// 后续 saveLocked 会因签名一致而跳过写入，明文被清空后钥匙串却没有值。
+		if ch.APIKey != "" {
+			if err := store.SaveChannelKey(ch.ChannelID, ch.APIKey); err != nil {
+				migrationFailed = true
+				logging.Warningf("config: migrate channel key for %s failed: %v", ch.ChannelID, err)
+			}
 		}
-		s.channels[i].APIKeys = keys
+
+		// OAuth 刷新令牌与客户端密钥同样是敏感凭证，迁移到系统安全存储。
+		if token := strings.TrimSpace(ch.OAuthRefreshToken); token != "" {
+			if err := store.SaveSecret(oauthRefreshKeyName(ch.ChannelID), token); err != nil {
+				migrationFailed = true
+				logging.Warningf("config: migrate oauth refresh token for %s failed: %v", ch.ChannelID, err)
+			}
+		} else if token, err := store.GetSecret(oauthRefreshKeyName(ch.ChannelID)); err == nil {
+			ch.OAuthRefreshToken = token
+		}
+		if secret := strings.TrimSpace(ch.OAuthClientSecret); secret != "" {
+			if err := store.SaveSecret(oauthClientSecretKeyName(ch.ChannelID), secret); err != nil {
+				migrationFailed = true
+				logging.Warningf("config: migrate oauth client secret for %s failed: %v", ch.ChannelID, err)
+			}
+		} else if secret, err := store.GetSecret(oauthClientSecretKeyName(ch.ChannelID)); err == nil {
+			ch.OAuthClientSecret = secret
+		}
+		// 记录当前已落库指纹，避免后续 saveLocked 重复写钥匙串；迁移失败时不记录，
+		// 让下一次 saveLocked 继续重试。
+		if !migrationFailed {
+			s.savedSecretSig[ch.ChannelID] = secretSignature(*ch)
+		}
 	}
 }
 
+func oauthRefreshKeyName(channelID string) string      { return "oauth_refresh_" + channelID }
+func oauthClientSecretKeyName(channelID string) string { return "oauth_client_secret_" + channelID }
+
+// secretSignature 是渠道凭证的内容指纹，用于跳过未变更的 keychain 写入。
+func secretSignature(ch Channel) string {
+	return strings.Join(ch.APIKeys, "\x00") + "\x01" + ch.APIKey + "\x01" +
+		ch.OAuthRefreshToken + "\x01" + ch.OAuthClientSecret
+}
+
+// persistChannelSecretsLocked 把渠道凭证写入安全存储。任何写入失败都返回错误，
+// 由调用方 fail-closed 处理（不落盘、不清空内存、保留待重试副本）。
+func (s *Service) persistChannelSecretsLocked(store credentialStore, ch Channel) error {
+	if len(ch.APIKeys) > 0 {
+		if err := store.SaveChannelKeys(ch.ChannelID, ch.APIKeys); err != nil {
+			return err
+		}
+		// 首个 key 同时写入单 key 槽位，兼容只读单 key 的调用路径。
+		if ch.APIKey == "" && ch.APIKeys[0] != "" {
+			if err := store.SaveChannelKey(ch.ChannelID, ch.APIKeys[0]); err != nil {
+				return err
+			}
+		}
+	}
+	if ch.APIKey != "" {
+		if err := store.SaveChannelKey(ch.ChannelID, ch.APIKey); err != nil {
+			return err
+		}
+	}
+	if ch.OAuthRefreshToken != "" {
+		if err := store.SaveSecret(oauthRefreshKeyName(ch.ChannelID), ch.OAuthRefreshToken); err != nil {
+			return err
+		}
+	}
+	if ch.OAuthClientSecret != "" {
+		if err := store.SaveSecret(oauthClientSecretKeyName(ch.ChannelID), ch.OAuthClientSecret); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rememberPendingSecretsLocked 保留写入失败的凭证副本，等待下次保存重试。
+func (s *Service) rememberPendingSecretsLocked(ch Channel) {
+	if s.pendingSecrets == nil {
+		s.pendingSecrets = make(map[string]pendingChannelSecrets)
+	}
+	s.pendingSecrets[ch.ChannelID] = pendingChannelSecrets{
+		apiKey:            ch.APIKey,
+		apiKeys:           append([]string(nil), ch.APIKeys...),
+		oauthRefreshToken: ch.OAuthRefreshToken,
+		oauthClientSecret: ch.OAuthClientSecret,
+	}
+}
+
+// flushPendingSecretsLocked 重试此前失败的 keychain 写入；仍失败则返回错误。
+func (s *Service) flushPendingSecretsLocked(store credentialStore) error {
+	for channelID, pending := range s.pendingSecrets {
+		ch := Channel{
+			ChannelID:         channelID,
+			APIKey:            pending.apiKey,
+			APIKeys:           pending.apiKeys,
+			OAuthRefreshToken: pending.oauthRefreshToken,
+			OAuthClientSecret: pending.oauthClientSecret,
+		}
+		if err := s.persistChannelSecretsLocked(store, ch); err != nil {
+			return err
+		}
+		delete(s.pendingSecrets, channelID)
+	}
+	return nil
+}
+
 func (s *Service) saveLocked() error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	// 配置目录/文件包含渠道与令牌元数据，仅限当前用户访问。
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
 
+	store := s.credentialStore()
+	if s.savedSecretSig == nil {
+		s.savedSecretSig = make(map[string]string)
+	}
+	// 先重试此前失败的凭证写入，避免带着未落库的凭证继续走下去。
+	if err := s.flushPendingSecretsLocked(store); err != nil {
+		return fmt.Errorf("retry pending keychain writes: %w", err)
+	}
+
 	channels := make([]Channel, 0, len(s.channels))
-	for _, ch := range s.channels {
-		// 明文凭证不落盘：单 key 与多 key 都在 keychain 中保存。
+	for i := range s.channels {
+		ch := s.channels[i]
+		// 明文凭证不落盘：单 key、多 key 与 OAuth 令牌都在 keychain 中保存。
+		// 写入失败必须 fail-closed：返回错误、保留待重试副本，且不把凭证从内存里清掉。
+		if secretSignature(ch) != s.savedSecretSig[ch.ChannelID] {
+			if err := s.persistChannelSecretsLocked(store, ch); err != nil {
+				s.rememberPendingSecretsLocked(ch)
+				return fmt.Errorf("persist channel %s credentials to keychain: %w", ch.ChannelID, err)
+			}
+			s.savedSecretSig[ch.ChannelID] = secretSignature(ch)
+		}
 		ch.APIKey = ""
 		ch.APIKeys = nil
+		ch.OAuthRefreshToken = ""
+		ch.OAuthClientSecret = ""
 		channels = append(channels, ch)
 	}
 
@@ -1337,7 +1900,39 @@ func (s *Service) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o644)
+	if err := writeFileAtomic(s.path, data, 0o600); err != nil {
+		return err
+	}
+	// 既有配置文件可能是旧版本以 0644 写入的，显式收紧权限。
+	return os.Chmod(s.path, 0o600)
+}
+
+// writeFileAtomic 在同目录写临时文件后 rename，避免崩溃时留下半截配置；
+// 临时文件与最终文件权限均固定为 perm。
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 func (s *Service) UpdateSetting(key string, value interface{}) error {
@@ -1388,11 +1983,23 @@ func (s *Service) GetSetting(key string) string {
 	return ""
 }
 
+// credentialStore 返回当前凭证存储实现；零值 Service（测试字面量）回退 keychain。
+func (s *Service) credentialStore() credentialStore {
+	if s.secrets != nil {
+		return s.secrets
+	}
+	return keychainCredentialStore{}
+}
+
+// Sanitize 返回剔除全部凭证字段的渠道副本（单/多 API Key、OAuth refresh token、
+// client secret 等敏感字段全部归零）。任何对外输出都必须经它构造（CL-S1）。
+func (ch Channel) Sanitize() Channel {
+	return ch.Public().toChannel()
+}
+
 func sanitizeChannel(ch Channel) Channel {
-	// 凭证一律不外传：单 key 与多 key 都存放在 keychain，列表中不回传明文。
-	ch.APIKey = ""
-	ch.APIKeys = nil
-	return ch
+	// 凭证一律不外传：通过白名单 DTO 重建敏感字段全部归零（CL-S1）。
+	return ch.Sanitize()
 }
 
 func defaultConfigPath() string {

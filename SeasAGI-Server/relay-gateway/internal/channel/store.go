@@ -38,6 +38,53 @@ type HealthStatus struct {
 	ConsecFail int    `json:"consec_fail"`
 }
 
+// PublicChannel 是对外投影：移除 APIKey 等上游凭证，供运维/列表接口使用。
+type PublicChannel struct {
+	ChannelID    string            `json:"channel_id"`
+	ProviderType string            `json:"provider_type"`
+	DisplayName  string            `json:"display_name"`
+	BaseURL      string            `json:"base_url"`
+	Enabled      bool              `json:"enabled"`
+	Models       []string          `json:"models,omitempty"`
+	Weight       int               `json:"weight,omitempty"`
+	Priority     int               `json:"priority,omitempty"`
+	GrayPercent  int               `json:"gray_percent,omitempty"`
+	ReadOnly     bool              `json:"read_only,omitempty"`
+	Extra        map[string]string `json:"extra,omitempty"`
+	Health       HealthStatus      `json:"health"`
+	LastCheck    time.Time         `json:"last_check"`
+	HasAPIKey    bool              `json:"has_api_key"`
+}
+
+// Public 返回不含凭证的渠道视图。
+func (ch Channel) Public() PublicChannel {
+	return PublicChannel{
+		ChannelID:    ch.ChannelID,
+		ProviderType: ch.ProviderType,
+		DisplayName:  ch.DisplayName,
+		BaseURL:      ch.BaseURL,
+		Enabled:      ch.Enabled,
+		Models:       ch.Models,
+		Weight:       ch.Weight,
+		Priority:     ch.Priority,
+		GrayPercent:  ch.GrayPercent,
+		ReadOnly:     ch.ReadOnly,
+		Extra:        ch.Extra,
+		Health:       ch.Health,
+		LastCheck:    ch.LastCheck,
+		HasAPIKey:    ch.APIKey != "",
+	}
+}
+
+// PublicList 批量投影为对外视图。
+func PublicList(in []Channel) []PublicChannel {
+	out := make([]PublicChannel, 0, len(in))
+	for _, ch := range in {
+		out = append(out, ch.Public())
+	}
+	return out
+}
+
 type ModelMapping struct {
 	LogicalModel  string `json:"logical_model"`
 	ChannelID     string `json:"channel_id"`
@@ -51,24 +98,41 @@ type Store struct {
 	filePath string
 	dbPath   string
 	db       *sql.DB
+
+	// saveCh 只做「有变更」标记；persistLoop 是唯一写库协程，
+	// 合并高频健康更新后批量落库，避免每请求全表重写与写冲突。
+	saveCh          chan struct{}
+	stopCh          chan struct{}
+	doneCh          chan struct{}
+	closeOnce       sync.Once
+	persistInterval time.Duration
 }
+
+// defaultPersistInterval 是内存状态合并落库的间隔。
+const defaultPersistInterval = 500 * time.Millisecond
 
 var globalStore *Store
 
 func NewStore() *Store {
 	homeDir, _ := os.UserHomeDir()
-	baseDir := filepath.Join(homeDir, ".seasagi")
-	filePath := filepath.Join(baseDir, "relay-channels.json")
-	dbPath := filepath.Join(baseDir, "relay-gateway.db")
+	return newStoreAt(filepath.Join(homeDir, ".seasagi"))
+}
 
+// newStoreAt 在指定目录初始化存储；测试可用临时目录隔离。
+func newStoreAt(baseDir string) *Store {
 	s := &Store{
-		channels: make(map[string]*Channel),
-		mappings: make([]ModelMapping, 0),
-		filePath: filePath,
-		dbPath:   dbPath,
+		channels:        make(map[string]*Channel),
+		mappings:        make([]ModelMapping, 0),
+		filePath:        filepath.Join(baseDir, "relay-channels.json"),
+		dbPath:          filepath.Join(baseDir, "relay-gateway.db"),
+		saveCh:          make(chan struct{}, 1),
+		stopCh:          make(chan struct{}),
+		doneCh:          make(chan struct{}),
+		persistInterval: defaultPersistInterval,
 	}
 	s.openDB()
 	s.load()
+	go s.persistLoop()
 	globalStore = s
 	return s
 }
@@ -207,6 +271,45 @@ func (s *Store) save() {
 	s.saveToDB()
 }
 
+// persistLoop 是唯一落库协程：把短时间内的多次变更合并成一次写入。
+func (s *Store) persistLoop() {
+	ticker := time.NewTicker(s.persistInterval)
+	defer ticker.Stop()
+
+	dirty := false
+	for {
+		select {
+		case <-s.saveCh:
+			dirty = true
+		case <-ticker.C:
+			if dirty {
+				s.save()
+				dirty = false
+			}
+		case <-s.stopCh:
+			// 停止前把尚在通道中的变更标记合并进本次落库。
+			select {
+			case <-s.saveCh:
+				dirty = true
+			default:
+			}
+			if dirty {
+				s.save()
+			}
+			close(s.doneCh)
+			return
+		}
+	}
+}
+
+// requestSave 非阻塞地标记「需要落库」，由 persistLoop 合并处理。
+func (s *Store) requestSave() {
+	select {
+	case s.saveCh <- struct{}{}:
+	default:
+	}
+}
+
 func (s *Store) saveToDisk() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -265,11 +368,17 @@ func (s *Store) saveToDB() {
 	_ = tx.Commit()
 }
 
+// Close 停止落库协程并关闭数据库；重复调用安全。
 func (s *Store) Close() error {
-	if s.db != nil {
-		return s.db.Close()
-	}
-	return nil
+	var err error
+	s.closeOnce.Do(func() {
+		close(s.stopCh)
+		<-s.doneCh
+		if s.db != nil {
+			err = s.db.Close()
+		}
+	})
+	return err
 }
 
 func (s *Store) GetStats() map[string]interface{} {
@@ -295,21 +404,26 @@ func (s *Store) AddChannel(ch Channel) {
 	s.mu.Lock()
 	s.channels[ch.ChannelID] = &ch
 	s.mu.Unlock()
-	s.save()
+	s.requestSave()
 }
 
 func (s *Store) RemoveChannel(channelID string) {
 	s.mu.Lock()
 	delete(s.channels, channelID)
 	s.mu.Unlock()
-	s.save()
+	s.requestSave()
 }
 
+// GetChannel 返回渠道副本，避免调用方直接修改内部状态造成读写竞争。
 func (s *Store) GetChannel(channelID string) (*Channel, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ch, ok := s.channels[channelID]
-	return ch, ok
+	if !ok {
+		return nil, false
+	}
+	cp := *ch
+	return &cp, true
 }
 
 func (s *Store) ListChannels() []Channel {
@@ -356,7 +470,7 @@ func (s *Store) UpdateHealth(channelID string, health HealthStatus) {
 		}
 	}
 	s.mu.Unlock()
-	s.save()
+	s.requestSave()
 }
 
 func (s *Store) RestoreChannel(channelID string) {
@@ -367,7 +481,7 @@ func (s *Store) RestoreChannel(channelID string) {
 		ch.Health.Error = ""
 	}
 	s.mu.Unlock()
-	s.save()
+	s.requestSave()
 }
 
 func (s *Store) UpdateChannelPolicy(channelID string, weight, priority, grayPercent int, enabled, readOnly *bool) {
@@ -390,7 +504,7 @@ func (s *Store) UpdateChannelPolicy(channelID string, weight, priority, grayPerc
 		}
 	}
 	s.mu.Unlock()
-	s.save()
+	s.requestSave()
 }
 
 func (s *Store) UpdateChannel(ch Channel) {
@@ -399,14 +513,14 @@ func (s *Store) UpdateChannel(ch Channel) {
 		s.channels[ch.ChannelID] = &ch
 	}
 	s.mu.Unlock()
-	s.save()
+	s.requestSave()
 }
 
 func (s *Store) AddMapping(m ModelMapping) {
 	s.mu.Lock()
 	s.mappings = append(s.mappings, m)
 	s.mu.Unlock()
-	s.save()
+	s.requestSave()
 }
 
 func (s *Store) ResolveChannel(logicalModel string) (*Channel, string) {
@@ -416,7 +530,8 @@ func (s *Store) ResolveChannel(logicalModel string) (*Channel, string) {
 	for _, m := range s.mappings {
 		if m.LogicalModel == logicalModel {
 			if ch, ok := s.channels[m.ChannelID]; ok && ch.Enabled && ch.Health.Healthy && !ch.ReadOnly {
-				return ch, m.UpstreamModel
+				cp := *ch
+				return &cp, m.UpstreamModel
 			}
 		}
 	}
@@ -442,7 +557,8 @@ func (s *Store) ResolveChannel(logicalModel string) (*Channel, string) {
 		return candidates[i].Priority < candidates[j].Priority
 	})
 
-	return candidates[0], logicalModel
+	cp := *candidates[0]
+	return &cp, logicalModel
 }
 
 type catalogModel struct {

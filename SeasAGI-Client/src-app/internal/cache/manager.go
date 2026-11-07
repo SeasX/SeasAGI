@@ -8,17 +8,22 @@ import (
 	"time"
 )
 
-// Manager 缓存管理器
+// Manager 缓存管理器。
+//
+// experimental：未接入生产路径（gateway 不调用本包）。复用时需先确认
+// Store 实现了 EvictableStore（否则 MaxEntries 无法强制执行），并补齐持久化
+// 与多实例一致性；见包注释。
 type Manager struct {
-	mu             sync.Mutex
-	store          Store
-	config         CacheConfig
-	stats          CacheStats
-	idempotentMu   sync.Mutex
-	idempotentMap  map[string]int64 // key → timestamp ms
+	mu            sync.Mutex
+	store         Store
+	config        CacheConfig
+	stats         CacheStats
+	idempotentMu  sync.Mutex
+	idempotentMap map[string]int64 // key → timestamp ms
 }
 
-// NewManager 创建缓存管理器
+// NewManager 创建缓存管理器。
+// MaxEntries 通过 Store 的 EvictableStore 实现强制执行真实容量上限（LRU）。
 func NewManager(store Store, cfg CacheConfig) *Manager {
 	if cfg.TTLSeconds <= 0 {
 		cfg.TTLSeconds = 300 // 默认 5 分钟
@@ -89,10 +94,10 @@ func (m *Manager) Set(key string, response []byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 超过最大条目时清理最旧条目
+	// 超过最大条目时按 LRU 驱逐，保证容量上限真实生效。
 	count, _ := m.store.Count()
 	if count >= m.config.MaxEntries {
-		m.cleanupOldest(count - m.config.MaxEntries + 1)
+		m.evictOldest(count - m.config.MaxEntries + 1)
 	}
 
 	_ = m.store.Set(key, &CacheEntry{
@@ -119,11 +124,13 @@ func (m *Manager) GetStats() CacheStats {
 	return m.stats
 }
 
-// Cleanup TTL 驱逐
+// Cleanup 清理过期条目（需要 Store 实现 ExpirableStore）。
 func (m *Manager) Cleanup() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// Store 实现负责 TTL 驱逐
+	if expirable, ok := m.store.(ExpirableStore); ok {
+		expirable.PurgeExpired(time.Duration(m.config.TTLSeconds) * time.Second)
+	}
 }
 
 // IsIdempotentHit 检查幂等窗口内是否重复
@@ -163,7 +170,12 @@ func (m *Manager) updateHitRate() {
 	}
 }
 
-// cleanupOldest 清理最旧条目（由 Store 实现）
-func (m *Manager) cleanupOldest(n int) {
-	// 简化实现：Store.Flush() 或由 Store 自行管理 LRU
+// evictOldest 驱逐 n 个最久未使用的条目（由 Store 实现；不支持时无法裁剪）。
+func (m *Manager) evictOldest(n int) {
+	if n <= 0 {
+		return
+	}
+	if evictable, ok := m.store.(EvictableStore); ok {
+		evictable.EvictOldest(n)
+	}
 }

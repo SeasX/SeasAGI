@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { platformRequest, fetchFreeChannels, listChannels, saveCustomChannel } from "../utils/commands";
+import {
+  platformRequest,
+  fetchFreeChannels,
+  listChannels,
+  saveCustomChannel,
+  describePlatformError,
+  getPlatformArray,
+  getPlatformData,
+} from "../utils/commands";
 import type { Channel } from "../utils/types";
 import { useTranslation } from "../i18n";
 import { useMarketStore } from "../stores/marketStore";
@@ -56,10 +64,30 @@ export function TokenMarketPage() {
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [saleType, setSaleType] = useState("");
+  const [protocolFilter, setProtocolFilter] = useState("");
+  const [modelFilter, setModelFilter] = useState("");
+  const [onlyCapacity, setOnlyCapacity] = useState(false);
   const [sortBy, setSortBy] = useState("newest");
   const [filterKey, setFilterKey] = useState(0);
   // 我的市场余额（登录后展示；null 表示不可用/未登录）
   const [myBalance, setMyBalance] = useState<number | null>(null);
+  // 合规与费率公告（P3-4）：由平台下发，未配置时展示默认合规提示
+  const [marketNotice, setMarketNotice] = useState<{ text: string; feeRate: number } | null>(null);
+
+  const fetchNotice = async () => {
+    try {
+      const resp = await platformRequest("GET", "/token-market/notice");
+      if (resp.status >= 400) return;
+      const data = getPlatformData<Record<string, any>>(resp.body);
+      if (!data) return;
+      setMarketNotice({
+        text: String(data.compliance_notice || ""),
+        feeRate: typeof data.relay_fee_rate === "number" ? data.relay_fee_rate : 0.05,
+      });
+    } catch {
+      // 静默失败：公告不可用不影响市场浏览
+    }
+  };
 
   const fetchAccount = async () => {
     if (!isLoggedIn) {
@@ -69,18 +97,23 @@ export function TokenMarketPage() {
     try {
       const resp = await platformRequest("GET", "/token-market/account");
       if (resp.status >= 400) return;
-      const data = resp.body;
-      if (typeof data.data?.balance === "number") setMyBalance(data.data.balance);
+      const data = getPlatformData<{ balance?: number }>(resp.body);
+      if (typeof data?.balance === "number") setMyBalance(data.balance);
     } catch {
       // 静默失败：余额展示失败不影响市场浏览
     }
   };
 
+  // 请求序号：仅最后一次发起的请求可写入状态，丢弃过期响应（竞态防护）。
+  const requestSeq = useRef(0);
+
   const fetchListings = async (pageNum: number, append: boolean) => {
+    const reqId = ++requestSeq.current;
     if (append) {
       setLoadingMore(true);
     } else {
       setLoading(true);
+      setLoadingMore(false);
     }
     setError(null);
     try {
@@ -91,29 +124,37 @@ export function TokenMarketPage() {
       if (minPrice) params.set("min_price", minPrice);
       if (maxPrice) params.set("max_price", maxPrice);
       if (saleType) params.set("sale_type", saleType);
+      if (protocolFilter) params.set("wire_protocol", protocolFilter);
+      if (modelFilter.trim()) params.set("model", modelFilter.trim());
+      if (onlyCapacity) params.set("has_capacity", "1");
       params.set("sort", sortBy);
       const resp = await platformRequest("GET", `/token-market/listings?${params}`);
-      if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
-      const data = resp.body;
-      const newItems = data.data || [];
-      setTotal(data.total || 0);
-      setTotalPages(data.total_pages || 1);
-      if (append) {
-        setMarketListings([...marketListings, ...newItems]);
-      } else {
-        setMarketListings(newItems);
-      }
+      // 过期响应（筛选变更/更晚的请求已发出）直接丢弃，避免旧数据覆盖新结果。
+      if (reqId !== requestSeq.current) return;
+      if (resp.status >= 400) throw new Error(describePlatformError(resp));
+      const body = resp.body as Record<string, any>;
+      const newItems = getPlatformArray(body);
+      setTotal(typeof body.total === "number" ? body.total : 0);
+      setTotalPages(typeof body.total_pages === "number" ? body.total_pages : 1);
+      // 函数式更新，避免基于闭包中的旧列表拼接导致丢页/重复。
+      setMarketListings((prev) => (append ? [...prev, ...newItems] : newItems));
+      // 页码在请求成功后再推进，失败时保持原页码以便重试。
+      setPage(pageNum);
     } catch (err) {
+      if (reqId !== requestSeq.current) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (reqId === requestSeq.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchListings(1, false);
     fetchAccount();
+    fetchNotice();
     // F7: Use cached free channels if within 5 minutes.
     // 空列表不命中缓存：避免未登录时缓存空结果、登录后 5 分钟内仍显示为空。
     const now = Date.now();
@@ -142,9 +183,9 @@ export function TokenMarketPage() {
   };
 
   const handleLoadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchListings(nextPage, true);
+    if (loadingMore || loading || page >= totalPages) return;
+    // 页码在 fetchListings 成功后推进，避免失败后页码错位。
+    fetchListings(page + 1, true);
   };
 
   const marketStats = useMemo(() => {
@@ -234,8 +275,26 @@ export function TokenMarketPage() {
           <button className="btn btn-secondary" onClick={() => navigate("/token-market/my-listings")}>
             {t("tokenMarket.myListings")}
           </button>
+          <button className="btn btn-secondary" onClick={() => navigate("/token-market/my-subscriptions")}>
+            {t("tokenMarket.mySubscriptions")}
+          </button>
+          <button className="btn btn-secondary" onClick={() => navigate("/token-market/provider-earnings")}>
+            {t("tokenMarket.providerEarnings")}
+          </button>
         </div>
       </div>
+
+      {marketNotice && (
+        <div className="token-market-section" style={{ padding: "12px 16px", marginBottom: "16px" }}>
+          <strong>{t("tokenMarket.noticeTitle")}</strong>
+          <p style={{ margin: "6px 0" }}>
+            {marketNotice.text || t("tokenMarket.noticeComplianceFallback")}
+          </p>
+          <p className="hint" style={{ margin: 0 }}>
+            {t("tokenMarket.noticeFee", { rate: (marketNotice.feeRate * 100).toFixed(0) })}
+          </p>
+        </div>
+      )}
 
       <div className="token-market-hero">
         <div className="token-market-hero-main">
@@ -377,12 +436,39 @@ export function TokenMarketPage() {
           </div>
           <div className="filter-field">
             <label className="filter-label" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>{t("tokenMarket.saleType") || "Type"}</label>
-            <select className="form-input" value={saleType} onChange={(e) => setSaleType(e.target.value)} style={{ width: "120px" }}>
+            <select className="form-input" value={saleType} onChange={(e) => setSaleType(e.target.value)} style={{ width: "130px" }}>
               <option value="">{t("tokenMarket.all") || "All"}</option>
+              <option value="subscription">{t("tokenMarket.saleTypeSubscription")}</option>
               <option value="fixed_price">{t("tokenMarket.fixedPrice")}</option>
               <option value="discount">{t("tokenMarket.discount")}</option>
             </select>
           </div>
+          <div className="filter-field">
+            <label className="filter-label" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>{t("tokenMarket.filterProtocol")}</label>
+            <select className="form-input" value={protocolFilter} onChange={(e) => setProtocolFilter(e.target.value)} style={{ width: "150px" }}>
+              <option value="">{t("tokenMarket.any")}</option>
+              <option value="openai-chat">openai-chat</option>
+              <option value="anthropic">anthropic</option>
+              <option value="openai-responses">openai-responses</option>
+              <option value="gemini">gemini</option>
+            </select>
+          </div>
+          <div className="filter-field">
+            <label className="filter-label" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>{t("tokenMarket.filterModel")}</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="claude-sonnet-4-5"
+              value={modelFilter}
+              onChange={(e) => setModelFilter(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              style={{ width: "180px" }}
+            />
+          </div>
+          <label className="filter-field" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+            <input type="checkbox" checked={onlyCapacity} onChange={(e) => setOnlyCapacity(e.target.checked)} />
+            {t("tokenMarket.filterCapacity")}
+          </label>
           <div className="filter-field">
             <label className="filter-label" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>{t("tokenMarket.sortBy") || "Sort"}</label>
             <select className="form-input" value={sortBy} onChange={(e) => { setSortBy(e.target.value); handleSearch(); }} style={{ width: "140px" }}>
@@ -434,7 +520,17 @@ export function TokenMarketPage() {
                 <div
                   key={listing.listing_id}
                   className="token-market-listing-card"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${listing.token_label} · ${t("tokenMarket.viewListing")}`}
                   onClick={() => navigate(`/token-market/listing/${listing.listing_id}`)}
+                  onKeyDown={(e) => {
+                    // 键盘用户可用 Enter/空格打开详情
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`/token-market/listing/${listing.listing_id}`);
+                    }
+                  }}
                 >
                   <div className="token-market-listing-top">
                     <div>
@@ -452,7 +548,9 @@ export function TokenMarketPage() {
                       <div className="token-market-price-value">
                         {listing.sale_type === "fixed_price"
                           ? `${listing.price} ${listing.currency}`
-                          : `${(listing.discount_rate * 100).toFixed(0)}% ${t("tokenMarket.off")}`}
+                          : listing.sale_type === "subscription"
+                            ? `${listing.price} ${listing.currency} / ${t("tokenMarket.weekly")}`
+                            : `${(listing.discount_rate * 100).toFixed(0)}% ${t("tokenMarket.off")}`}
                       </div>
                     </div>
                     <div className="token-market-price-side">
@@ -462,7 +560,15 @@ export function TokenMarketPage() {
                   </div>
 
                   <div className="token-market-card-footer">
-                    <span>{t("tokenMarket.saleType")}: {listing.sale_type === "fixed_price" ? t("tokenMarket.fixedPrice") : t("tokenMarket.discount")}</span>
+                    <span>{t("tokenMarket.saleType")}: {listing.sale_type === "subscription" ? t("tokenMarket.saleTypeSubscription") : listing.sale_type === "fixed_price" ? t("tokenMarket.fixedPrice") : t("tokenMarket.discount")}</span>
+                    {listing.sale_type === "subscription" && (
+                      <span>
+                        {t("tokenMarket.remainingSlots", {
+                          left: Math.max((listing.capacity ?? 0) - (listing.active_subscriptions ?? 0), 0),
+                          total: listing.capacity ?? 0,
+                        })}
+                      </span>
+                    )}
                     <span>{t("tokenMarket.createdAt")}: {listing.created_at}</span>
                   </div>
                 </div>
@@ -484,16 +590,31 @@ export function TokenMarketPage() {
                 </thead>
                 <tbody>
                   {marketListings.map((listing) => (
-                    <tr key={listing.listing_id} onClick={() => navigate(`/token-market/listing/${listing.listing_id}`)}>
+                    <tr
+                      key={listing.listing_id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${listing.token_label} · ${t("tokenMarket.viewListing")}`}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => navigate(`/token-market/listing/${listing.listing_id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          navigate(`/token-market/listing/${listing.listing_id}`);
+                        }
+                      }}
+                    >
                       <td>
                         <div className="token-market-table-title">{listing.token_label}</div>
                       </td>
                       <td>{listing.seller_username}</td>
-                      <td>{listing.sale_type === "fixed_price" ? t("tokenMarket.fixedPrice") : t("tokenMarket.discount")}</td>
+                      <td>{listing.sale_type === "fixed_price" ? t("tokenMarket.fixedPrice") : listing.sale_type === "subscription" ? t("tokenMarket.saleTypeSubscription") : t("tokenMarket.discount")}</td>
                       <td className="token-market-table-price">
                         {listing.sale_type === "fixed_price"
                           ? `${listing.price} ${listing.currency}`
-                          : `${(listing.discount_rate * 100).toFixed(0)}% ${t("tokenMarket.off")}`}
+                          : listing.sale_type === "subscription"
+                            ? `${listing.price} ${listing.currency} / ${t("tokenMarket.weekly")}`
+                            : `${(listing.discount_rate * 100).toFixed(0)}% ${t("tokenMarket.off")}`}
                       </td>
                       <td>{listing.available_quota || "-"}</td>
                       <td>

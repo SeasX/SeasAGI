@@ -61,7 +61,7 @@ SeasAGI-Server/
 - **無料チャンネルシード**: `GET /free-channels` で 23 の無料プロバイダを返却（OpenCode、DuckDuckGo、DeepSeek、Tencent 元宝、豆包、iFlytek、Coze、AI Horde など）
 - **組み込み管理画面**: `/admin` SPA、6 ページ — ダッシュボード / ユーザー / 使用量 / 中継ゲートウェイ / チャンネル / Combo
 - **i18n**: zh-CN / en / ja / ko のエラーメッセージ（`?lang=` または `Accept-Language` で交渉）
-- **セキュリティ**: AES-256-GCM API Key 暗号化、起動時弱いキー検出（`secpolicy` がランダム JWT キーを自動生成、本番モードでは弱いキーで Fatal）
+- **セキュリティ**: AES-256-GCM API Key 暗号化、起動時の鍵検証（`secpolicy`: 開発モードは一時鍵を自動生成、本番モードは未設定/弱い鍵で即終了）。リクエストエンベロープは伝送時の機密性のみを提供し（TLS が同等の目的を既にカバー）、認証境界ではありません。デバイスバインディングは表示・監査の手がかりに過ぎず、`device_id` はクライアント生成のためシートや試用制限には使用できません。認可、課金、クォータ、モデル範囲、請求サイクルは常にサーバーが決定し、クライアント提供のフィールドは信頼できない入力として扱います。
 - **Relay 基本転送**: リクエスト透過転送、ヘルスチェック、レート制限、トレース、マルチモーダル転送
 
 ### 含まれない機能
@@ -86,6 +86,66 @@ bash SeasAGI-Server/scripts/build.sh
 sudo bash SeasAGI-Server/deploy/install.sh
 ```
 
+## デプロイ手順（Linux + systemd）
+
+**1. シークレットの生成**
+
+```bash
+openssl rand -hex 32   # JWT_SECRET
+openssl rand -hex 32   # JWT_REFRESH_SECRET
+openssl rand -hex 32   # ADMIN_SECRET
+openssl rand -hex 32   # SEASAGI_DATA_KEY（または 32 バイトのランダム文字列）
+```
+
+`JWT_SECRET` と `JWT_REFRESH_SECRET` は両方の env ファイルで完全に一致させる必要があります。`ADMIN_SECRET` は必須で、未設定の場合 `/api/v1/admin/*` は利用できません。
+
+**2. `/etc/seasagi/*.env` の作成**
+
+```bash
+sudo vi /etc/seasagi/platform-api.env
+# JWT_SECRET、JWT_REFRESH_SECRET、ADMIN_SECRET、SEASAGI_DATA_KEY
+# CORS_ALLOWED_ORIGINS=https://your-domain.example
+# MAX_REQUEST_BODY_BYTES=8388608
+# TRACE_RETENTION_DAYS=30
+# TRACE_PURGE_INTERVAL_HOURS=6
+
+sudo vi /etc/seasagi/relay-gateway.env
+# 同じ JWT_SECRET / JWT_REFRESH_SECRET / ADMIN_SECRET
+# RELAY_MAX_REQUEST_BODY_BYTES=67108864
+```
+
+**3. 2 つのサービスを起動**
+
+```bash
+sudo systemctl enable --now seasagi-platform-api
+sudo systemctl enable --now seasagi-relay-gateway
+```
+
+**4. セルフチェック**
+
+```bash
+curl -fsS http://127.0.0.1:9318/healthz
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9318/api/v1/admin/users   # 401
+curl -s -D - -o /dev/null -X OPTIONS \
+  -H 'Origin: https://evil.example' \
+  -H 'Access-Control-Request-Method: POST' \
+  http://127.0.0.1:9318/api/v1/auth/login | grep -i '^access-control-allow-origin'  # 空
+```
+
+**5. アップグレードとバックアップ**
+
+```bash
+# バイナリ差し替え前に SQLite をバックアップ
+sudo systemctl stop seasagi-platform-api seasagi-relay-gateway
+sudo mkdir -p /var/backups/seasagi
+sudo sqlite3 /var/lib/seasagi/platform-api.db ".backup '/var/backups/seasagi/platform-api-$(date +%F).db'"
+sudo sqlite3 /var/lib/seasagi/platform-api.db 'PRAGMA wal_checkpoint(TRUNCATE);'
+# バイナリ差し替え後にサービスを再起動
+sudo systemctl start seasagi-platform-api seasagi-relay-gateway
+```
+
+スキーママイグレーションは起動時に自動実行され、冪等です。データベースを手動コピーする場合は `-wal` / `-shm` サイドカーファイルも一緒にコピーしてください。オンラインバックアップエンドポイント（`VACUUM INTO`）は一貫性のあるスナップショットを生成します。
+
 ## ビルド成果物
 
 - `SeasAGI-Server/build/platform-api`（管理画面 SPA 埋め込み）
@@ -99,6 +159,8 @@ sudo bash SeasAGI-Server/deploy/install.sh
 export $(grep -v '^#' deploy/.env.example | xargs)
 ```
 
+本番モード（`GIN_MODE=release`）では、`JWT_SECRET`、`JWT_REFRESH_SECRET`、`ADMIN_SECRET`、`SEASAGI_DATA_KEY` が未設定または `change-me*` のプレースホルダーのままだと、両サービスは起動を拒否します。開発モード（`GIN_MODE=debug` または明示的な `SEASAGI_ALLOW_DEV_SECRETS=1`）では一時シークレットを自動生成します。すべての `/api/v1/admin/*` エンドポイント（埋め込み `/admin` SPA を含む）は `Authorization: Bearer ${ADMIN_SECRET}` が必要で、欠落または誤った認証情報は 401 を返します。
+
 ### プラットフォーム API 設定
 
 | 変数 | 説明 | デフォルト値 |
@@ -108,11 +170,19 @@ export $(grep -v '^#' deploy/.env.example | xargs)
 | `JWT_SECRET` | JWT 署名シークレット（本番環境では必須） | — |
 | `JWT_REFRESH_SECRET` | JWT リフレッシュトークンシークレット（本番環境では必須） | — |
 | `ADMIN_SECRET` | Admin API シークレット | — |
-| `CORS_ALLOW_ORIGIN` | CORS 許可オリジン | `*` |
+| `CORS_ALLOWED_ORIGINS` | CORS 許可オリジン（カンマ区切り・完全一致。本番環境では `*` を拒否） | ループバックのみ（`localhost` / `127.0.0.1` / `[::1]`） |
+| `MAX_REQUEST_BODY_BYTES` | リクエスト本文の最大サイズ（バイト） | `8388608`（8MB） |
 | `SEASAGI_DATA_KEY` | API Key 用 AES-256-GCM 暗号化キー | — |
 | `GIN_MODE` | Gin モード（`release` / `debug`） | — |
 | `SEASAGI_LOCALES_DIR` | i18n 言語ファイルディレクトリ | `locales` |
 | `BACKUP_DIR` | SQLite バックアップディレクトリ | `<db ディレクトリ>/backups` |
+| `SEASAGI_VERSION` | デプロイバージョンのマーカー | `1.0.0` |
+| `API_BASE_URL` | サーバーのベース URL（OAuth リダイレクトのフォールバック） | `http://localhost:9318` |
+| `PUBLIC_BASE_URL` | ブラウザから到達可能なサーバー URL（OAuth 認可・コールバック） | `API_BASE_URL` にフォールバック |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth 認証情報 | 空（Google ログイン非表示） |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth 認証情報 | 空（GitHub ログイン非表示） |
+| `WEBHOOK_DISPATCHER_INTERVAL_SEC` | Webhook ディスパッチャーのポーリング間隔（秒） | `5` |
+| `WEBHOOK_MAX_RETRIES` | Webhook 最大リトライ回数 | `3` |
 
 ### 中継ゲートウェイ設定
 
@@ -124,7 +194,10 @@ export $(grep -v '^#' deploy/.env.example | xargs)
 | `POLICY_CACHE_SEC` | ポリシーキャッシュ更新間隔 | `60` |
 | `PLATFORM_API_URL` | プラットフォーム API の URL（チャンネルスナップショット同期） | `http://127.0.0.1:9318` |
 | `METRICS_TOKEN` | `/metrics` Bearer トークン（`ADMIN_SECRET` にフォールバック） | — |
-| `CORS_ALLOW_ORIGIN` | CORS 許可オリジン | `*` |
+| `CORS_ALLOWED_ORIGINS` | CORS 許可オリジン（カンマ区切り・完全一致。本番環境では `*` を拒否） | ループバックのみ（`localhost` / `127.0.0.1` / `[::1]`） |
+| `RELAY_MAX_REQUEST_BODY_BYTES` | リクエスト本文の最大サイズ（バイト、リレーゲートウェイ） | `67108864`（64MB） |
+| `TRACE_RETENTION_DAYS` | Trace の保持日数（`<=0` でパージ無効。platform-api と relay-gateway 共通） | `30` |
+| `TRACE_PURGE_INTERVAL_HOURS` | Trace パージ間隔（時間、`<1` は `1` として扱う） | `6` |
 
 ## API エンドポイント
 
@@ -132,15 +205,15 @@ export $(grep -v '^#' deploy/.env.example | xargs)
 
 - `auth`: `POST /auth/login` / `POST /auth/register` / `POST /auth/refresh`
 - `user`: `GET /user/profile` · `GET/PUT /user/optimization`（ルーティング/ヘルスチェック/クールダウン/sticky/preset トグル）
-- `channel`: `GET/POST/PUT/DELETE /channels` · `GET /free-channels`（23 の無料プロバイダ）
-- `providerresource`: `GET/POST/PUT/DELETE /channels/:id/resources[/:resource_id]` · `GET .../resources/resolve`
+- `channel`: `GET /channels` · `GET /channels/:id` · `GET /free-channels`（23 の無料プロバイダ）— ユーザー側は読み取り専用、資格情報は返却されません
+- `providerresource`: `GET/POST/PUT/DELETE /admin/channels/:id/resources[/:resource_id]` · `GET .../resources/resolve`（管理のみ）
 - `modelcatalog`: `GET /models` · `GET /models/:name`
 - `device`: `POST /devices/bind` · `GET /devices` · `DELETE /devices/:id`
 - `combo`: `GET/POST /combos` · `GET/PUT/DELETE /combos/:id` · `GET /combo-templates`
 - `relay`: `GET /relay-gateways`
 - `usage`: `GET /usage` · `/usage/models` · `/usage/error-distribution` · `/usage/timeline`
 - `version`: `GET /version/check` · `GET /version/migrations`
-- `admin`: `GET/DELETE /admin/users` · `GET /admin/usage/stats` · `GET /admin/usage/records` · `GET /admin/relay-gateways` · `GET/POST/DELETE /admin/sqlite/backups[/:id]` · `POST /admin/sqlite/backups/:id/restore` · `POST /admin/sqlite/backups/:id/verify` · `POST /admin/channels/seed` · `POST /admin/models/sync`
+- `admin`: `GET/DELETE /admin/users` · `GET/POST/PUT/DELETE /admin/channels` · `/admin/channels/:id/resources` · `GET /admin/usage/stats` · `GET /admin/usage/records` · `GET /admin/relay-gateways` · `GET/POST/DELETE /admin/sqlite/backups[/:id]` · `POST /admin/sqlite/backups/:id/restore` · `POST /admin/sqlite/backups/:id/verify` · `POST /admin/channels/seed` · `POST /admin/models/sync`
 - システム: `GET /healthz` · `/admin/*`（組み込み SPA）
 
 ### 中継ゲートウェイ

@@ -38,6 +38,7 @@ SeasAGI는 세 개의 하위 프로젝트로 구성된 계층형 AI 게이트웨
 | **자동 상태 확인 & 장애 허용** | Key 상태 확인 (5분 프로브 + 자동 비활성화) + Key별 Cooldown + 서킷 브레이커 + 지수 백오프 |
 | **로컬 우선 · 프라이버시 보안** | API Keys는 Keychain에만 저장, 상수 시간 비교로 타이밍 공격 방지, 요청은 Provider로 직접 전송 |
 | **Combo 최적화 워크벤치** | 내 계획 / 최적화 제안 / 템플릿 센터 / 실행 분석 — 4개 탭, Combo 드래그앤드롱 정렬 |
+| **토큰 마켓** | 미사용 구독 할당량을 주 단위로 공유: 모델별 단가 + 주간 할당량, 용량 슬롯 공유, 플랫폼 선수금 + 주간 정산(5% 중계 서비스 수수료), 네이티브 프로토콜 전달(OpenAI Chat / Anthropic / Responses / Gemini), 업스트림 usage 계측, 위약 환불 및 분쟁 처리. A 측 노드 모드로 OAuth 자격 증명은 로컬에 보관 |
 | **Playground 즉시 테스트** | 내장 채팅 테스트 UI, Combo 선택기 + 실행 체인 시각화 + 단계 Fallback 상태 |
 | **i18n** | 중국어 / 영어 / 일본어 / 한국어 |
 
@@ -160,11 +161,38 @@ sudo bash SeasAGI-Server/deploy/install.sh
 
 # 환경 변수 구성
 vi /etc/seasagi/platform-api.env
-# JWT_SECRET, JWT_REFRESH_SECRET, ADMIN_SECRET 설정
+# relay-gateway.env도 함께 편집: 공유 JWT 시크릿을 동일하게 설정
 
 # 서비스 시작
 sudo systemctl enable --now seasagi-platform-api
 sudo systemctl enable --now seasagi-relay-gateway
+```
+
+#### 필수 환경 변수
+
+프로덕션 모드(`GIN_MODE=release`)에서는 필수 시크릿이 없거나 `change-me*` 플레이스홀더로 남아 있으면 서버가 시작을 거부합니다. 커뮤니티 에디션은 `JWT_SECRET`, `JWT_REFRESH_SECRET`, `ADMIN_SECRET`, `SEASAGI_DATA_KEY`를 강제하고, 엔터프라이즈 에디션은 추가로 `INTERNAL_API_TOKEN`, `SEASAGI_SNAPSHOT_KEY`, `SEASAGI_MARKET_SIGNING_KEY`를 강제합니다. 각 시크릿은 `openssl rand -hex 32`로 생성할 수 있습니다(`SEASAGI_DATA_KEY`는 32바이트 임의 문자열). 개발 모드(`GIN_MODE=debug` 또는 명시적 `SEASAGI_ALLOW_DEV_SECRETS=1`)에서만 임시 시크릿을 자동 보완합니다.
+
+함께 설정:
+
+- `CORS_ALLOWED_ORIGINS`: 쉼표 구분·정확 일치. 기본값은 루프백만이며 프로덕션에서는 `*`를 거부합니다.
+- `MAX_REQUEST_BODY_BYTES`(platform-api, 기본 `8388608` = 8MB)와 `RELAY_MAX_REQUEST_BODY_BYTES`(relay-gateway, 기본 `67108864` = 64MB).
+- `TRACE_RETENTION_DAYS`(기본 `30`, `<=0`이면 정리 비활성)와 `TRACE_PURGE_INTERVAL_HOURS`(기본 `6`). 시작 시 한 번 정리한 뒤 주기적으로 실행합니다.
+
+#### 시작 후 자체 점검
+
+```bash
+# 1) 헬스 체크
+curl -fsS http://127.0.0.1:9318/healthz
+
+# 2) 관리 API가 익명 접근을 거부 (401 예상)
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9318/api/v1/admin/users
+
+# 3) 화이트리스트에 없는 Origin의 교차 출처 프리플라이트 거부
+#    (응답에 Access-Control-Allow-Origin 헤더가 없어야 함)
+curl -s -D - -o /dev/null -X OPTIONS \
+  -H 'Origin: https://evil.example' \
+  -H 'Access-Control-Request-Method: POST' \
+  http://127.0.0.1:9318/api/v1/auth/login | grep -i '^access-control-allow-origin'
 ```
 
 ---

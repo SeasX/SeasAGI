@@ -15,7 +15,7 @@ func (o *OllamaExecutor) Name() string {
 }
 
 func (o *OllamaExecutor) ChatCompletions(ctx context.Context, config *ProviderConfig, req *UpstreamRequest) (*UpstreamResponse, error) {
-	client := &http.Client{Timeout: 300 * time.Second}
+	client := &http.Client{Timeout: 300 * time.Second, CheckRedirect: secureRedirectPolicy}
 
 	baseURL := config.BaseURL
 	if baseURL == "" {
@@ -63,7 +63,7 @@ func (o *OllamaExecutor) ChatCompletions(ctx context.Context, config *ProviderCo
 }
 
 func (o *OllamaExecutor) ListModels(ctx context.Context, config *ProviderConfig) ([]ModelInfo, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: secureRedirectPolicy}
 
 	baseURL := config.BaseURL
 	if baseURL == "" {
@@ -112,7 +112,7 @@ func (o *OllamaExecutor) GenericPost(ctx context.Context, config *ProviderConfig
 		baseURL = "http://localhost:11434"
 	}
 
-	client := &http.Client{Timeout: 300 * time.Second}
+	client := &http.Client{Timeout: 300 * time.Second, CheckRedirect: secureRedirectPolicy}
 	endpoint := joinURL(baseURL, path)
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(body)))

@@ -18,7 +18,7 @@ func (v *VertexExecutor) Name() string {
 }
 
 func (v *VertexExecutor) ChatCompletions(ctx context.Context, config *ProviderConfig, req *UpstreamRequest) (*UpstreamResponse, error) {
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := sharedHTTPClient
 
 	projectID := config.ProviderSpecificConfig["project_id"]
 	location := config.ProviderSpecificConfig["location"]
@@ -70,23 +70,31 @@ func (v *VertexExecutor) ChatCompletions(ctx context.Context, config *ProviderCo
 		return nil, classifyStatusError(resp.StatusCode, resp.Body)
 	}
 
+	// Vertex 的 Gemini 端点返回 Gemini 格式，需转换为网关内部统一的 OpenAI Chat 格式。
 	if req.Stream {
+		translatedBody, headers := translateGeminiStream(resp.Body, req.Model)
 		return &UpstreamResponse{
-			Status:  resp.StatusCode,
-			Headers: resp.Header,
-			Body:    resp.Body,
+			Status:  http.StatusOK,
+			Headers: headers,
+			Body:    translatedBody,
 		}, nil
 	}
 
+	translatedBody, headers, err := translateGeminiResponse(resp.Body, req.Model)
+	if err != nil {
+		resp.Body.Close()
+		return nil, err
+	}
+	resp.Body.Close()
 	return &UpstreamResponse{
-		Status:  resp.StatusCode,
-		Headers: resp.Header,
-		Body:    resp.Body,
+		Status:  http.StatusOK,
+		Headers: headers,
+		Body:    translatedBody,
 	}, nil
 }
 
 func (v *VertexExecutor) ListModels(ctx context.Context, config *ProviderConfig) ([]ModelInfo, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: secureRedirectPolicy}
 
 	projectID := config.ProviderSpecificConfig["project_id"]
 	location := config.ProviderSpecificConfig["location"]

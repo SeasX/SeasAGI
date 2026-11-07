@@ -46,6 +46,14 @@ export function ConfirmAction(arg1, arg2) {
   return window['go']['main']['App']['ConfirmAction'](arg1, arg2);
 }
 
+export function CopyGatewaySnippet() {
+  return window['go']['main']['App']['CopyGatewaySnippet']();
+}
+
+export function CopyLocalAccessToken() {
+  return window['go']['main']['App']['CopyLocalAccessToken']();
+}
+
 export function CopyToClipboard(arg1) {
   return window['go']['main']['App']['CopyToClipboard'](arg1);
 }
@@ -86,12 +94,20 @@ export function DeleteSession(arg1, arg2) {
   return window['go']['main']['App']['DeleteSession'](arg1, arg2);
 }
 
+export function DisableMarketNode() {
+  return window['go']['main']['App']['DisableMarketNode']();
+}
+
 export function DiscoverModels(arg1) {
   return window['go']['main']['App']['DiscoverModels'](arg1);
 }
 
 export function ExportConfig() {
   return window['go']['main']['App']['ExportConfig']();
+}
+
+export function ExportLocalAssets() {
+  return window['go']['main']['App']['ExportLocalAssets']();
 }
 
 export function FetchActiveGrants() {
@@ -108,6 +124,10 @@ export function FetchEnterpriseChannels() {
 
 export function FetchFreeChannels() {
   return window['go']['main']['App']['FetchFreeChannels']();
+}
+
+export function FetchMITMRoutingFromEnterprise() {
+  return window['go']['main']['App']['FetchMITMRoutingFromEnterprise']();
 }
 
 export function FetchMITMTargetsFromEnterprise() {
@@ -182,8 +202,8 @@ export function GetIntentScenarioStats() {
   return window['go']['main']['App']['GetIntentScenarioStats']();
 }
 
-export function GetLocalAccessToken() {
-  return window['go']['main']['App']['GetLocalAccessToken']();
+export function GetLocalAccessTokenStatus() {
+  return window['go']['main']['App']['GetLocalAccessTokenStatus']();
 }
 
 export function GetLocale() {
@@ -202,12 +222,20 @@ export function GetMCPGatewayTools() {
   return window['go']['main']['App']['GetMCPGatewayTools']();
 }
 
+export function GetMITMEnterpriseRules() {
+  return window['go']['main']['App']['GetMITMEnterpriseRules']();
+}
+
 export function GetMITMEnvHint() {
   return window['go']['main']['App']['GetMITMEnvHint']();
 }
 
 export function GetMITMRecentIntercepts(arg1) {
   return window['go']['main']['App']['GetMITMRecentIntercepts'](arg1);
+}
+
+export function GetMITMRoutingConfig() {
+  return window['go']['main']['App']['GetMITMRoutingConfig']();
 }
 
 export function GetMITMRules() {
@@ -220,6 +248,10 @@ export function GetMITMStatus() {
 
 export function GetMITMTargets() {
   return window['go']['main']['App']['GetMITMTargets']();
+}
+
+export function GetMarketNodeStatus() {
+  return window['go']['main']['App']['GetMarketNodeStatus']();
 }
 
 export function GetOAuthProviders() {
@@ -252,10 +284,6 @@ export function GetPlans() {
 
 export function GetPlatformAPIBaseURL() {
   return window['go']['main']['App']['GetPlatformAPIBaseURL']();
-}
-
-export function GetPlatformToken() {
-  return window['go']['main']['App']['GetPlatformToken']();
 }
 
 export function GetPluginAuditLog() {
@@ -402,6 +430,10 @@ export function ListModelPricing() {
   return window['go']['main']['App']['ListModelPricing']();
 }
 
+export function ListMyAssets() {
+  return window['go']['main']['App']['ListMyAssets']();
+}
+
 export function ListPlugins() {
   return window['go']['main']['App']['ListPlugins']();
 }
@@ -468,6 +500,10 @@ export function RecordUsage(arg1, arg2, arg3, arg4, arg5) {
 
 export function Register(arg1, arg2, arg3) {
   return window['go']['main']['App']['Register'](arg1, arg2, arg3);
+}
+
+export function RegisterMarketNode(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RegisterMarketNode'](arg1, arg2, arg3);
 }
 
 export function RemoveMITMRule(arg1) {
@@ -566,6 +602,10 @@ export function SetMITMManager(arg1) {
   return window['go']['main']['App']['SetMITMManager'](arg1);
 }
 
+export function SetMITMRoutingConfig(arg1) {
+  return window['go']['main']['App']['SetMITMRoutingConfig'](arg1);
+}
+
 export function SetOptimizationConfig(arg1) {
   return window['go']['main']['App']['SetOptimizationConfig'](arg1);
 }
@@ -620,6 +660,10 @@ export function StopMITM() {
 
 export function StopTunnel() {
   return window['go']['main']['App']['StopTunnel']();
+}
+
+export function SyncAssetsToCloud(arg1) {
+  return window['go']['main']['App']['SyncAssetsToCloud'](arg1);
 }
 
 export function SyncCustomChannelsToCloud(arg1) {

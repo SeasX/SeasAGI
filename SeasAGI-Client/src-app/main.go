@@ -21,6 +21,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/auth"
+	"github.com/SeasAGI/SeasAGI-Client/internal/buildinfo"
 	"github.com/SeasAGI/SeasAGI-Client/internal/config"
 	"github.com/SeasAGI/SeasAGI-Client/internal/configio"
 	"github.com/SeasAGI/SeasAGI-Client/internal/deeplink"
@@ -142,6 +143,13 @@ func runDesktop() {
 	// 拦截转发时注入本机访问令牌，保证被接管 SDK 的请求能通过网关鉴权。
 	mitmMgr.SetAccessToken(accessToken)
 	app.SetLogRotator(logRotator)
+	// P4-24：后台定期同步企业下发的 MITM 路由规则（未配置企业服务端时自动跳过）。
+	mitm.StartEnterpriseRulesRefresher(lifecycleCtx, func() string {
+		if authSvc.IsLoggedIn() {
+			return authSvc.GetPlatformToken()
+		}
+		return ""
+	})
 
 	trayMgr := tray.NewManager(
 		func(channelID string) {
@@ -155,6 +163,14 @@ func runDesktop() {
 			runtime.Quit(app.ctx)
 		},
 	)
+	// P3-23：首次拦截某来源工具时弹出托盘气泡提醒。
+	mitmMgr.SetInterceptNotifier(func(target, host string) {
+		name := target
+		if name == "" {
+			name = host
+		}
+		trayMgr.Notify("SeasAGI 已接管 "+name, host)
+	})
 
 	shutdownDeps := func() {
 		shutdownOnce.Do(func() {
@@ -249,19 +265,10 @@ func runDesktop() {
 				runtime.WindowShow(app.ctx)
 			},
 		},
+		// 渲染层只允许访问 main.App 门面（CL-S5）：不再绑定 auth/config/gateway 等内部服务，
+		// 避免渲染层（含被注入的页面）直接读取平台令牌或渠道明文密钥。
 		Bind: []interface{}{
 			app,
-			authSvc,
-			configSvc,
-			gatewaySvc,
-			logSvc,
-			discoverySvc,
-			mcpSvc,
-			promptsSvc,
-			skillsSvc,
-			usageSvc,
-			presetsSvc,
-			sessionsSvc,
 		},
 		Menu: appMenu,
 		Mac: &mac.Options{
@@ -270,7 +277,7 @@ func runDesktop() {
 			},
 			About: &mac.AboutInfo{
 				Title:   "SeasAGI",
-				Message: "本地大模型通道切换客户端\nVersion 0.2.0",
+				Message: "本地大模型通道切换客户端\nVersion " + buildinfo.Version,
 			},
 			WebviewIsTransparent: false,
 		},
@@ -292,14 +299,13 @@ func buildAppMenu(app *App, gw *gateway.Service) *menu.Menu {
 		runtime.MessageDialog(app.ctx, runtime.MessageDialogOptions{
 			Type:    runtime.InfoDialog,
 			Title:   "关于 SeasAGI",
-			Message: "SeasAGI v0.2.0\n本地大模型通道切换客户端\n\n本地网关: http://127.0.0.1:4318/v1",
+			Message: "SeasAGI v" + buildinfo.Version + "\n本地大模型通道切换客户端\n\n本地网关: http://127.0.0.1:4318/v1",
 		})
 	})
 	fileMenu.AddSeparator()
 	fileMenu.AddText("复制网关地址", keys.CmdOrCtrl("c"), func(_ *menu.CallbackData) {
-		token, _ := app.GetLocalAccessToken()
-		text := fmt.Sprintf("Base URL: http://127.0.0.1:%d/v1\nAPI Key: %s", gw.GetListenPort(), token)
-		runtime.ClipboardSetText(app.ctx, text)
+		// 明文令牌留在后端拼接并直接写入剪贴板，不经过渲染层（CL-S5）。
+		_ = app.CopyGatewaySnippet()
 	})
 	fileMenu.AddSeparator()
 	fileMenu.AddText("隐藏窗口", keys.CmdOrCtrl("h"), func(_ *menu.CallbackData) {

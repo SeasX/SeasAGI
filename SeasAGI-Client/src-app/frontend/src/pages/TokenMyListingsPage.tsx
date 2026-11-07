@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { platformRequest } from "../utils/commands";
+import { platformRequest, asPlatformRecord } from "../utils/commands";
 import { useTranslation } from "../i18n";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useMarketStore } from "../stores/marketStore";
 
 export function TokenMyListingsPage() {
@@ -12,6 +13,7 @@ export function TokenMyListingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [earningsMap, setEarningsMap] = useState<Record<string, { payout: number; commission: number }>>({});
 
   const fetchListings = async () => {
@@ -20,17 +22,17 @@ export function TokenMyListingsPage() {
     try {
       const resp = await platformRequest("GET", "/token-market/my-listings");
       if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
-      const data = resp.body;
-      setMyListings(data.data || []);
+      const data = asPlatformRecord(resp.body);
+      setMyListings((data.data || []) as typeof myListings);
 
       // 获取已售出上架的结算信息
-      const soldListings = (data.data || []).filter((l: any) => l.status === "sold");
+      const soldListings = ((data.data || []) as any[]).filter((l: any) => l.status === "sold");
       if (soldListings.length > 0) {
         const settlementsResp = await platformRequest("GET", "/token-market/settlements");
         if (settlementsResp.status < 400) {
-          const settlementsData = settlementsResp.body;
+          const settlementsData = asPlatformRecord(settlementsResp.body);
           const map: Record<string, { payout: number; commission: number }> = {};
-          for (const s of (settlementsData.data || [])) {
+          for (const s of ((settlementsData.data || []) as any[])) {
             map[s.listing_id] = { payout: s.seller_payout, commission: s.platform_commission };
           }
           setEarningsMap(map);
@@ -52,8 +54,8 @@ export function TokenMyListingsPage() {
     try {
       const resp = await platformRequest("POST", `/token-market/listings/${listingId}/cancel`);
       if (resp.status >= 400) {
-        const errData = resp.body || {};
-        throw new Error(errData.error || `HTTP ${resp.status}`);
+        const errData = asPlatformRecord(resp.body);
+        throw new Error(String(errData.error || `HTTP ${resp.status}`));
       }
       // 更新本地状态
       setMyListings(myListings.map((l) => l.listing_id === listingId ? { ...l, status: "cancelled" } : l));
@@ -141,7 +143,7 @@ export function TokenMyListingsPage() {
                     {listing.status === "active" && (
                       <button
                         className="btn btn-sm btn-danger"
-                        onClick={() => handleCancel(listing.listing_id)}
+                        onClick={() => setConfirmCancelId(listing.listing_id)}
                         disabled={cancellingId === listing.listing_id}
                       >
                         {cancellingId === listing.listing_id ? t("common.processing") : t("tokenMarket.cancelListing")}
@@ -154,6 +156,19 @@ export function TokenMyListingsPage() {
           </tbody>
         </table>
       )}
+      <ConfirmDialog
+        open={confirmCancelId !== null}
+        title={t("tokenMarket.cancelListing")}
+        message={t("tokenMarket.confirmCancelListing")}
+        danger
+        pending={cancellingId !== null}
+        onCancel={() => setConfirmCancelId(null)}
+        onConfirm={() => {
+          const id = confirmCancelId;
+          setConfirmCancelId(null);
+          if (id) void handleCancel(id);
+        }}
+      />
     </div>
   );
 }

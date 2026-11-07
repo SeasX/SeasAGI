@@ -53,9 +53,12 @@ func (s *Service) persist() {
 	if err != nil {
 		return
 	}
-	os.MkdirAll(filepath.Dir(s.path), 0755)
+	// env 中可能包含 API_KEY：目录 0700、文件 0600，仅当前用户可读（CL-S8）。
+	os.MkdirAll(filepath.Dir(s.path), 0700)
+	_ = os.Chmod(filepath.Dir(s.path), 0700)
 	tmpFile := s.path + ".tmp"
-	_ = os.WriteFile(tmpFile, data, 0644)
+	_ = os.WriteFile(tmpFile, data, 0600)
+	_ = os.Chmod(tmpFile, 0600)
 	_ = os.Rename(tmpFile, s.path)
 }
 
@@ -155,7 +158,13 @@ func (s *Service) writeClaudeConfig(configPath string, servers []MCPServer) erro
 		config = make(map[string]interface{})
 	}
 
+	// 合并而非覆盖用户既有 mcpServers，避免清掉其它客户端配置（CL-S8）。
 	mcpServers := make(map[string]interface{})
+	if existing, ok := config["mcpServers"].(map[string]interface{}); ok {
+		for name, entry := range existing {
+			mcpServers[name] = entry
+		}
+	}
 	for _, srv := range servers {
 		entry := map[string]interface{}{
 			"command": srv.Command,
@@ -174,6 +183,13 @@ func (s *Service) writeClaudeConfig(configPath string, servers []MCPServer) erro
 	if err != nil {
 		return err
 	}
-	os.MkdirAll(filepath.Dir(configPath), 0755)
-	return os.WriteFile(configPath, out, 0644)
+	// env 中可能包含 API_KEY：目录 0700、文件 0600，仅当前用户可读。
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(configPath, out, 0600); err != nil {
+		return err
+	}
+	_ = os.Chmod(configPath, 0600)
+	return nil
 }

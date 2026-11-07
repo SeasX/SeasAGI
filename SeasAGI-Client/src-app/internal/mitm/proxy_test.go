@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -211,19 +212,24 @@ func TestHTTPSPassthrough(t *testing.T) {
 	proxy, _, cleanup := setupTestProxy(t, rules)
 	defer cleanup()
 
-	ctx := context.Background()
-	if err := proxy.Start(ctx); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	time.Sleep(50 * time.Millisecond)
-
-	proxyAddr := proxy.listener.Addr().String()
+	// 回环目标会在 handleConnect 被策略拒绝（CL-S18），这里直接验证隧道转发本身。
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.URL.Host
+		if host == "" {
+			host = r.Host
+		}
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		proxy.passthroughConnect(w, r, host)
+	}))
+	defer front.Close()
 
 	// 客户端信任目标服务器的自签证书
 	client := &http.Client{
 		Transport: &http.Transport{
 			Proxy: func(req *http.Request) (*url.URL, error) {
-				return url.Parse("http://" + proxyAddr)
+				return url.Parse(front.URL)
 			},
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},

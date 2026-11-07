@@ -5,9 +5,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/i18n"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/timeutil"
+	"github.com/gin-gonic/gin"
 )
 
 type Device struct {
@@ -69,7 +70,7 @@ func RemoveDevice(c *gin.Context) {
 
 func createDeviceBinding(userID, deviceName, platform string) (string, error) {
 	deviceID := fmt.Sprintf("dev_%d", time.Now().UnixNano())
-	boundAt := time.Now().UTC().Format(time.RFC3339)
+	boundAt := timeutil.NowSQLite()
 
 	_, err := database.DB.Exec(
 		`INSERT INTO devices (device_id, user_id, device_name, platform, bound_at)
@@ -100,6 +101,8 @@ func fetchDevicesForUser(userID string) ([]Device, error) {
 		if err := rows.Scan(&d.DeviceID, &d.UserID, &d.DeviceName, &d.Platform, &d.BoundAt); err != nil {
 			return nil, fmt.Errorf("failed to scan device: %w", err)
 		}
+		// 兼容历史 RFC3339 数据：读取时统一为 SQLite 时间格式。
+		d.BoundAt = timeutil.Normalize(d.BoundAt)
 		devices = append(devices, d)
 	}
 

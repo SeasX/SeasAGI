@@ -46,49 +46,44 @@ func (VertexTranslator) ToCanonical(body map[string]any) (*CanonicalRequest, err
 	}, nil
 }
 
+// CanonicalToVertexAI 构造 Vertex AI generateContent 请求体（Gemini 请求格式）。
+// Vertex 的 Gemini 模型端点不接受 :predict/instances，也不接受顶层 model 字段。
 func CanonicalToVertexAI(req *CanonicalRequest, projectID, location string) map[string]any {
-	body := map[string]any{
-		"instances": []map[string]any{
-			{
-				"messages": req.Messages,
-				"stream":   req.Stream,
-			},
-		},
+	body := CanonicalToGemini(req)
+	delete(body, "model")
+	delete(body, "stream")
+	if gen, ok := body["generationConfig"].(map[string]any); ok {
+		delete(gen, "stream")
+		if len(gen) == 0 {
+			delete(body, "generationConfig")
+		}
 	}
-
-	for k, v := range req.Extra {
-		body[k] = v
-	}
-
 	return body
 }
 
+// BuildVertexAIURL 构造 generateContent 端点。
 func BuildVertexAIURL(baseURL, projectID, location, model string) string {
-	base := strings.TrimRight(baseURL, "/")
-	if base == "" {
-		base = "https://aiplatform.googleapis.com"
-	}
-	if projectID == "" {
-		projectID = "default-project"
-	}
-	if location == "" {
-		location = "us-central1"
-	}
-	return fmt.Sprintf("%s/v1/projects/%s/locations/%s/publishers/google/models/%s:predict",
-		base, projectID, location, model)
+	return fmt.Sprintf("%s/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent",
+		vertexBaseURL(baseURL), vertexPathSegment(projectID, "default-project"), vertexPathSegment(location, "us-central1"), model)
 }
 
+// BuildVertexAIStreamURL 构造 streamGenerateContent 端点，使用 SSE 便于逐块转发。
 func BuildVertexAIStreamURL(baseURL, projectID, location, model string) string {
+	return fmt.Sprintf("%s/v1/projects/%s/locations/%s/publishers/google/models/%s:streamGenerateContent?alt=sse",
+		vertexBaseURL(baseURL), vertexPathSegment(projectID, "default-project"), vertexPathSegment(location, "us-central1"), model)
+}
+
+func vertexBaseURL(baseURL string) string {
 	base := strings.TrimRight(baseURL, "/")
 	if base == "" {
 		base = "https://aiplatform.googleapis.com"
 	}
-	if projectID == "" {
-		projectID = "default-project"
+	return base
+}
+
+func vertexPathSegment(value, fallback string) string {
+	if value == "" {
+		return fallback
 	}
-	if location == "" {
-		location = "us-central1"
-	}
-	return fmt.Sprintf("%s/v1/projects/%s/locations/%s/publishers/google/models/%s:streamPredict",
-		base, projectID, location, model)
+	return value
 }

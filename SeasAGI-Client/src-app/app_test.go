@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/auth"
@@ -73,5 +74,25 @@ func TestAppSetRTKSettingsAcceptsEmptyStyle(t *testing.T) {
 	}
 	if cfg := app.configSvc.GetConfig(); !cfg.RTKEnabled {
 		t.Error("RTKEnabled = false, want true")
+	}
+}
+
+// TestCurlCommandUsesCredentialPlaceholders 校验 Playground 回传的 curl 命令
+// 只使用环境变量占位符，不含任何明文凭证（CL-S2）。
+func TestCurlCommandUsesCredentialPlaceholders(t *testing.T) {
+	headers := map[string]string{
+		"channel": curlChannelKeyAuthHeader,
+		"local":   curlLocalTokenAuthHeader,
+	}
+	for name, header := range headers {
+		if !strings.Contains(header, "$") {
+			t.Fatalf("%s 鉴权头必须是环境变量占位符，got %q", name, header)
+		}
+		cmd := buildCurlCommand("http://127.0.0.1:4318/v1/images/generations", header, `{"prompt":"p"}`)
+		for _, secret := range []string{"sk-", "oauth_", "Bearer eyJ"} {
+			if strings.Contains(cmd, secret) {
+				t.Fatalf("%s curl 命令不得包含明文凭证 %q: %s", name, secret, cmd)
+			}
+		}
 	}
 }

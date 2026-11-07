@@ -1,3 +1,7 @@
+// Package proxy 提供出口 IP 探测与 1:1 代理分配规划。
+//
+// 状态：experimental，未接入生产路径：main/app 未调用本包的分配与探测逻辑，
+// 全仓仅本包测试引用。复用时需先补齐代理健康检查与失败切换。
 package proxy
 
 // DistributionPlan 表示 1:1 代理分配规划结果。

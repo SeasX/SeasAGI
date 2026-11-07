@@ -38,7 +38,7 @@ The client can **run independently** — all local gateway features work without
 | **Auto Health-check & Fault Tolerance** | Key health check (5min probe + auto-disable) + per-key Cooldown + circuit breaker + exponential backoff |
 | **Local-first · Privacy Secure** | API Keys stored only in Keychain, constant-time comparison prevents timing attacks, requests go direct to Provider |
 | **Combo Optimization Workbench** | My Plans / Optimization Suggestions / Template Center / Execution Analysis — four tabs, Combo drag-and-drop sorting |
-| **Token Market** | Peer-to-peer API Key marketplace: list unused keys at fixed price or discount, QR code scan trading, 10% platform commission, seller earnings display |
+| **Token Market** | Weekly subscription marketplace for unused subscription quota: model-level pricing + weekly quota, capacity-based sharing, platform-collected fees with weekly seller payout (5% relay service fee), native protocol passthrough (OpenAI Chat / Anthropic / Responses / Gemini), upstream usage metering, breach refunds & disputes, and an A-side node mode that keeps OAuth credentials on the seller's machine |
 | **Playground Instant Test** | Built-in chat test UI, Combo selector + execution chain visualization + step fallback status |
 | **i18n** | Chinese / English / Japanese / Korean |
 
@@ -162,11 +162,38 @@ sudo bash SeasAGI-Server/deploy/install.sh
 
 # Configure environment variables
 vi /etc/seasagi/platform-api.env
-# Set JWT_SECRET, JWT_REFRESH_SECRET, ADMIN_SECRET
+# also edit relay-gateway.env: shared JWT secrets must match
 
 # Start services
 sudo systemctl enable --now seasagi-platform-api
 sudo systemctl enable --now seasagi-relay-gateway
+```
+
+#### Required Environment Variables
+
+Production mode (`GIN_MODE=release`) refuses to start when a required secret is missing or still a `change-me*` placeholder. The community edition enforces `JWT_SECRET`, `JWT_REFRESH_SECRET`, `ADMIN_SECRET`, and `SEASAGI_DATA_KEY`; the enterprise edition additionally enforces `INTERNAL_API_TOKEN`, `SEASAGI_SNAPSHOT_KEY`, and `SEASAGI_MARKET_SIGNING_KEY`. Generate each with `openssl rand -hex 32` (use a 32-byte random string for `SEASAGI_DATA_KEY`). Development mode (`GIN_MODE=debug` or explicit `SEASAGI_ALLOW_DEV_SECRETS=1`) auto-fills temporary secrets instead.
+
+Also set:
+
+- `CORS_ALLOWED_ORIGINS` — comma-separated, exact-match origins; defaults to loopback only, and `*` is rejected in production.
+- `MAX_REQUEST_BODY_BYTES` (platform-api, default `8388608` = 8MB) and `RELAY_MAX_REQUEST_BODY_BYTES` (relay-gateway, default `67108864` = 64MB).
+- `TRACE_RETENTION_DAYS` (default `30`, `<=0` disables purging) and `TRACE_PURGE_INTERVAL_HOURS` (default `6`); traces are purged once at startup and then periodically.
+
+#### Post-start Self-check
+
+```bash
+# 1) Health
+curl -fsS http://127.0.0.1:9318/healthz
+
+# 2) Admin API rejects anonymous access (expect 401)
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9318/api/v1/admin/users
+
+# 3) Cross-origin preflight from an unlisted Origin is rejected
+#    (expect no Access-Control-Allow-Origin header in the response)
+curl -s -D - -o /dev/null -X OPTIONS \
+  -H 'Origin: https://evil.example' \
+  -H 'Access-Control-Request-Method: POST' \
+  http://127.0.0.1:9318/api/v1/auth/login | grep -i '^access-control-allow-origin'
 ```
 
 ---

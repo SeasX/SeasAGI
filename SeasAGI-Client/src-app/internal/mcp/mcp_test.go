@@ -75,72 +75,34 @@ func TestMCPServerSSE(t *testing.T) {
 	}
 }
 
-func TestMCPToolRoute(t *testing.T) {
+// CL-S9：内置工具尚未接入真实数据源时必须显式返回 unimplemented，
+// 不能返回硬编码的假健康度/假配额让外部 agent 误判。
+func TestMCPBuiltinToolsReturnUnimplemented(t *testing.T) {
 	server := NewGatewayServer()
 
-	result, err := server.CallTool("route_request", map[string]interface{}{
-		"model": "gpt-4o",
-	})
-	if err != nil {
-		t.Fatalf("route_request 调用失败: %v", err)
+	for _, name := range []string{"route_request", "check_quota", "list_models_catalog", "get_health"} {
+		_, err := server.CallTool(name, map[string]interface{}{"model": "gpt-4o"})
+		if err == nil {
+			t.Fatalf("%s 应返回 unimplemented 错误", name)
+		}
+		if !strings.Contains(err.Error(), "not implemented") {
+			t.Fatalf("%s 错误信息应说明未实现，实际: %v", name, err)
+		}
 	}
 
-	resultMap, ok := result.(map[string]interface{})
-	if !ok {
-		t.Fatal("结果应为 map")
-	}
-	if resultMap["model"] != "gpt-4o" {
-		t.Fatal("model 不匹配")
-	}
-
-	// 缺少 model 参数应报错
-	_, err = server.CallTool("route_request", map[string]interface{}{})
-	if err == nil {
-		t.Fatal("缺少 model 参数应报错")
-	}
-}
-
-func TestMCPToolQuota(t *testing.T) {
-	server := NewGatewayServer()
-
-	result, err := server.CallTool("check_quota", map[string]interface{}{})
-	if err != nil {
-		t.Fatalf("check_quota 调用失败: %v", err)
-	}
-
-	resultMap, ok := result.(map[string]interface{})
-	if !ok {
-		t.Fatal("结果应为 map")
-	}
-	if resultMap["remaining"] == nil {
-		t.Fatal("应包含 remaining 字段")
-	}
-}
-
-func TestMCPToolCache(t *testing.T) {
-	server := NewGatewayServer()
-
-	// 测试 list_models_catalog（核心 tool 之一）
-	result, err := server.CallTool("list_models_catalog", map[string]interface{}{})
-	if err != nil {
-		t.Fatalf("list_models_catalog 调用失败: %v", err)
-	}
-
-	resultList, ok := result.([]map[string]interface{})
-	if !ok {
-		t.Fatal("结果应为列表")
-	}
-	if len(resultList) == 0 {
-		t.Fatal("应至少有 1 个模型")
+	// 未知工具仍应返回 tool not found。
+	_, err := server.CallTool("nonexistent_tool", map[string]interface{}{})
+	if err == nil || !strings.Contains(err.Error(), "tool not found") {
+		t.Fatalf("未知工具应返回 tool not found，实际: %v", err)
 	}
 }
 
 func TestMCPAuditLog(t *testing.T) {
 	server := NewGatewayServer()
 
-	// 成功调用
+	// 已注册但未实现的工具
 	server.CallTool("get_health", map[string]interface{}{})
-	// 失败调用
+	// 未知工具
 	server.CallTool("nonexistent_tool", map[string]interface{}{})
 
 	log := server.GetAuditLog()
@@ -148,16 +110,16 @@ func TestMCPAuditLog(t *testing.T) {
 		t.Fatalf("应有 2 条审计日志，实际 %d", len(log))
 	}
 
-	// 第一条应成功
-	if !log[0].Success {
-		t.Fatal("第一条日志应成功")
+	if log[0].ToolName != "get_health" || log[0].Success {
+		t.Fatalf("第一条应为 get_health 且失败，实际 %+v", log[0])
+	}
+	if log[0].Error == "" {
+		t.Fatal("失败调用应记录错误信息")
 	}
 
-	// 第二条应失败
-	if log[1].Success {
-		t.Fatal("第二条日志应失败")
+	if log[1].ToolName != "nonexistent_tool" || log[1].Success {
+		t.Fatalf("第二条应为 nonexistent_tool 且失败，实际 %+v", log[1])
 	}
-
 	if !strings.Contains(log[1].Error, "not found") {
 		t.Fatal("错误信息应包含 'not found'")
 	}

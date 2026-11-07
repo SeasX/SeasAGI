@@ -19,6 +19,15 @@ type ErrorSanitizer struct {
 
 	// internalHosts are hostnames considered internal.
 	internalHosts []string
+
+	// credentialPatterns 匹配常见凭证形态（上游错误体常回显 API Key）。
+	credentialPatterns []credentialPattern
+}
+
+// credentialPattern 描述一条凭证脱敏规则。
+type credentialPattern struct {
+	re   *regexp.Regexp
+	repl string
 }
 
 // NewErrorSanitizer creates a sanitizer with default rules.
@@ -50,6 +59,13 @@ func NewErrorSanitizer(enabled bool) *ErrorSanitizer {
 			"172.24.", "172.25.", "172.26.", "172.27.", "172.28.",
 			"172.29.", "172.30.", "172.31.", "192.168.",
 		},
+		credentialPatterns: []credentialPattern{
+			{regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._\-+/=]{8,}`), "Bearer [REDACTED]"},
+			{regexp.MustCompile(`\bsk-[A-Za-z0-9_\-]{12,}`), "[REDACTED]"},
+			{regexp.MustCompile(`\bAIza[0-9A-Za-z_\-]{20,}`), "[REDACTED]"},
+			{regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{20,}`), "[REDACTED]"},
+			{regexp.MustCompile(`(?i)\b(x-api-key|api[_-]?key|access[_-]?token|refresh[_-]?token)["']?(\s*[:=]\s*["']?)[^\s"',;}]+`), "$1$2[REDACTED]"},
+		},
 	}
 	return s
 }
@@ -61,6 +77,11 @@ func (s *ErrorSanitizer) Sanitize(errMsg string) string {
 	}
 
 	result := errMsg
+
+	// 先脱敏凭证，避免后续路径/主机替换破坏 key 的完整匹配（CL-S13）。
+	for _, p := range s.credentialPatterns {
+		result = p.re.ReplaceAllString(result, p.repl)
+	}
 
 	// Remove stack traces
 	for _, p := range s.stackTracePatterns {

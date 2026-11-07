@@ -3,9 +3,16 @@ package secure
 import (
 	"encoding/base64"
 	"os"
-	"strings"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	// 数据密钥不再有内置默认值，测试统一注入固定密钥。
+	if os.Getenv("SEASAGI_DATA_KEY") == "" {
+		os.Setenv("SEASAGI_DATA_KEY", "test-only-seasagi-data-key-32bytes!")
+	}
+	os.Exit(m.Run())
+}
 
 func TestEncryptString_ReturnsNonEmptyBase64(t *testing.T) {
 	result, err := EncryptString("hello")
@@ -101,37 +108,24 @@ func TestDecryptString_TamperedCiphertext(t *testing.T) {
 }
 
 func TestNormalizeKey_Empty(t *testing.T) {
-	result := normalizeKey("")
-	if len(result) != 32 {
-		t.Fatalf("expected 32 bytes, got %d", len(result))
-	}
-	// The default key is 33 characters, but normalizeKey truncates to 32 bytes
-	expected := "seasagi-default-data-key-32bytes"
-	if string(result) != expected {
-		t.Fatalf("empty key: got %q, want %q", string(result), expected)
+	if _, err := normalizeKey(""); err == nil {
+		t.Fatal("empty key must return an error instead of a built-in default")
 	}
 }
 
 func TestNormalizeKey_ShortKey(t *testing.T) {
 	shortKey := "short"
-	result := normalizeKey(shortKey)
-	if len(result) != 32 {
-		t.Fatalf("expected 32 bytes, got %d", len(result))
-	}
-	if !strings.HasPrefix(string(result), shortKey) {
-		t.Fatalf("short key: expected prefix %q, got %q", shortKey, string(result))
-	}
-	// After the key content, the rest should be zero bytes
-	for i := len(shortKey); i < 32; i++ {
-		if result[i] != 0 {
-			t.Fatalf("short key: byte at position %d should be 0, got %d", i, result[i])
-		}
+	if _, err := normalizeKey(shortKey); err == nil {
+		t.Fatal("short key must be rejected")
 	}
 }
 
 func TestNormalizeKey_32ByteKey(t *testing.T) {
 	key32 := "abcdefghijklmnopqrstuvwxyz123456" // exactly 32 bytes
-	result := normalizeKey(key32)
+	result, err := normalizeKey(key32)
+	if err != nil {
+		t.Fatalf("normalizeKey failed: %v", err)
+	}
 	if len(result) != 32 {
 		t.Fatalf("expected 32 bytes, got %d", len(result))
 	}
@@ -142,7 +136,10 @@ func TestNormalizeKey_32ByteKey(t *testing.T) {
 
 func TestNormalizeKey_LongKey(t *testing.T) {
 	longKey := "this-is-a-very-long-key-that-exceeds-thirty-two-bytes-for-testing"
-	result := normalizeKey(longKey)
+	result, err := normalizeKey(longKey)
+	if err != nil {
+		t.Fatalf("normalizeKey failed: %v", err)
+	}
 	if len(result) != 32 {
 		t.Fatalf("expected 32 bytes, got %d", len(result))
 	}
@@ -184,22 +181,12 @@ func TestEncryptDecrypt_SpecialCharacters(t *testing.T) {
 	}
 }
 
-// Test with environment variable not set (default key is used)
+// Test that a missing key is rejected instead of falling back to a default.
 func TestEncryptDecrypt_DefaultKey(t *testing.T) {
-	// Ensure the env var is unset
 	t.Setenv("SEASAGI_DATA_KEY", "")
 
-	plaintext := "default key test"
-	encrypted, err := EncryptString(plaintext)
-	if err != nil {
-		t.Fatalf("EncryptString with default key failed: %v", err)
-	}
-	decrypted, err := DecryptString(encrypted)
-	if err != nil {
-		t.Fatalf("DecryptString with default key failed: %v", err)
-	}
-	if decrypted != plaintext {
-		t.Fatalf("default key round-trip: got %q, want %q", decrypted, plaintext)
+	if _, err := EncryptString("default key test"); err == nil {
+		t.Fatal("EncryptString without SEASAGI_DATA_KEY must return an error")
 	}
 }
 
@@ -230,9 +217,15 @@ func TestEncryptDecrypt_DifferentEnvKeys(t *testing.T) {
 
 // Test that normalizeKey is deterministic for the same input
 func TestNormalizeKey_Deterministic(t *testing.T) {
-	input := "some-key"
-	r1 := normalizeKey(input)
-	r2 := normalizeKey(input)
+	input := "some-key-0123456789abcdefghijklmnop"
+	r1, err := normalizeKey(input)
+	if err != nil {
+		t.Fatalf("normalizeKey failed: %v", err)
+	}
+	r2, err := normalizeKey(input)
+	if err != nil {
+		t.Fatalf("normalizeKey failed: %v", err)
+	}
 	if len(r1) != len(r2) {
 		t.Fatal("normalizeKey produced different lengths for same input")
 	}

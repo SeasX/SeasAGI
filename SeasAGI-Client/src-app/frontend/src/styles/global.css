@@ -984,6 +984,12 @@ textarea:focus {
   color: #fecaca;
 }
 
+.form-success {
+  border: 1px solid rgba(34, 197, 94, 0.32);
+  background: var(--success-soft, rgba(34, 197, 94, 0.12));
+  color: #86efac;
+}
+
 .loading-state,
 .loading {
   border: 1px dashed var(--border-strong);
@@ -1487,6 +1493,13 @@ body[data-theme="light"] .token-market-stat-card {
   gap: 10px;
   cursor: pointer;
   transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.token-market-listing-card:focus-visible,
+.token-market-table tbody tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
 }
 
 .token-market-listing-card:hover,
@@ -2928,6 +2941,42 @@ body[data-theme="light"] .modal {
   margin: 12px 0 8px;
 }
 
+/* P1-9：Combo 编辑器中的 Token 市场资产分组 */
+.combo-market-assets {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+.combo-market-assets .section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 6px;
+}
+.market-asset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.market-asset-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated);
+}
+.market-asset-name {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text, inherit);
+}
+
 /* 步骤卡：拖拽微动效（浮起 + 投影） */
 .combo-step-card {
   display: flex;
@@ -3767,4 +3816,36 @@ body[data-theme="light"] .modal {
   font-size: 12px;
   color: var(--text-muted);
   text-align: center;
+}
+
+/* ===== AI 模型指数（AI Index） ===== */
+.model-index-page .token-market-hero {
+  margin-bottom: 16px;
+}
+
+.model-index-page .token-market-filters {
+  flex-wrap: wrap;
+}
+
+/* 前三名奖牌徽标（背景色由名次动态设置，布局与字号收敛到此处） */
+.mi-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+:root[data-theme="light"] .mi-rank-badge,
+body[data-theme="light"] .mi-rank-badge {
+  border: 1px solid rgba(15, 23, 42, 0.18);
+}
+
+:root[data-theme="light"] .model-index-page .token-market-table td,
+body[data-theme="light"] .model-index-page .token-market-table td {
+  border-color: rgba(15, 23, 42, 0.08);
 }

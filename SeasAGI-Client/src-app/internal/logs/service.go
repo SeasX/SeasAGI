@@ -1,6 +1,9 @@
 package logs
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,7 +11,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
 )
+
+// genesisHash 是哈希链起点（全 0 十六进制），表示该记录之前没有更早的受保护记录。
+const genesisHash = "0000000000000000000000000000000000000000000000000000000000000000"
 
 type RequestLog struct {
 	RequestID          string      `json:"request_id"`
@@ -28,8 +36,19 @@ type RequestLog struct {
 	ErrorMessage       *string     `json:"error_message"`
 	AppliedConstraints string      `json:"applied_constraints,omitempty"` // JSON of constraint conditions applied
 	IntentScenario     string      `json:"intent_scenario,omitempty"`     // M4.5: 场景化意图（code_logic/image_gen/...）
+	// MITM 路由可观测字段：记录「来源工具 → 目标」的改写全过程。
+	MITMTarget     string `json:"mitm_target,omitempty"`     // 来源工具（如 cursor）
+	MITMRuleID     string `json:"mitm_rule_id,omitempty"`    // 命中的规则 ID
+	RequestedModel string `json:"requested_model,omitempty"` // 工具发出的原始模型名
+	ResolvedTarget string `json:"resolved_target,omitempty"` // 最终映射到的 Combo 名或模型名
+	// MITMHeaderMismatch 表示 Target 与 Original-Host 反查不一致（lenient 模式下仅审计）。
+	MITMHeaderMismatch bool `json:"mitm_header_mismatch,omitempty"`
 	// RequestPayload 失败请求的脱敏请求体快照（敏感字段已 REDACTED），用于排障与审计。
 	RequestPayload string `json:"request_payload,omitempty"`
+	// PrevHash / Hash 构成防篡改哈希链：Hash = SHA256(PrevHash + 规范化记录 JSON)。
+	// 任一字段被改动都会使 Hash 不匹配，从而被 VerifyIntegrity 检出（审计篡改检测）。
+	PrevHash string `json:"prev_hash,omitempty"`
+	Hash     string `json:"hash,omitempty"`
 }
 
 type RouteStep struct {
@@ -44,15 +63,22 @@ type RouteStep struct {
 }
 
 const (
-	maxLogs      = 500
-	persistBatch = 10
+	// maxLogs 是内存中保留的日志条数上限，超出后丢弃最旧记录。
+	maxLogs = 500
+	// compactAfter 是两次全量压缩之间允许追加的条数。追加日志的文件条目数
+	// 因此被限制在约 2*maxLogs 以内，避免只追加不压缩导致磁盘无界增长。
+	compactAfter = maxLogs
+	// maxLogFileBytes 是追加日志的磁盘体积上限，超过后立即压缩。
+	maxLogFileBytes = 8 << 20
 )
 
 type Service struct {
 	mu       sync.RWMutex
 	logs     []RequestLog
 	filePath string
-	dirty    int
+	// appended / appendedBytes 记录自上次全量压缩以来追加的条数与字节数。
+	appended      int
+	appendedBytes int64
 }
 
 func NewService() *Service {
@@ -69,9 +95,28 @@ func NewService() *Service {
 
 func (s *Service) loadFromDisk() {
 	data, err := os.ReadFile(s.filePath)
-	if err != nil {
+	if err != nil || len(data) == 0 {
 		return
 	}
+
+	// 新格式为追加日志（JSONL，文件内按从旧到新排列）；旧格式为整文件 JSON 数组
+	// （最新在前），两种都要能读，保证升级后历史日志不丢。
+	if ordered, ok := parseLogLines(data); ok {
+		if len(ordered) > maxLogs {
+			ordered = ordered[len(ordered)-maxLogs:]
+		}
+		loaded := make([]RequestLog, len(ordered))
+		for i := range ordered {
+			loaded[i] = ordered[len(ordered)-1-i]
+		}
+		// 历史（未签名）数据补算哈希链，避免旧日志被误报为"链损坏"。
+		if !logsHaveIntegrity(loaded) {
+			backfillHashes(loaded)
+		}
+		s.logs = loaded
+		return
+	}
+
 	var loaded []RequestLog
 	if err := json.Unmarshal(data, &loaded); err != nil {
 		return
@@ -79,21 +124,132 @@ func (s *Service) loadFromDisk() {
 	if len(loaded) > maxLogs {
 		loaded = loaded[:maxLogs]
 	}
+	// 历史（未签名）数据补算哈希链，避免旧日志被误报为"链损坏"。
+	if !logsHaveIntegrity(loaded) {
+		backfillHashes(loaded)
+	}
 	s.logs = loaded
+	// 旧格式是整文件 JSON 数组，追加写入会破坏它；因此加载后立即迁移为 JSONL。
+	s.persistToDisk()
 }
 
-func (s *Service) persistToDisk() {
-	data, err := json.Marshal(s.logs)
+// parseLogLines 按行解析追加日志。任一行不是独立 JSON 对象时返回 ok=false，
+// 由调用方回退到旧版整文件 JSON 数组解析。
+func parseLogLines(data []byte) ([]RequestLog, bool) {
+	var logs []RequestLog
+	sawLine := false
+	for _, raw := range bytes.Split(data, []byte("\n")) {
+		line := bytes.TrimSpace(raw)
+		if len(line) == 0 {
+			continue
+		}
+		var l RequestLog
+		if err := json.Unmarshal(line, &l); err != nil {
+			return nil, false
+		}
+		sawLine = true
+		logs = append(logs, l)
+	}
+	return logs, sawLine
+}
+
+// computeLogHash 计算单条记录的哈希：SHA256(prevHash + 规范化 JSON)。规范化时排除
+// Hash 字段自身，使哈希只覆盖记录内容与前序链接。
+func computeLogHash(prevHash string, log RequestLog) string {
+	log.Hash = ""
+	data, err := json.Marshal(log)
 	if err != nil {
-		return
+		return ""
 	}
+	sum := sha256.Sum256(append([]byte(prevHash), data...))
+	return hex.EncodeToString(sum[:])
+}
+
+// logsHaveIntegrity 判断所有记录是否都已带哈希。
+func logsHaveIntegrity(logs []RequestLog) bool {
+	for i := range logs {
+		if logs[i].Hash == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// backfillHashes 从最旧记录向最新记录依次补算哈希链（logs 为最新在前）。
+func backfillHashes(logs []RequestLog) {
+	for i := len(logs) - 1; i >= 0; i-- {
+		prev := genesisHash
+		if i < len(logs)-1 {
+			prev = logs[i+1].Hash
+		}
+		logs[i].PrevHash = prev
+		logs[i].Hash = computeLogHash(prev, logs[i])
+	}
+}
+
+// persistToDisk 全量重写日志文件（JSONL，按从旧到新排列）。
+// 仅在压缩、清空等低频路径调用；热路径使用 appendLogToDisk。
+func (s *Service) persistToDisk() {
+	var buf bytes.Buffer
+	for i := len(s.logs) - 1; i >= 0; i-- {
+		line, err := json.Marshal(s.logs[i])
+		if err != nil {
+			return
+		}
+		buf.Write(line)
+		buf.WriteByte('\n')
+	}
+
 	dir := filepath.Dir(s.filePath)
-	os.MkdirAll(dir, 0700)
-	tmpFile := s.filePath + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		logging.Warningf("logs: create dir for %s failed: %v", s.filePath, err)
 		return
 	}
-	os.Rename(tmpFile, s.filePath)
+	tmpFile := s.filePath + ".tmp"
+	if err := os.WriteFile(tmpFile, buf.Bytes(), 0600); err != nil {
+		logging.Warningf("logs: write temp file %s failed: %v", tmpFile, err)
+		return
+	}
+	if err := os.Rename(tmpFile, s.filePath); err != nil {
+		logging.Warningf("logs: rename %s -> %s failed: %v", tmpFile, s.filePath, err)
+		return
+	}
+	s.appended = 0
+	s.appendedBytes = 0
+}
+
+// appendLogToDisk 追加单条记录（O(1) IO），避免每请求全量重写日志文件。
+func (s *Service) appendLogToDisk(log RequestLog) bool {
+	line, err := json.Marshal(log)
+	if err != nil {
+		logging.Warningf("logs: marshal record failed: %v", err)
+		return false
+	}
+	if err := os.MkdirAll(filepath.Dir(s.filePath), 0700); err != nil {
+		logging.Warningf("logs: create dir for %s failed: %v", s.filePath, err)
+		return false
+	}
+	f, err := os.OpenFile(s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		logging.Warningf("logs: open %s for append failed: %v", s.filePath, err)
+		return false
+	}
+	defer f.Close()
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		logging.Warningf("logs: append record to %s failed: %v", s.filePath, err)
+		return false
+	}
+	s.appended++
+	s.appendedBytes += int64(len(line) + 1)
+	return true
+}
+
+// maybeCompact 在追加条目过多或文件过大时做一次全量压缩，把磁盘条目数收敛到
+// maxLogs。调用方必须持有 s.mu。
+func (s *Service) maybeCompact() {
+	if s.appended >= compactAfter || s.appendedBytes >= maxLogFileBytes {
+		s.persistToDisk()
+	}
 }
 
 func (s *Service) RecordLog(log RequestLog) error {
@@ -104,15 +260,21 @@ func (s *Service) RecordLog(log RequestLog) error {
 		log.CreatedAt = time.Now().Format(time.RFC3339)
 	}
 
+	// 计算防篡改哈希链：PrevHash 指向当前最新记录的哈希。
+	log.PrevHash = genesisHash
+	if len(s.logs) > 0 {
+		log.PrevHash = s.logs[0].Hash
+	}
+	log.Hash = computeLogHash(log.PrevHash, log)
+
 	s.logs = append([]RequestLog{log}, s.logs...)
 	if len(s.logs) > maxLogs {
 		s.logs = s.logs[:maxLogs]
 	}
 
-	s.dirty++
-	if s.dirty >= persistBatch {
-		s.persistToDisk()
-		s.dirty = 0
+	// 热路径只追加一条记录，不再每请求重写整个文件；达到阈值后再压缩。
+	if s.appendLogToDisk(log) {
+		s.maybeCompact()
 	}
 
 	return nil
@@ -251,8 +413,25 @@ func (s *Service) ClearLogs() error {
 	defer s.mu.Unlock()
 
 	s.logs = nil
-	s.dirty = 0
 	s.persistToDisk()
 
 	return nil
+}
+
+// VerifyIntegrity 校验哈希链完整性，返回首个校验失败记录的下标；-1 表示链完整。
+// 篡改（修改/删除/替换）任一记录的字段都会使其哈希或链接不匹配而被检出。
+func (s *Service) VerifyIntegrity() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for i, l := range s.logs {
+		if l.Hash == "" || l.Hash != computeLogHash(l.PrevHash, l) {
+			return i
+		}
+		// 相邻链接：当前记录的 PrevHash 应等于下一条（更旧）记录的 Hash。
+		if i+1 < len(s.logs) && l.PrevHash != s.logs[i+1].Hash {
+			return i
+		}
+	}
+	return -1
 }

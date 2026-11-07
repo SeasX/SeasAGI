@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 )
 
@@ -28,6 +25,11 @@ func GetOrCreateAccessToken() (string, error) {
 		return "", err
 	}
 	return token, nil
+}
+
+// GetAccessToken 读取本地网关令牌；不存在时返回空字符串（不自动生成）。
+func GetAccessToken() (string, error) {
+	return getKey(accessTokenKey)
 }
 
 func GetMaskedAccessToken() (string, error) {
@@ -107,6 +109,28 @@ func DeleteChannelKeys(channelID string) error {
 	return deleteKey("channel_keys_" + channelID)
 }
 
+// SaveSecret 保存任意命名密钥（如 A 端节点共享密钥、OAuth 刷新令牌）。
+func SaveSecret(name, value string) error {
+	if name == "" {
+		return fmt.Errorf("secret name is required")
+	}
+	return saveKey("secret_"+name, value)
+}
+
+// GetSecret 读取任意命名密钥；不存在时返回空字符串。
+// 读取失败（如存储损坏、权限不足、解密失败）会返回错误，不再静默吞掉。
+func GetSecret(name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("secret name is required")
+	}
+	return getKey("secret_" + name)
+}
+
+// DeleteSecret 删除命名密钥。
+func DeleteSecret(name string) error {
+	return deleteKey("secret_" + name)
+}
+
 func generateToken() string {
 	const charset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	result := make([]byte, tokenLength)
@@ -117,49 +141,18 @@ func generateToken() string {
 	return string(result)
 }
 
-func getKey(keyID string) (string, error) {
-	if runtime.GOOS != "darwin" {
-		return os.Getenv(envKeyName(keyID)), nil
-	}
-
-	cmd := exec.Command("security", "find-generic-password", "-a", keyID, "-s", serviceName, "-w")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("read keychain entry %s: %w", keyID, err)
-	}
-	return strings.TrimSpace(string(output)), nil
-}
-
-func saveKey(keyID, secret string) error {
-	if runtime.GOOS != "darwin" {
-		return os.Setenv(envKeyName(keyID), secret)
-	}
-
-	_ = deleteKey(keyID)
-	cmd := exec.Command("security", "add-generic-password", "-U", "-a", keyID, "-s", serviceName, "-w", secret)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("save keychain entry %s: %s (%w)", keyID, strings.TrimSpace(string(output)), err)
-	}
-	return nil
-}
-
-func deleteKey(keyID string) error {
-	if runtime.GOOS != "darwin" {
-		return os.Unsetenv(envKeyName(keyID))
-	}
-
-	cmd := exec.Command("security", "delete-generic-password", "-a", keyID, "-s", serviceName)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		msg := strings.TrimSpace(string(output))
-		if strings.Contains(msg, "could not be found") {
-			return nil
-		}
-		return fmt.Errorf("delete keychain entry %s: %s (%w)", keyID, msg, err)
-	}
-	return nil
-}
-
+// envKeyName 仅用于兼容旧环境变量命名（诊断/迁移提示），不再作为凭证存储。
 func envKeyName(keyID string) string {
 	replacer := strings.NewReplacer(".", "_", "-", "_")
 	return "SEASAGI_" + strings.ToUpper(replacer.Replace(keyID))
 }
+
+// 平台实现（见 store_darwin.go / store_windows.go / store_file.go）：
+//   - macOS：系统 Keychain（Security.framework，密钥不经过子进程 argv）
+//   - Windows：DPAPI 加密后落盘到 0600 文件
+//   - 其它（Linux 等）：AES-256-GCM 加密后落盘到 0600 文件，主密钥同样 0600
+//
+// 任何平台都不得把凭证写入进程环境变量：环境变量对子进程可见且不持久化。
+func getKey(keyID string) (string, error) { return platformGet(keyID) }
+func saveKey(keyID, secret string) error  { return platformSave(keyID, secret) }
+func deleteKey(keyID string) error        { return platformDelete(keyID) }

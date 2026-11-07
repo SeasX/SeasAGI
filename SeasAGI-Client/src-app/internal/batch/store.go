@@ -13,18 +13,27 @@ import (
 )
 
 // Store Batch 持久化存储（文件系统实现）。
+//
+// experimental：未接入生产路径；复用时需先补齐包注释中列出的跨进程写锁、
+// 过期清理与磁盘配额，否则多实例并发写会互相覆盖。
 type Store struct {
 	mu      sync.RWMutex
 	dataDir string
+	// onSave 在检查点成功落盘后回调，仅用于测试统计落盘次数；生产为 nil。
+	onSave func()
 }
 
-// NewStore 创建存储。
+// NewStore 创建存储（experimental，未接入生产路径）。
 func NewStore(dataDir string) *Store {
 	return &Store{dataDir: dataDir}
 }
 
 func (s *Store) ensureDir() error {
-	return os.MkdirAll(s.dataDir, 0755)
+	if err := os.MkdirAll(s.dataDir, 0o700); err != nil {
+		return err
+	}
+	// 既有目录可能是旧版本以 0755 创建，显式收紧权限。
+	return os.Chmod(s.dataDir, 0o700)
 }
 
 func (s *Store) batchPath(id string) string {
@@ -70,7 +79,7 @@ func (s *Store) saveBatch(record *BatchRecord) error {
 	if err != nil {
 		return fmt.Errorf("序列化失败: %w", err)
 	}
-	return os.WriteFile(s.batchPath(record.ID), data, 0644)
+	return os.WriteFile(s.batchPath(record.ID), data, 0o600)
 }
 
 // GetBatch 获取记录。
@@ -82,6 +91,8 @@ func (s *Store) GetBatch(id string) (*BatchRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 读取时收紧既有文件权限（旧版本可能以 0644 写入）。
+	_ = os.Chmod(s.batchPath(id), 0o600)
 
 	var record BatchRecord
 	if err := json.Unmarshal(data, &record); err != nil {
@@ -135,6 +146,8 @@ func (s *Store) getBatchUnlocked(id string) (*BatchRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 读取时收紧既有文件权限（旧版本可能以 0644 写入）。
+	_ = os.Chmod(s.batchPath(id), 0o600)
 	var record BatchRecord
 	if err := json.Unmarshal(data, &record); err != nil {
 		return nil, err
@@ -340,6 +353,8 @@ func (s *Store) loadCheckpoints(batchID string) ([]BatchItemCheckpoint, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 读取时收紧既有文件权限（旧版本可能以 0644 写入）。
+	_ = os.Chmod(s.checkpointPath(batchID), 0o600)
 	var checkpoints []BatchItemCheckpoint
 	if err := json.Unmarshal(data, &checkpoints); err != nil {
 		return nil, err
@@ -356,11 +371,36 @@ func (s *Store) saveCheckpoints(batchID string, checkpoints []BatchItemCheckpoin
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.checkpointPath(batchID), data, 0644)
+	if err := os.WriteFile(s.checkpointPath(batchID), data, 0o600); err != nil {
+		return err
+	}
+	if s.onSave != nil {
+		s.onSave()
+	}
+	return nil
 }
 
-// MarkCheckpointProcessing 标记检查点为处理中。
-func (s *Store) MarkCheckpointProcessing(batchID string, lineNumber int, customID string) error {
+// CheckpointUpdate 单个检查点的批量更新项。
+// Status 取 CheckpointProcessing 时允许创建不存在的检查点（upsert），
+// 取 CheckpointCompleted/CheckpointErrored 时要求检查点已存在。
+type CheckpointUpdate struct {
+	LineNumber int
+	CustomID   string
+	Status     CheckpointStatus
+	Result     interface{}
+	Error      interface{}
+}
+
+// ApplyCheckpointUpdates 在一次 load + save 中提交多条检查点更新。
+//
+// 逐行调用 MarkCheckpointResult/MarkCheckpointError 时，每行都要重读并重写整个
+// 检查点文件，N 行就是 O(N²) IO；批量处理应使用本方法，把 N 次 IO 降为 1 次。
+// 更新是全成或全不成：任一行号不存在（且不是 processing upsert）时不落盘。
+func (s *Store) ApplyCheckpointUpdates(batchID string, updates []CheckpointUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -370,76 +410,80 @@ func (s *Store) MarkCheckpointProcessing(batchID string, lineNumber int, customI
 	}
 
 	now := nowUnix()
-	found := false
+	index := make(map[int]int, len(checkpoints))
 	for i := range checkpoints {
-		if checkpoints[i].LineNumber == lineNumber {
-			checkpoints[i].Status = CheckpointProcessing
-			checkpoints[i].CustomID = customID
-			checkpoints[i].UpdatedAt = now
-			found = true
-			break
+		index[checkpoints[i].LineNumber] = i
+	}
+
+	// 先整体校验，避免部分写入后才发现非法行号。
+	for _, u := range updates {
+		if u.Status == CheckpointProcessing {
+			continue
+		}
+		if _, ok := index[u.LineNumber]; !ok {
+			return fmt.Errorf("检查点 line %d 不存在", u.LineNumber)
 		}
 	}
-	if !found {
-		checkpoints = append(checkpoints, BatchItemCheckpoint{
-			BatchID:    batchID,
-			LineNumber: lineNumber,
-			CustomID:   customID,
-			Status:     CheckpointProcessing,
-			CreatedAt:  now,
-			UpdatedAt:  now,
-		})
+
+	for _, u := range updates {
+		i, ok := index[u.LineNumber]
+		if !ok {
+			checkpoints = append(checkpoints, BatchItemCheckpoint{
+				BatchID:    batchID,
+				LineNumber: u.LineNumber,
+				CustomID:   u.CustomID,
+				Status:     u.Status,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			})
+			index[u.LineNumber] = len(checkpoints) - 1
+			continue
+		}
+
+		cp := &checkpoints[i]
+		cp.Status = u.Status
+		cp.UpdatedAt = now
+		if u.CustomID != "" {
+			cp.CustomID = u.CustomID
+		}
+		switch u.Status {
+		case CheckpointCompleted:
+			cp.Result = u.Result
+			cp.Error = nil
+		case CheckpointErrored:
+			cp.Error = u.Error
+			cp.Result = nil
+		}
 	}
 
 	return s.saveCheckpoints(batchID, checkpoints)
 }
 
-// MarkCheckpointResult 标记检查点为已完成。
-func (s *Store) MarkCheckpointResult(batchID string, lineNumber int, result interface{}) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	checkpoints, err := s.loadCheckpoints(batchID)
-	if err != nil {
-		return err
-	}
-
-	now := nowUnix()
-	for i := range checkpoints {
-		if checkpoints[i].LineNumber == lineNumber {
-			checkpoints[i].Status = CheckpointCompleted
-			checkpoints[i].Result = result
-			checkpoints[i].Error = nil
-			checkpoints[i].UpdatedAt = now
-			return s.saveCheckpoints(batchID, checkpoints)
-		}
-	}
-
-	return fmt.Errorf("检查点 line %d 不存在", lineNumber)
+// MarkCheckpointProcessing 标记检查点为处理中（单条便捷方法，批量场景请用 ApplyCheckpointUpdates）。
+func (s *Store) MarkCheckpointProcessing(batchID string, lineNumber int, customID string) error {
+	return s.ApplyCheckpointUpdates(batchID, []CheckpointUpdate{{
+		LineNumber: lineNumber,
+		CustomID:   customID,
+		Status:     CheckpointProcessing,
+	}})
 }
 
-// MarkCheckpointError 标记检查点为错误。
+// MarkCheckpointResult 标记检查点为已完成（单条便捷方法，批量场景请用 ApplyCheckpointUpdates）。
+func (s *Store) MarkCheckpointResult(batchID string, lineNumber int, result interface{}) error {
+	return s.ApplyCheckpointUpdates(batchID, []CheckpointUpdate{{
+		LineNumber: lineNumber,
+		Status:     CheckpointCompleted,
+		Result:     result,
+	}})
+}
+
+// MarkCheckpointError 标记检查点为错误（单条便捷方法，批量场景请用 ApplyCheckpointUpdates）。
 func (s *Store) MarkCheckpointError(batchID string, lineNumber int, errResult interface{}) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	checkpoints, err := s.loadCheckpoints(batchID)
-	if err != nil {
-		return err
-	}
-
-	now := nowUnix()
-	for i := range checkpoints {
-		if checkpoints[i].LineNumber == lineNumber {
-			checkpoints[i].Status = CheckpointErrored
-			checkpoints[i].Error = errResult
-			checkpoints[i].Result = nil
-			checkpoints[i].UpdatedAt = now
-			return s.saveCheckpoints(batchID, checkpoints)
-		}
-	}
-
-	return fmt.Errorf("检查点 line %d 不存在", lineNumber)
+	return s.ApplyCheckpointUpdates(batchID, []CheckpointUpdate{{
+		LineNumber: lineNumber,
+		Status:     CheckpointErrored,
+		Error:      errResult,
+	}})
 }
 
 // ListCheckpoints 列出所有检查点（按行号排序）。

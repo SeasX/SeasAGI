@@ -31,10 +31,31 @@ func (t *OAuthTokenInfo) ShouldRefresh(margin time.Duration) bool {
 // It caches access tokens and refreshes them before expiry using the
 // stored refresh token.
 type OAuthTokenRefresher struct {
-	mu       sync.RWMutex
-	tokens   map[string]*OAuthTokenInfo // channelID → token info
-	margin   time.Duration              // refresh safety margin
+	mu         sync.RWMutex
+	tokens     map[string]*OAuthTokenInfo // channelID → token info
+	margin     time.Duration              // refresh safety margin
 	httpClient *http.Client
+
+	// 同一渠道的并发刷新合并为一次，避免提供方因重复使用 refresh token 而吊销令牌（CL-11）。
+	refreshMu  sync.Mutex
+	refreshing map[string]*refreshCall
+
+	// persistFn 在提供方轮换 refresh token 时回写持久化存储（keychain）。
+	persistFn func(channelID, refreshToken string) error
+}
+
+// refreshCall 表示一次进行中的刷新，等待方共享其结果。
+type refreshCall struct {
+	done  chan struct{}
+	token *OAuthTokenInfo
+	err   error
+}
+
+// SetRefreshTokenPersist 安装 refresh token 轮换后的回写钩子。
+func (r *OAuthTokenRefresher) SetRefreshTokenPersist(fn func(channelID, refreshToken string) error) {
+	r.mu.Lock()
+	r.persistFn = fn
+	r.mu.Unlock()
 }
 
 // NewOAuthTokenRefresher creates a new refresher with the given safety margin.
@@ -43,9 +64,14 @@ func NewOAuthTokenRefresher(margin time.Duration) *OAuthTokenRefresher {
 		margin = 60 * time.Second
 	}
 	return &OAuthTokenRefresher{
-		tokens:   make(map[string]*OAuthTokenInfo),
-		margin:   margin,
-		httpClient: &http.Client{Timeout: 15 * time.Second},
+		tokens: make(map[string]*OAuthTokenInfo),
+		margin: margin,
+		httpClient: &http.Client{
+			Timeout: 15 * time.Second,
+			// 刷新请求体含 refresh_token/client_secret，307/308 会被重放，因此不跟随任何重定向（CL-S10）。
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
+		refreshing: make(map[string]*refreshCall),
 	}
 }
 
@@ -88,8 +114,31 @@ func (r *OAuthTokenRefresher) EnsureValidToken(channelID, refreshToken, clientID
 		return "", fmt.Errorf("no cached token and no refresh token for channel %s", channelID)
 	}
 
-	// Refresh
+	// 单飞：同一渠道同一时刻只允许一个刷新请求，其余等待并共享结果。
+	r.refreshMu.Lock()
+	if call, ok := r.refreshing[channelID]; ok {
+		r.refreshMu.Unlock()
+		<-call.done
+		if call.err != nil {
+			if cached != nil {
+				return cached.AccessToken, nil
+			}
+			return "", call.err
+		}
+		return call.token.AccessToken, nil
+	}
+	call := &refreshCall{done: make(chan struct{})}
+	r.refreshing[channelID] = call
+	r.refreshMu.Unlock()
+
 	newToken, err := r.refreshToken(channelID, refreshToken, clientID, clientSecret, tokenURL)
+
+	r.refreshMu.Lock()
+	delete(r.refreshing, channelID)
+	r.refreshMu.Unlock()
+	call.token, call.err = newToken, err
+	close(call.done)
+
 	if err != nil {
 		// Return cached token if available, even if expired
 		if cached != nil {
@@ -153,6 +202,15 @@ func (r *OAuthTokenRefresher) refreshToken(channelID, refreshToken, clientID, cl
 	}
 
 	r.SetToken(channelID, info)
+	// 提供方轮换了 refresh token：回写 keychain，避免重启后继续使用旧令牌（CL-11）。
+	if rt != refreshToken {
+		r.mu.RLock()
+		fn := r.persistFn
+		r.mu.RUnlock()
+		if fn != nil {
+			_ = fn(channelID, rt)
+		}
+	}
 	return info, nil
 }
 

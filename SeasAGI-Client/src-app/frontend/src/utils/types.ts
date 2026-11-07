@@ -63,6 +63,14 @@ export interface RequestLog {
   error_message: string | null;
   applied_constraints?: string;
   intent_scenario?: string;
+  request_payload?: string;
+  // MITM 路由可观测字段（来源工具 → 目标 的改写全过程）
+  mitm_target?: string;
+  mitm_rule_id?: string;
+  requested_model?: string;
+  resolved_target?: string;
+  prev_hash?: string;
+  hash?: string;
 }
 
 export interface CandidateProvider {
@@ -109,6 +117,41 @@ export interface ModelCombo {
   status?: "draft" | "active" | "archived";
   source?: "local" | "official" | "tenant" | "custom" | "cloud";
   version?: number;
+  // P3-21 市场优先：true/缺省 = 先试 grant:// 市场资产，枯竭回退自有 Key；false = 忽略市场资产。
+  market_priority?: boolean;
+}
+
+// MITM 路由动作：passthrough=不改写；combo=改写为 Combo 名；model=改写为逻辑模型名
+export type MITMAction = "passthrough" | "combo" | "model";
+
+// MITMRoutingRule 描述一条「来源工具 → 目标」的路由映射规则。
+// 三维匹配（全部满足才命中）：target_id 等值（空/`*`=任意）、endpoint_path 前缀、request_model 等值或后缀 `*` 前缀通配。
+export interface MITMRoutingRule {
+  id: string;
+  enabled: boolean;
+  priority: number;
+  target_id?: string;
+  endpoint_path?: string;
+  request_model?: string;
+  action: MITMAction;
+  combo_name?: string;
+  model?: string;
+  constraints?: Record<string, any>;
+  // 规则来源：local（默认，可编辑、置顶）| enterprise（企业下发、只读、置底）
+  source?: "local" | "enterprise" | string;
+}
+
+// MITM 头部一致性校验模式：lenient（默认，仅审计）| strict（拒绝 4xx）
+export type MITMSecurityMode = "lenient" | "strict";
+
+// MITMRoutingConfig 是 MITM 接管请求的路由映射配置（含全局默认动作）。
+export interface MITMRoutingConfig {
+  enabled: boolean;
+  default_action: MITMAction;
+  default_combo_name?: string;
+  default_model?: string;
+  security_mode?: MITMSecurityMode;
+  rules: MITMRoutingRule[];
 }
 
 export interface AppConfig {

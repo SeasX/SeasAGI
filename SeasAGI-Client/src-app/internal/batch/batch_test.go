@@ -216,6 +216,98 @@ func TestBatchCursorPagination(t *testing.T) {
 	}
 }
 
+// TestApplyCheckpointUpdatesWritesOnce 验证批量提交 N 条检查点只落盘一次，
+// 避免逐行 MarkCheckpointResult 造成的 O(N²) IO。
+func TestApplyCheckpointUpdatesWritesOnce(t *testing.T) {
+	tmpDir := t.TempDir()
+	store := NewStore(tmpDir)
+
+	record, err := store.CreateBatch("/v1/chat", "24h", "f1", "k1", "gpt-4", nil)
+	if err != nil {
+		t.Fatalf("创建 batch 失败: %v", err)
+	}
+
+	items := make([]struct {
+		LineNumber int
+		CustomID   string
+	}, 0, 5)
+	updates := make([]CheckpointUpdate, 0, 5)
+	for i := 1; i <= 5; i++ {
+		items = append(items, struct {
+			LineNumber int
+			CustomID   string
+		}{LineNumber: i, CustomID: "req"})
+		updates = append(updates, CheckpointUpdate{
+			LineNumber: i,
+			Status:     CheckpointCompleted,
+			Result:     map[string]string{"output": "ok"},
+		})
+	}
+	if err := store.EnsureCheckpoints(record.ID, items); err != nil {
+		t.Fatalf("创建检查点失败: %v", err)
+	}
+
+	saves := 0
+	store.onSave = func() { saves++ }
+
+	if err := store.ApplyCheckpointUpdates(record.ID, updates); err != nil {
+		t.Fatalf("批量更新失败: %v", err)
+	}
+	if saves != 1 {
+		t.Fatalf("批量提交 5 条应只落盘 1 次，实际 %d 次", saves)
+	}
+
+	// 结果必须完整持久化：用新的 Store 重新读取。
+	reloaded := NewStore(tmpDir)
+	all, err := reloaded.ListCheckpoints(record.ID)
+	if err != nil {
+		t.Fatalf("重新读取检查点失败: %v", err)
+	}
+	if len(all) != 5 {
+		t.Fatalf("应有 5 个检查点，实际 %d", len(all))
+	}
+	for _, cp := range all {
+		if cp.Status != CheckpointCompleted {
+			t.Fatalf("line %d 应为 completed，实际 %s", cp.LineNumber, cp.Status)
+		}
+	}
+}
+
+// TestApplyCheckpointUpdatesRejectsUnknownLine 验证批量更新全成或全不成：
+// 任一行号不存在时不写入任何改动。
+func TestApplyCheckpointUpdatesRejectsUnknownLine(t *testing.T) {
+	tmpDir := t.TempDir()
+	store := NewStore(tmpDir)
+
+	record, _ := store.CreateBatch("/v1/chat", "24h", "f1", "k1", "gpt-4", nil)
+	items := []struct {
+		LineNumber int
+		CustomID   string
+	}{{LineNumber: 1, CustomID: "req-1"}}
+	if err := store.EnsureCheckpoints(record.ID, items); err != nil {
+		t.Fatalf("创建检查点失败: %v", err)
+	}
+
+	saves := 0
+	store.onSave = func() { saves++ }
+
+	err := store.ApplyCheckpointUpdates(record.ID, []CheckpointUpdate{
+		{LineNumber: 1, Status: CheckpointCompleted, Result: "ok"},
+		{LineNumber: 99, Status: CheckpointCompleted, Result: "ok"},
+	})
+	if err == nil {
+		t.Fatal("不存在的行号应返回错误")
+	}
+	if saves != 0 {
+		t.Fatalf("校验失败时不应落盘，实际落盘 %d 次", saves)
+	}
+
+	all, _ := store.ListCheckpoints(record.ID)
+	if len(all) != 1 || all[0].Status != CheckpointPending {
+		t.Fatalf("检查点不应被部分修改，实际 %+v", all)
+	}
+}
+
 func TestBatchDeleteCompleted(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewStore(tmpDir)

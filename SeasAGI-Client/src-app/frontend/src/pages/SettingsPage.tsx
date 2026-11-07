@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useSearchParams } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import * as cmd from "../utils/commands";
 import { useTranslation } from "../i18n";
 import { SUPPORTED_LOCALES, type Locale } from "../i18n/index";
 import { getErrorMessage } from "../utils/errors";
 import type { MITMStatus } from "../utils/types";
+import { MITMRoutingPanel } from "../components/MITMRoutingPanel";
 
 export function SettingsPage() {
   const auth = useAppStore((s) => s.auth);
@@ -14,7 +15,8 @@ export function SettingsPage() {
   const setAppConfig = useAppStore((s) => s.setAppConfig);
   const { t, locale, setLocale } = useTranslation();
 
-  const [activeTab, setActiveTab] = useState<"account" | "routing" | "rtk" | "caveman" | "mitm" | "rate-limit" | "performance" | "mcp-gateway" | "advanced">("account");
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<"account" | "routing" | "rtk" | "caveman" | "mitm" | "rate-limit" | "performance" | "mcp-gateway" | "market-node" | "advanced">("account");
   const [routingStrategy, setRoutingStrategy] = useState(appConfig?.routing_strategy || "fallback");
   const [stickyUses, setStickyUses] = useState(appConfig?.sticky_channel_use || 3);
   const [platformApiURL, setPlatformApiURL] = useState("");
@@ -51,6 +53,15 @@ export function SettingsPage() {
   useEffect(() => {
     void loadMITMState();
   }, []);
+
+  // P3-16：支持 ?tab=mitm 深链（从日志页「创建映射规则」跳转）。
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const valid = ["account", "routing", "rtk", "caveman", "mitm", "rate-limit", "performance", "mcp-gateway", "market-node", "advanced"];
+    if (tab && valid.includes(tab)) {
+      setActiveTab(tab as typeof activeTab);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (activeTab !== "mitm") return undefined;
@@ -148,6 +159,7 @@ export function SettingsPage() {
         <button className={activeTab === "rate-limit" ? "active" : ""} onClick={() => setActiveTab("rate-limit")}>{t("settings.rateLimit")}</button>
         <button className={activeTab === "performance" ? "active" : ""} onClick={() => setActiveTab("performance")}>{t("settings.performance")}</button>
         <button className={activeTab === "mcp-gateway" ? "active" : ""} onClick={() => setActiveTab("mcp-gateway")}>{t("settings.mcpGateway")}</button>
+        <button className={activeTab === "market-node" ? "active" : ""} onClick={() => setActiveTab("market-node")}>{t("settings.marketNode")}</button>
         <button className={activeTab === "advanced" ? "active" : ""} onClick={() => setActiveTab("advanced")}>{t("settings.advanced")}</button>
       </div>
 
@@ -408,7 +420,7 @@ export function SettingsPage() {
           <div className="tab-content section-card">
             <div className="section-heading">
               <h2>MITM Proxy</h2>
-              <p className="hint">一键接管 LLM API 流量，自动路由到本地网关。</p>
+              <p className="hint">{t("settings.mitmProxySubtitle")}</p>
             </div>
             {mitmError && <div className="error-msg" style={{ marginTop: 12 }}>{mitmError}</div>}
             <div
@@ -429,7 +441,7 @@ export function SettingsPage() {
                   }
                   await loadMITMState();
                 } catch (e) {
-                  setMitmError(getErrorMessage(e, isRunning ? "停止失败" : "启动失败"));
+                  setMitmError(getErrorMessage(e, isRunning ? t("settings.mitmStopFailed") : t("settings.mitmStartFailed")));
                 } finally {
                   setMitmToggling(false);
                 }
@@ -442,12 +454,20 @@ export function SettingsPage() {
             >
               <div>
                 <div className="settings-toggle-title">
-                  {mitmToggling ? "切换中..." : mitmStatus?.state === "running" ? "已启用" : "未启用"}
+                  {mitmToggling
+                    ? t("settings.mitmSwitching")
+                    : mitmStatus?.state === "running"
+                      ? t("settings.mitmStatusEnabled")
+                      : t("settings.mitmStatusDisabled")}
                 </div>
                 <div className="hint">
                   {mitmStatus?.state === "running"
-                    ? `代理端口 ${mitmStatus.proxy_port} · CA ${mitmStatus.ca_installed ? "已安装" : "未安装"} · 系统代理 ${mitmStatus.system_proxy ? "已设置" : "未设置"}`
-                    : "点击开启一键接管 AI API 流量"}
+                    ? t("settings.mitmRunningHint", {
+                        port: String(mitmStatus.proxy_port ?? "-"),
+                        ca: mitmStatus.ca_installed ? t("settings.mitmCaInstalled") : t("settings.mitmCaNotInstalled"),
+                        proxy: mitmStatus.system_proxy ? t("settings.mitmProxySet") : t("settings.mitmProxyNotSet"),
+                      })
+                    : t("settings.mitmEnableHint")}
                 </div>
                 <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <span className={`badge ${mitmStatus?.system_proxy_active ? "badge-green" : "badge-red"}`}>
@@ -475,8 +495,8 @@ export function SettingsPage() {
           {/* 域名配置 + 连通性检查 */}
           <div className="tab-content section-card">
             <div className="section-heading">
-              <h2>接管域名</h2>
-              <p className="hint">被接管的域名流量将通过 MITM 代理转发到本地网关，点击「测试」检查连通性。</p>
+              <h2>{t("settings.mitmDomainsTitle")}</h2>
+              <p className="hint">{t("settings.mitmDomainsHint")}</p>
             </div>
             <div className="form-row">
               <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
@@ -500,18 +520,18 @@ export function SettingsPage() {
                     setMitmNewRule("");
                     await loadMITMState();
                   } catch (e) {
-                    setMitmError(getErrorMessage(e, "添加域名失败"));
+                    setMitmError(getErrorMessage(e, t("settings.mitmAddDomainFailed")));
                   }
                 }}
                 className="btn-primary btn-sm"
                 style={{ height: 40, alignSelf: "flex-end" }}
               >
-                添加
+                {t("settings.mitmAdd")}
               </button>
             </div>
             <div style={{ marginTop: 12 }}>
               {mitmRules.length === 0 && (
-                <p className="hint">暂无接管域名，请添加需要拦截的 API 域名。</p>
+                <p className="hint">{t("settings.mitmNoDomains")}</p>
               )}
               {mitmRules.map((domain) => {
                 const testState = mitmDomainTests[domain];
@@ -519,13 +539,15 @@ export function SettingsPage() {
                 return (
                   <div key={domain} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
                     <span className="hint" style={{ marginBottom: 0, minWidth: 180, fontFamily: "monospace" }}>{domain}</span>
-                    {testState?.loading && <span className="badge badge-yellow">测试中...</span>}
+                    {testState?.loading && <span className="badge badge-yellow">{t("settings.mitmTesting")}</span>}
                     {testResult && !testState?.loading && (
                       <>
                         <span className={`badge ${testResult.reachable ? "badge-green" : "badge-red"}`}>
-                          {testResult.reachable ? `可达 ${testResult.status_code}` : "不可达"}
+                          {testResult.reachable
+                            ? t("settings.mitmReachable", { status: String(testResult.status_code ?? "-") })
+                            : t("settings.mitmUnreachable")}
                         </span>
-                        {testResult.intercepted && <span className="badge badge-blue">已接管</span>}
+                        {testResult.intercepted && <span className="badge badge-blue">{t("settings.mitmIntercepted")}</span>}
                         {testResult.latency_ms > 0 && <span className="hint" style={{ marginBottom: 0 }}>{testResult.latency_ms}ms</span>}
                         {testResult.error && <span className="hint" style={{ marginBottom: 0, color: "var(--error, #e53e3e)" }}>{String(testResult.error).slice(0, 60)}</span>}
                       </>
@@ -544,7 +566,7 @@ export function SettingsPage() {
                         className="btn-secondary btn-sm"
                         disabled={mitmStatus?.state !== "running" || testState?.loading}
                       >
-                        测试
+                        {t("settings.mitmTest")}
                       </button>
                       <button
                         onClick={async () => {
@@ -558,12 +580,12 @@ export function SettingsPage() {
                             });
                             await loadMITMState();
                           } catch (e) {
-                            setMitmError(getErrorMessage(e, "移除域名失败"));
+                            setMitmError(getErrorMessage(e, t("settings.mitmRemoveDomainFailed")));
                           }
                         }}
                         className="btn-danger btn-sm"
                       >
-                        移除
+                        {t("settings.mitmRemove")}
                       </button>
                     </div>
                   </div>
@@ -571,6 +593,9 @@ export function SettingsPage() {
               })}
             </div>
           </div>
+
+          {/* 路由映射编辑器 + 接管概览 */}
+          <MITMRoutingPanel />
 
           {/* 拦截日志 */}
           {mitmStatus?.state === "running" && (
@@ -580,8 +605,8 @@ export function SettingsPage() {
           {/* CLI 兼容提示 */}
           <div className="tab-content section-card">
             <div className="section-heading">
-              <h2>CLI 兼容</h2>
-              <p className="hint">终端/CLI 工具如不读取系统代理，可手动设置环境变量。</p>
+              <h2>{t("settings.mitmCliCompatTitle")}</h2>
+              <p className="hint">{t("settings.mitmCliCompatHint")}</p>
             </div>
             <MITMEnvHint running={mitmStatus?.state === "running"} />
           </div>
@@ -589,17 +614,17 @@ export function SettingsPage() {
           {/* 已知局限（不接管） */}
           <div className="tab-content section-card">
             <div className="section-heading">
-              <h2>已知局限（不接管）</h2>
-              <p className="hint">一键接管基于系统代理（HTTP/HTTPS over TCP）与本地 CA 实现，以下流量无法被监控或治理，属于客观盲区：</p>
+              <h2>{t("settings.mitmLimitationsTitle")}</h2>
+              <p className="hint">{t("settings.mitmLimitationsHint")}</p>
             </div>
             <ul className="hint" style={{ margin: 0, paddingLeft: 20, lineHeight: 1.9 }}>
-              <li><strong>HTTP/3（QUIC / UDP 443）</strong>：系统代理仅接管 TCP，基于 UDP 的流量不会被拦截。</li>
-              <li><strong>h2 / gRPC 长连接</strong>：仅对标准 HTTP/HTTPS 请求做解析与治理，gRPC 等二进制长连接不被改写。</li>
-              <li><strong>证书固定（Certificate Pinning）客户端</strong>：内置证书校验的应用会拒绝本地 CA，从而绕过 MITM。</li>
-              <li><strong>不读取系统代理的进程</strong>：自行实现网络栈或显式指定代理的 CLI/工具需手动设置环境变量（见上）。</li>
-              <li><strong>未纳入接管域名清单的流量</strong>：仅清单内的域名会被转发到本地网关。</li>
+              <li><strong>{t("settings.mitmLimitation1Title")}</strong>：{t("settings.mitmLimitation1Desc")}</li>
+              <li><strong>{t("settings.mitmLimitation2Title")}</strong>：{t("settings.mitmLimitation2Desc")}</li>
+              <li><strong>{t("settings.mitmLimitation3Title")}</strong>：{t("settings.mitmLimitation3Desc")}</li>
+              <li><strong>{t("settings.mitmLimitation4Title")}</strong>：{t("settings.mitmLimitation4Desc")}</li>
+              <li><strong>{t("settings.mitmLimitation5Title")}</strong>：{t("settings.mitmLimitation5Desc")}</li>
             </ul>
-            <p className="hint" style={{ marginTop: 8 }}>WebSocket（ws/wss）流量已复用同一网关主链路，可正常接管与记账。</p>
+            <p className="hint" style={{ marginTop: 8 }}>{t("settings.mitmWebSocketNote")}</p>
           </div>
         </div>
       )}
@@ -619,6 +644,12 @@ export function SettingsPage() {
       {activeTab === "mcp-gateway" && (
         <div className="settings-stack">
           <MCPGatewayPanel />
+        </div>
+      )}
+
+      {activeTab === "market-node" && (
+        <div className="settings-stack">
+          <MarketNodePanel />
         </div>
       )}
 
@@ -1020,6 +1051,7 @@ function CloudSyncPanel() {
 }
 
 function MITMInterceptLog() {
+  const { t } = useTranslation();
   const [intercepts, setIntercepts] = useState<Record<string, any>[]>([]);
 
   useEffect(() => {
@@ -1041,19 +1073,19 @@ function MITMInterceptLog() {
   return (
     <div className="tab-content section-card">
       <div className="section-heading">
-        <h2>拦截日志</h2>
-        <p className="hint">最近 20 条被接管的请求（每 3 秒刷新）</p>
+        <h2>{t("settings.mitmInterceptLogTitle")}</h2>
+        <p className="hint">{t("settings.mitmInterceptLogHint")}</p>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ textAlign: "left", borderBottom: "1px solid var(--border, #333)" }}>
-              <th style={{ padding: "4px 8px" }}>时间</th>
-              <th style={{ padding: "4px 8px" }}>方法</th>
-              <th style={{ padding: "4px 8px" }}>域名</th>
-              <th style={{ padding: "4px 8px" }}>路径</th>
-              <th style={{ padding: "4px 8px" }}>状态</th>
-              <th style={{ padding: "4px 8px" }}>延迟</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColTime")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColMethod")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColDomain")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColPath")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColStatus")}</th>
+              <th style={{ padding: "4px 8px" }}>{t("settings.mitmColLatency")}</th>
             </tr>
           </thead>
           <tbody>
@@ -1081,6 +1113,7 @@ function MITMInterceptLog() {
 }
 
 function MITMEnvHint({ running }: { running: boolean }) {
+  const { t } = useTranslation();
   const [hint, setHint] = useState<Record<string, string> | null>(null);
 
   useEffect(() => {
@@ -1096,7 +1129,7 @@ function MITMEnvHint({ running }: { running: boolean }) {
   }, [running]);
 
   if (!running || !hint) {
-    return <p className="hint">启动 MITM 代理后显示 CLI 环境变量设置命令。</p>;
+    return <p className="hint">{t("settings.mitmEnvHint")}</p>;
   }
 
   return (
@@ -1110,11 +1143,12 @@ function MITMEnvHint({ running }: { running: boolean }) {
           onClick={() => navigator.clipboard?.writeText(hint.export_cmds)}
           className="btn-secondary btn-sm"
           style={{ height: 40 }}
+          aria-label={t("settings.mitmCopy")}
         >
-          复制
+          {t("settings.mitmCopy")}
         </button>
       </div>
-      <p className="hint" style={{ marginTop: 8 }}>停止后取消设置：</p>
+      <p className="hint" style={{ marginTop: 8 }}>{t("settings.mitmUnsetHint")}</p>
       <div className="form-row" style={{ marginTop: 4 }}>
         <code style={{ flex: 1, padding: 8, background: "var(--bg-code, #1e1e1e)", borderRadius: 4, fontSize: 13, overflowX: "auto", whiteSpace: "nowrap" }}>
           {hint.unset_cmds}
@@ -1123,10 +1157,169 @@ function MITMEnvHint({ running }: { running: boolean }) {
           onClick={() => navigator.clipboard?.writeText(hint.unset_cmds)}
           className="btn-secondary btn-sm"
           style={{ height: 40 }}
+          aria-label={t("settings.mitmCopy")}
         >
-          复制
+          {t("settings.mitmCopy")}
         </button>
       </div>
     </div>
+  );
+}
+
+// MarketNodePanel 是 A 端节点（Inbound Relay）设置面板（P2-1）。
+// 凭证留在本机，企业 relay 仅经签名请求把流量转发到该节点。
+function MarketNodePanel() {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<Record<string, any> | null>(null);
+  const [nodeURL, setNodeURL] = useState("");
+  const [models, setModels] = useState("");
+  const [protocols, setProtocols] = useState("openai-chat");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const splitList = (value: string) =>
+    value
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+  const load = async () => {
+    try {
+      const s = await cmd.getMarketNodeStatus();
+      setStatus(s);
+      setNodeURL(String(s.node_url || ""));
+      setModels(Array.isArray(s.models) ? s.models.join(", ") : "");
+      const proto = Array.isArray(s.wire_protocols) && s.wire_protocols.length > 0 ? s.wire_protocols : ["openai-chat"];
+      setProtocols(proto.join(", "));
+    } catch (e) {
+      setStatus(null);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const handleEnable = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const next = await cmd.registerMarketNode(
+        nodeURL.trim(),
+        splitList(models),
+        splitList(protocols),
+      );
+      setStatus(next);
+      setNodeURL(String(next.node_url || nodeURL));
+      setMessage({ ok: true, text: t("settings.marketNodeSaved") });
+    } catch (e) {
+      setMessage({ ok: false, text: getErrorMessage(e, t("settings.marketNodeSaveFailed")) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDisable = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await cmd.disableMarketNode();
+      await load();
+      setMessage({ ok: true, text: t("settings.marketNodeDisabled") });
+    } catch (e) {
+      setMessage({ ok: false, text: getErrorMessage(e, t("settings.marketNodeSaveFailed")) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enabled = Boolean(status?.enabled);
+  const remote = (status?.remote || {}) as Record<string, any>;
+
+  return (
+    <>
+      <div className="tab-content section-card">
+        <div className="section-heading">
+          <h2>{t("settings.marketNode")}</h2>
+          <p className="hint">{t("settings.marketNodeHint")}</p>
+        </div>
+        <div className="settings-inline-actions" style={{ marginBottom: 12 }}>
+          <span className={`badge ${enabled ? "badge-green" : "badge-gray"}`}>
+            {enabled ? t("settings.marketNodeStatusEnabled") : t("settings.marketNodeStatusDisabled")}
+          </span>
+          <span className="hint" style={{ marginBottom: 0 }}>
+            {t("settings.marketNodeListenPort", { port: String(status?.listen_port ?? "-") })}
+            {" · "}
+            {status?.gateway_running ? t("settings.marketNodeGatewayRunning") : t("settings.marketNodeGatewayStopped")}
+          </span>
+        </div>
+        {enabled && (
+          <div className="hint" style={{ marginBottom: 12 }}>
+            <div>{t("settings.marketNodeId")}: <code>{String(status?.node_id || remote.node_id || "-")}</code></div>
+            <div>{t("settings.marketNodeUrl")}: <code>{String(status?.node_url || remote.node_url || "-")}</code></div>
+            {remote.last_seen_at && (
+              <div>{t("settings.marketNodeLastSeen")}: {String(remote.last_seen_at)}</div>
+            )}
+          </div>
+        )}
+        <div className="form-group">
+          <label>{t("settings.marketNodeUrlLabel")}</label>
+          <input
+            className="form-input"
+            value={nodeURL}
+            onChange={(e) => setNodeURL(e.target.value)}
+            placeholder="https://your-node.example.com"
+          />
+          <p className="hint">{t("settings.marketNodeUrlHint")}</p>
+        </div>
+        <div className="form-group">
+          <label>{t("settings.marketNodeModels")}</label>
+          <input
+            className="form-input"
+            value={models}
+            onChange={(e) => setModels(e.target.value)}
+            placeholder="claude-sonnet-4-5, gpt-5"
+          />
+          <p className="hint">{t("settings.marketNodeModelsHint")}</p>
+        </div>
+        <div className="form-group">
+          <label>{t("settings.marketNodeProtocols")}</label>
+          <input
+            className="form-input"
+            value={protocols}
+            onChange={(e) => setProtocols(e.target.value)}
+            placeholder="openai-chat, anthropic, openai-responses, gemini"
+          />
+          <p className="hint">{t("settings.marketNodeProtocolsHint")}</p>
+        </div>
+        {message && (
+          <div className={message.ok ? "form-success" : "form-error"} style={{ marginBottom: 12 }}>
+            {message.text}
+          </div>
+        )}
+        <div className="settings-inline-actions">
+          <button className="btn-primary btn-sm" onClick={handleEnable} disabled={busy || !nodeURL.trim()}>
+            {busy ? t("common.loading") : t("settings.marketNodeEnable")}
+          </button>
+          {enabled && (
+            <button className="btn-danger btn-sm" onClick={handleDisable} disabled={busy}>
+              {t("settings.marketNodeDisable")}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="tab-content section-card">
+        <div className="section-heading">
+          <h2>{t("settings.marketNodeGatewayTitle")}</h2>
+          <p className="hint">{t("settings.marketNodeGatewayHint")}</p>
+        </div>
+        <ul className="hint" style={{ margin: 0, paddingLeft: 20, lineHeight: 1.9 }}>
+          <li>{t("settings.marketNodeTip1")}</li>
+          <li>{t("settings.marketNodeTip2")}</li>
+          <li>{t("settings.marketNodeTip3")}</li>
+        </ul>
+      </div>
+    </>
   );
 }

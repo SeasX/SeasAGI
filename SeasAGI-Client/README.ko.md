@@ -117,6 +117,8 @@ SeasAGI-Client/
 - Zod 프론트엔드 폼 검증
 - 터널 원격 액세스 (Cloudflare Tunnel + Tailscale Funnel)
 - OAuth 2.0 PKCE (4개 Provider + Token 자동 갱신)
+- 클라우드 동기화 무결성: 원격 구성 파일은 HMAC-SHA256 서명 봉투입니다. `SEASAGI_SYNC_HMAC_KEY`(여러 기기에서 동일)를 설정하거나 클라이언트가 생성해 시스템 보안 저장소에 보관합니다. 키가 없거나 서명 검증에 실패하면 클라이언트는 원격 파일 적용을 거부합니다(fail-closed). 서명되지 않은 이전 형식의 원격 파일은 더 이상 가져올 수 없습니다.
+- 신뢰 경계: 요청 봉투(envelope)는 전송 기밀성만 제공하며(TLS가 동일한 목표를 이미 충족) 인증 경계가 아닙니다. 기기 바인딩은 표시/감사 단서일 뿐이며 `device_id`는 클라이언트가 생성하므로 시트나 체험 제한에 사용할 수 없습니다. 권한 부여, 과금, 할당량, 모델 범위, 정산 주기는 항상 서버가 결정하며 클라이언트 제공 필드는 신뢰할 수 없는 입력으로 취급합니다.
 
 ### MITM 프록시 — 원클릭 API 트래픽 하이재킹
 
@@ -161,7 +163,7 @@ SeasAGI-Client/
 [`scripts/version.txt`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/scripts/version.txt) 가 유일한 버전 번호 정의 파일입니다:
 
 ```
-0.2.0
+0.2.5
 ```
 
 - 버전 번호 업데이트는 이 파일만 수정하면 됩니다.
@@ -173,13 +175,14 @@ SeasAGI-Client/
 2. `export VITE_APP_VERSION="$VERSION"`를 통해 프론트엔드 빌드 환경에 버전 번호 주입
 3. Vite 빌드 시, `import.meta.env.VITE_APP_VERSION`이 정적 값으로 컴파일되어 프론트엔드 산출물에 기록됨
 4. Wails가 프론트엔드 산출물을 데스크톱 클라이언트 바이너리에 패키징
+5. 동일한 버전 번호를 `-ldflags "-X .../internal/buildinfo.Version=$VERSION"`로 Go 측에도 주입하여 "About" 메뉴, `/api/info`, 업데이트 확인이 같은 버전을 표시
 
 ### 프론트엔드 표시
 
 클라이언트 인터페이스左上단 Logo 오른쪽에 버전 번호 배지가 표시됩니다:
 
 ```
-[icon] SeasAGI  v0.2.0
+[icon] SeasAGI  v0.2.5
 ```
 
 구현 위치: [`Layout.tsx`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/src-app/frontend/src/components/Layout.tsx) 에서 `import.meta.env.VITE_APP_VERSION`을 사용하여 렌더링.

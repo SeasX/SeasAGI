@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/timeutil"
 )
 
 var testStore *TraceStore
@@ -292,5 +294,41 @@ func TestConcurrentInserts(t *testing.T) {
 	}
 	if len(results) < n {
 		t.Errorf("expected at least %d concurrent records, got %d", n, len(results))
+	}
+}
+
+// 读取历史 RFC3339 记录时统一转换为 SQLite 时间格式。
+func TestQueryNormalizesLegacyTimestamp(t *testing.T) {
+	testStore.Insert(Record{
+		TraceID:   "test-legacy-ts-001",
+		CreatedAt: "2026-10-25T08:00:00Z",
+	})
+
+	rec, err := testStore.QueryByTraceID("test-legacy-ts-001")
+	if err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+	if rec.CreatedAt != "2026-10-25 08:00:00" {
+		t.Fatalf("created_at = %q, want SQLite layout", rec.CreatedAt)
+	}
+}
+
+// PurgeBefore 必须在 RFC3339 与 SQLite 格式混存时仍能正确比较，不能误删当天数据。
+func TestPurgeBeforeHandlesMixedTimestampFormats(t *testing.T) {
+	testStore.Insert(Record{TraceID: "test-purge-mixed-old", CreatedAt: "2020-01-01T00:00:00Z"})
+	testStore.Insert(Record{TraceID: "test-purge-mixed-recent", CreatedAt: timeutil.NowSQLite()})
+
+	n, err := testStore.PurgeBefore(time.Now().Add(-24 * time.Hour))
+	if err != nil {
+		t.Fatalf("purge failed: %v", err)
+	}
+	if n < 1 {
+		t.Fatalf("expected legacy RFC3339 row to be purged, deleted %d", n)
+	}
+	if _, err := testStore.QueryByTraceID("test-purge-mixed-old"); err != sql.ErrNoRows {
+		t.Fatalf("expected old RFC3339 row purged, got %v", err)
+	}
+	if _, err := testStore.QueryByTraceID("test-purge-mixed-recent"); err != nil {
+		t.Fatalf("recent SQLite-format row should survive purge, got %v", err)
 	}
 }

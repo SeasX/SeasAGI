@@ -7,10 +7,10 @@
     <lastmod>2026-08-15</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
-    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://SeasAGI.SeasX.ai/"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://SeasAGI.SeasX.ai/en/"/>
-    <xhtml:link rel="alternate" hreflang="ja" href="https://SeasAGI.SeasX.ai/ja/"/>
-    <xhtml:link rel="alternate" hreflang="ko" href="https://SeasAGI.SeasX.ai/ko/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://SeasAGI.SeasX.ai/"/>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://SeasAGI.SeasX.ai/?lang=zh"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://SeasAGI.SeasX.ai/?lang=ja"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="https://SeasAGI.SeasX.ai/?lang=ko"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://SeasAGI.SeasX.ai/"/>
   </url>
 

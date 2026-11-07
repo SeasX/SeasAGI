@@ -9,11 +9,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
 )
 
 // maxRecords caps how many in-memory records are retained; the oldest are
-// dropped once the cap is exceeded (and the file is compacted).
+// dropped once the cap is exceeded (and the file is compacted periodically).
 const maxRecords = 10000
+
+// usageCompactBytes 是追加日志的磁盘体积上限，超过后立即压缩。
+const usageCompactBytes = 8 << 20
 
 // Fallback pricing (USD per 1M tokens) used when a model is not present in the
 // pricing table. The record is flagged via UsageRecord.CostEstimated.
@@ -91,6 +96,10 @@ type Service struct {
 	records []UsageRecord
 	pricing []ModelPricing
 	path    string
+	// appended / appendedBytes 记录自上次全量压缩以来追加的条数与字节数，
+	// 用于把「追加日志 + 定期压缩」的磁盘占用限制在有界范围内。
+	appended      int
+	appendedBytes int64
 }
 
 func NewService() *Service {
@@ -118,7 +127,12 @@ type persistLine struct {
 // for backward compatibility.
 func (s *Service) load() {
 	data, err := os.ReadFile(s.path)
-	if err != nil || len(data) == 0 {
+	if err != nil {
+		return
+	}
+	// 使用记录视为私密数据，启动时收紧既有文件权限。
+	_ = os.Chmod(s.path, 0o600)
+	if len(data) == 0 {
 		return
 	}
 	if records, pricing, ok := parseJSONL(data); ok {
@@ -170,19 +184,29 @@ func parseJSONL(data []byte) ([]UsageRecord, []ModelPricing, bool) {
 // appendRecordLocked incrementally appends a single record to the log. The
 // caller must hold s.mu.
 func (s *Service) appendRecordLocked(record UsageRecord) {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		logging.Warningf("usage: create dir for %s failed: %v", s.path, err)
 		return
 	}
 	line, err := json.Marshal(persistLine{Record: &record})
 	if err != nil {
+		logging.Warningf("usage: marshal record failed: %v", err)
 		return
 	}
-	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
+		logging.Warningf("usage: open %s for append failed: %v", s.path, err)
 		return
 	}
 	defer f.Close()
-	_, _ = f.Write(append(line, '\n'))
+	// 既有日志可能是旧版本以 0644 写入的，显式收紧权限。
+	_ = os.Chmod(s.path, 0o600)
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		logging.Warningf("usage: append record to %s failed: %v", s.path, err)
+		return
+	}
+	s.appended++
+	s.appendedBytes += int64(len(line) + 1)
 }
 
 // persist rewrites the whole log atomically (tmp file + rename). Used on
@@ -192,6 +216,7 @@ func (s *Service) persist() {
 	writeLine := func(pl persistLine) {
 		line, err := json.Marshal(pl)
 		if err != nil {
+			logging.Warningf("usage: marshal persist line failed: %v", err)
 			return
 		}
 		buf.Write(line)
@@ -201,14 +226,23 @@ func (s *Service) persist() {
 	for i := range s.records {
 		writeLine(persistLine{Record: &s.records[i]})
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		logging.Warningf("usage: create dir for %s failed: %v", s.path, err)
 		return
 	}
 	tmpFile := s.path + ".tmp"
-	if err := os.WriteFile(tmpFile, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(tmpFile, buf.Bytes(), 0o600); err != nil {
+		logging.Warningf("usage: write temp file %s failed: %v", tmpFile, err)
 		return
 	}
-	_ = os.Rename(tmpFile, s.path)
+	_ = os.Chmod(tmpFile, 0o600)
+	if err := os.Rename(tmpFile, s.path); err != nil {
+		logging.Warningf("usage: rename %s -> %s failed: %v", tmpFile, s.path, err)
+		return
+	}
+	_ = os.Chmod(s.path, 0o600)
+	s.appended = 0
+	s.appendedBytes = 0
 }
 
 func (s *Service) GetUsageSummary() UsageSummary {
@@ -405,14 +439,15 @@ func (s *Service) RecordUsageV2(detail UsageDetail) {
 
 	s.records = append(s.records, record)
 	if len(s.records) > maxRecords {
-		// Compaction: drop the oldest and rewrite the log atomically.
+		// 内存只保留最近 maxRecords 条；文件在下一次压缩时一并收敛。
 		s.records = s.records[len(s.records)-maxRecords:]
-		s.persist()
-		return
 	}
-	// Incremental append: only the new record is written, avoiding an O(n)
-	// full rewrite on every single request.
+	// 增量追加：单条请求只写一行，避免每请求 O(n) 全量重写。
 	s.appendRecordLocked(record)
+	// 到达阈值后再做一次原子压缩，把磁盘条目数收敛回 maxRecords。
+	if s.appended >= maxRecords || s.appendedBytes >= usageCompactBytes {
+		s.persist()
+	}
 }
 
 // estimateCost computes the USD cost of a request. When the granular v2 token
@@ -582,20 +617,4 @@ func (s *Service) GetModelStats() []ModelStatsEntry {
 		return result[i].TotalRequests > result[j].TotalRequests
 	})
 	return result
-}
-
-func (s *Service) SetModelStatsFromCloud(stats []ModelStatsEntry) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var updated bool
-	for _, st := range stats {
-		for i, p := range s.pricing {
-			if p.Model == st.Model {
-				updated = true
-				break
-			}
-			_ = i
-		}
-		_ = updated
-	}
 }

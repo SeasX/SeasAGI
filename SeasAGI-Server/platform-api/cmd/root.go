@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"mime"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,8 +24,8 @@ import (
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/auth"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/backup"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/channel"
-	combo "github.com/SeasAGI/SeasAGI-Server/platform-api/internal/combo"
-	combotemplate "github.com/SeasAGI/SeasAGI-Server/platform-api/internal/combotemplate"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/combo"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/combotemplate"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/device"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/logging"
@@ -48,16 +52,75 @@ func Execute() error {
 	defer database.Close()
 	logging.Info("Database initialized")
 
+	// 优雅退出上下文：trace 保留清理与 HTTP 服务共用，进程退出时一并停止。
+	appCtx, stopApp := context.WithCancel(context.Background())
+	defer stopApp()
+	database.StartTraceRetention(appCtx, database.TraceRetentionConfigFromEnv())
+
 	if err := modelcatalog.LoadAndSyncCatalog(); err != nil {
 		logging.Warningf("model catalog sync failed: %v", err)
 	} else {
 		logging.Info("Model catalog synced")
 	}
 
-	r := gin.New()
-	r.Use(corsMiddleware(), traceMiddleware(), gin.Recovery(), gin.Logger())
+	r, err := BuildRouter()
+	if err != nil {
+		return err
+	}
 
-	if os.Getenv("GIN_MODE") != "release" {
+	port := os.Getenv("API_PORT")
+	if port == "" {
+		port = "9318"
+	}
+
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: r,
+		// 避免 slowloris 与连接长期占用；不设置覆盖流式响应的整体超时。
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      5 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+	}
+
+	// 关停宽限期，默认 20s，可通过 SHUTDOWN_TIMEOUT_SEC 调整。
+	shutdownTimeout := 20 * time.Second
+	if v := os.Getenv("SHUTDOWN_TIMEOUT_SEC"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			shutdownTimeout = time.Duration(n) * time.Second
+		}
+	}
+
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-stopCh
+		stopApp()
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			logging.Warningf("graceful shutdown failed, forcing close: %v", err)
+			_ = server.Close()
+		}
+	}()
+
+	logging.Infof("Platform API starting on :%s", port)
+	err = server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
+}
+
+// BuildRouter 构建 HTTP 路由（不监听端口、不启动后台任务），
+// 供进程启动与路由安全/攻击测试复用。
+func BuildRouter() (*gin.Engine, error) {
+	r := gin.New()
+	r.Use(bodyLimitMiddleware(requestBodyLimit()), corsMiddleware(), traceMiddleware(), gin.Recovery(), gin.Logger())
+
+	// 仅在显式开启 SEASAGI_DEBUG_BODY=1 时记录请求/响应体，且敏感字段会被打码。
+	if os.Getenv("SEASAGI_DEBUG_BODY") == "1" {
+		logging.Warningf("SEASAGI_DEBUG_BODY is enabled — request/response bodies are logged with sensitive fields masked")
 		r.Use(debugLogMiddleware())
 	}
 
@@ -84,6 +147,13 @@ func Execute() error {
 		api.GET("/version/check", version.Check)
 		api.GET("/version/migrations", version.Migrations)
 
+		// 内部服务用量上报入口：必须携带 INTERNAL_API_TOKEN（或 ADMIN_SECRET），
+		// 未配置令牌时直接 503，避免 usage_records 没有写入源。
+		internalGroup := api.Group("/internal", usage.InternalAuth())
+		{
+			internalGroup.POST("/usage", usage.IngestUsage)
+		}
+
 		authenticated := api.Group("")
 		authenticated.Use(auth.Middleware())
 		{
@@ -94,16 +164,6 @@ func Execute() error {
 			authenticated.GET("/channels", channel.ListChannels)
 			authenticated.GET("/channels/:id", channel.GetChannel)
 			authenticated.GET("/free-channels", channel.ListFreeChannels)
-			authenticated.POST("/channels", channel.CreateChannel)
-			authenticated.PUT("/channels/:id", channel.UpdateChannel)
-			authenticated.DELETE("/channels/:id", channel.DeleteChannel)
-
-			authenticated.GET("/channels/:id/resources", providerresource.ListResources)
-			authenticated.GET("/channels/:id/resources/:resource_id", providerresource.GetResource)
-			authenticated.POST("/channels/:id/resources", providerresource.CreateResource)
-			authenticated.PUT("/channels/:id/resources/:resource_id", providerresource.UpdateResource)
-			authenticated.DELETE("/channels/:id/resources/:resource_id", providerresource.DeleteResource)
-			authenticated.GET("/channels/:id/resources/resolve", providerresource.ResolveResource)
 
 			authenticated.GET("/models", modelcatalog.ListModels)
 			authenticated.GET("/models/:name", modelcatalog.GetModel)
@@ -129,7 +189,8 @@ func Execute() error {
 		}
 
 		// Admin routes (community edition: user/channel/combo/relay basic management)
-		adminGroup := api.Group("/admin")
+		// 全部管理端点必须携带 ADMIN_SECRET，禁止匿名访问。
+		adminGroup := api.Group("/admin", admin.Middleware())
 		{
 			adminGroup.GET("/users", admin.ListUsers)
 			adminGroup.GET("/users/:id", admin.GetUser)
@@ -142,6 +203,15 @@ func Execute() error {
 			adminGroup.POST("/channels", channel.CreateChannel)
 			adminGroup.PUT("/channels/:id", channel.UpdateChannel)
 			adminGroup.DELETE("/channels/:id", channel.DeleteChannel)
+
+			// 通道资源（含明文解密端点）只允许管理员访问。
+			adminGroup.GET("/channels/:id/resources", providerresource.ListResources)
+			adminGroup.GET("/channels/:id/resources/:resource_id", providerresource.GetResource)
+			adminGroup.POST("/channels/:id/resources", providerresource.CreateResource)
+			adminGroup.PUT("/channels/:id/resources/:resource_id", providerresource.UpdateResource)
+			adminGroup.DELETE("/channels/:id/resources/:resource_id", providerresource.DeleteResource)
+			adminGroup.GET("/channels/:id/resources/resolve", providerresource.ResolveResource)
+
 			adminGroup.GET("/users/:id/custom-channels", admin.ListUserCustomChannels)
 
 			adminGroup.GET("/combos", combo.ListUserCombos)
@@ -166,31 +236,7 @@ func Execute() error {
 		}
 	}
 
-	port := os.Getenv("API_PORT")
-	if port == "" {
-		port = "9318"
-	}
-
-	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: r,
-	}
-
-	stopCh := make(chan os.Signal, 1)
-	signal.Notify(stopCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-stopCh
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = server.Shutdown(ctx)
-	}()
-
-	logging.Infof("Platform API starting on :%s", port)
-	err := server.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		return err
-	}
-	return nil
+	return r, nil
 }
 
 func registerAdminUI(r *gin.Engine) {
@@ -297,31 +343,96 @@ func traceMiddleware() gin.HandlerFunc {
 }
 
 func debugLogMiddleware() gin.HandlerFunc {
-	// WARNING: This middleware logs request and response bodies including sensitive data (passwords, API keys, tokens).
-	// It MUST only be enabled in development/debug environments. NEVER enable in production.
+	// 该中间件仅在显式开启 SEASAGI_DEBUG_BODY=1 时启用；
+	// 所有请求/响应体都会先做敏感字段打码，非 JSON 正文不落盘。
 	return func(c *gin.Context) {
 		bodyBytes, _ := io.ReadAll(c.Request.Body)
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 		logging.Debugf(">>> %s %s", c.Request.Method, c.Request.URL.String())
 		if len(bodyBytes) > 0 {
-			bodyStr := string(bodyBytes)
-			if len(bodyStr) > 2048 {
-				bodyStr = bodyStr[:2048] + "... (truncated)"
-			}
-			logging.Debugf(">>> Request Body: %s", bodyStr)
+			logging.Debugf(">>> Request Body: %s", maskSensitiveBody(bodyBytes))
 		}
 
 		blw := &bodyLogWriter{body: bytes.NewBufferString(""), ResponseWriter: c.Writer}
 		c.Writer = blw
 		c.Next()
 
-		respBody := blw.body.String()
-		if len(respBody) > 2048 {
-			respBody = respBody[:2048] + "... (truncated)"
-		}
-		logging.Debugf("<<< %d %s", c.Writer.Status(), respBody)
+		logging.Debugf("<<< %d %s", c.Writer.Status(), maskSensitiveBody(blw.body.Bytes()))
 	}
+}
+
+// debugBodyLimit 限制 debug 日志中正文的最大长度。
+const debugBodyLimit = 2048
+
+// sensitiveBodyKeys 明确需要打码的字段名。
+var sensitiveBodyKeys = map[string]struct{}{
+	"password":           {},
+	"passwd":             {},
+	"api_key":            {},
+	"apikey":             {},
+	"authorization":      {},
+	"token":              {},
+	"access_token":       {},
+	"refresh_token":      {},
+	"id_token":           {},
+	"secret":             {},
+	"client_secret":      {},
+	"encrypted_api_key":  {},
+	"admin_secret":       {},
+	"internal_api_token": {},
+}
+
+// isSensitiveKey 判断字段是否需要打码（兼容 *_token / *_secret / *_password / *_api_key）。
+func isSensitiveKey(key string) bool {
+	k := strings.ToLower(key)
+	if _, ok := sensitiveBodyKeys[k]; ok {
+		return true
+	}
+	for _, suffix := range []string{"_token", "_secret", "_password", "_api_key"} {
+		if strings.HasSuffix(k, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// maskSensitiveBody 对 JSON 正文递归打码；非 JSON 正文直接省略，避免明文密钥入库日志。
+func maskSensitiveBody(body []byte) string {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return ""
+	}
+	var v interface{}
+	if err := json.Unmarshal(trimmed, &v); err != nil {
+		return "[non-JSON body omitted]"
+	}
+	masked, err := json.Marshal(maskSensitiveValue(v))
+	if err != nil {
+		return "[unparsable body omitted]"
+	}
+	if len(masked) > debugBodyLimit {
+		return string(masked[:debugBodyLimit]) + "... (truncated)"
+	}
+	return string(masked)
+}
+
+func maskSensitiveValue(v interface{}) interface{} {
+	switch t := v.(type) {
+	case map[string]interface{}:
+		for k, val := range t {
+			if isSensitiveKey(k) {
+				t[k] = "***"
+				continue
+			}
+			t[k] = maskSensitiveValue(val)
+		}
+	case []interface{}:
+		for i := range t {
+			t[i] = maskSensitiveValue(t[i])
+		}
+	}
+	return v
 }
 
 type bodyLogWriter struct {
@@ -334,25 +445,135 @@ func (w *bodyLogWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
+// corsPolicy 保存 CORS 白名单匹配规则。
+// origins 为显式来源白名单；未配置时 allowLoopback 为 true，仅放行本机来源。
+type corsPolicy struct {
+	origins       map[string]bool
+	allowLoopback bool
+}
+
+// buildCORSPolicy 解析 CORS_ALLOWED_ORIGINS（逗号分隔，兼容旧变量 CORS_ALLOW_ORIGIN）。
+// 规则：
+//   - 仅做精确匹配，通配符 "*" 永远不构成白名单条目；
+//   - 生产模式下出现 "*" 直接返回错误（拒绝启动），避免退化成反射任意 Origin；
+//   - 未配置任何来源时默认只允许本机来源（localhost / 127.0.0.1 / [::1]）。
+func buildCORSPolicy(raw string, production bool) (corsPolicy, error) {
+	policy := corsPolicy{origins: make(map[string]bool)}
+	wildcard := false
+	for _, part := range strings.Split(raw, ",") {
+		origin := strings.TrimSuffix(strings.TrimSpace(part), "/")
+		if origin == "" {
+			continue
+		}
+		if origin == "*" {
+			wildcard = true
+			continue
+		}
+		policy.origins[origin] = true
+	}
+	if wildcard {
+		if production {
+			return policy, fmt.Errorf("CORS_ALLOWED_ORIGINS must not contain '*': list explicit origins instead")
+		}
+		logging.Warningf("CORS wildcard '*' is ignored; configure explicit origins via CORS_ALLOWED_ORIGINS")
+	}
+	if len(policy.origins) == 0 {
+		policy.allowLoopback = true
+	}
+	return policy, nil
+}
+
+// allows 判断给定 Origin 是否命中白名单。
+func (p corsPolicy) allows(origin string) bool {
+	origin = strings.TrimSuffix(strings.TrimSpace(origin), "/")
+	if origin == "" {
+		return false
+	}
+	if p.origins[origin] {
+		return true
+	}
+	return p.allowLoopback && isLoopbackOrigin(origin)
+}
+
+// isLoopbackOrigin 判断 Origin 是否指向本机（任意端口）。
+func isLoopbackOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// isProductionMode 与 secpolicy 保持一致：未显式开启开发模式即视为生产。
+func isProductionMode() bool {
+	if os.Getenv("SEASAGI_ALLOW_DEV_SECRETS") == "1" {
+		return false
+	}
+	return os.Getenv("GIN_MODE") != "debug"
+}
+
+// corsMiddleware 依据 CORS 白名单下发跨域响应头。
+// 只有命中白名单才回显 Origin 并允许凭证，不会出现 * + Credentials 的组合。
 func corsMiddleware() gin.HandlerFunc {
+	raw := os.Getenv("CORS_ALLOWED_ORIGINS")
+	if strings.TrimSpace(raw) == "" {
+		raw = os.Getenv("CORS_ALLOW_ORIGIN")
+	}
+	policy, err := buildCORSPolicy(raw, isProductionMode())
+	if err != nil {
+		logging.Fatalf("invalid CORS configuration: %v", err)
+	}
+	if len(policy.origins) == 0 {
+		logging.Warningf("CORS_ALLOWED_ORIGINS not set: only loopback origins (localhost/127.0.0.1/[::1]) are allowed")
+	}
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
-		allowed := os.Getenv("CORS_ALLOW_ORIGIN")
-		if allowed == "" {
-			allowed = "*"
+		if policy.allows(origin) {
+			c.Header("Access-Control-Allow-Origin", strings.TrimSuffix(strings.TrimSpace(origin), "/"))
+			c.Header("Access-Control-Allow-Credentials", "true")
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Trace-Id")
+			c.Header("Vary", "Origin")
 		}
-		if origin != "" {
-			c.Header("Access-Control-Allow-Origin", origin)
-		} else {
-			c.Header("Access-Control-Allow-Origin", allowed)
-		}
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Trace-Id")
-		c.Header("Access-Control-Allow-Credentials", "true")
 
-		if c.Request.Method == "OPTIONS" {
+		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
+		}
+		c.Next()
+	}
+}
+
+// defaultMaxRequestBodyBytes 是 platform-api 单请求正文上限（8MB）。
+const defaultMaxRequestBodyBytes int64 = 8 << 20
+
+// requestBodyLimit 读取 MAX_REQUEST_BODY_BYTES，未配置时使用默认值。
+func requestBodyLimit() int64 {
+	if v := strings.TrimSpace(os.Getenv("MAX_REQUEST_BODY_BYTES")); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultMaxRequestBodyBytes
+}
+
+// bodyLimitMiddleware 限制单请求正文大小，避免超大 body 打满内存。
+func bodyLimitMiddleware(limit int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.ContentLength > limit {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+			return
+		}
+		if c.Request.Body != nil {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		}
 		c.Next()
 	}

@@ -9,8 +9,10 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,6 +25,9 @@ type CertificateAuthority struct {
 	keyPath  string // ~/.seasagi/mitm/ca-key.pem
 	cache    map[string]*cachedCert
 	cacheMu  sync.RWMutex
+
+	policyMu sync.RWMutex
+	policy   func(string) bool
 }
 
 type cachedCert struct {
@@ -36,7 +41,44 @@ const (
 	caKeyBits    = 2048
 	caCommonName = "SeasAGI MITM CA"
 	caOrgName    = "SeasAGI"
+	// maxLeafCache 限制叶子证书缓存条目数，避免被任意 SNI 撑爆内存。
+	maxLeafCache = 512
 )
+
+// SetDomainPolicy 安装可签发域名判定（通常为 MITM 拦截规则 Rules.Match）。
+// 传 nil 恢复默认策略：仅允许内置厂商 API 域名与已支持目标。
+func (ca *CertificateAuthority) SetDomainPolicy(fn func(string) bool) {
+	ca.policyMu.Lock()
+	ca.policy = fn
+	ca.policyMu.Unlock()
+}
+
+// isSignableDomain 仅允许为命中 MITM 规则的公网域名签发叶子证书（CL-S11）。
+// 拒绝 IP、localhost、.local/.internal，避免受信根被用于任意站点的中间人。
+func (ca *CertificateAuthority) isSignableDomain(domain string) bool {
+	d := strings.ToLower(strings.TrimSpace(domain))
+	if d == "" || net.ParseIP(d) != nil {
+		return false
+	}
+	if d == "localhost" || strings.HasSuffix(d, ".local") || strings.HasSuffix(d, ".internal") {
+		return false
+	}
+	ca.policyMu.RLock()
+	policy := ca.policy
+	ca.policyMu.RUnlock()
+	if policy != nil {
+		return policy(d)
+	}
+	if ResolveTarget(d) != nil {
+		return true
+	}
+	for _, base := range defaultRuleDomains {
+		if base == d {
+			return true
+		}
+	}
+	return false
+}
 
 // NewCA 创建 CertificateAuthority 实例。certDir 通常为 ~/.seasagi/mitm/。
 func NewCA(certDir string) (*CertificateAuthority, error) {
@@ -46,6 +88,8 @@ func NewCA(certDir string) (*CertificateAuthority, error) {
 	if err := os.MkdirAll(certDir, 0o700); err != nil {
 		return nil, fmt.Errorf("mkdir certDir: %w", err)
 	}
+	// 既有目录可能是早期版本以更宽权限创建的，启动时统一收紧（CL-S22）。
+	_ = os.Chmod(certDir, 0o700)
 	return &CertificateAuthority{
 		certPath: filepath.Join(certDir, "ca.pem"),
 		keyPath:  filepath.Join(certDir, "ca-key.pem"),
@@ -99,6 +143,9 @@ func (ca *CertificateAuthority) loadFromDisk() error {
 
 	ca.caCert = caCert
 	ca.caKey = caKey
+	// CA 私钥是全机 TLS 信任的根，加载后再次收紧权限（CL-S22）。
+	_ = os.Chmod(ca.keyPath, 0o600)
+	_ = os.Chmod(ca.certPath, 0o644)
 	return nil
 }
 
@@ -159,6 +206,9 @@ func (ca *CertificateAuthority) GetCertificate(hello *tls.ClientHelloInfo) (*tls
 	if hello == nil || hello.ServerName == "" {
 		return nil, fmt.Errorf("no SNI in ClientHello")
 	}
+	if !ca.isSignableDomain(hello.ServerName) {
+		return nil, fmt.Errorf("refusing to sign certificate for unmanaged host: %s", hello.ServerName)
+	}
 	return ca.SignLeafCert(hello.ServerName)
 }
 
@@ -166,6 +216,10 @@ func (ca *CertificateAuthority) GetCertificate(hello *tls.ClientHelloInfo) (*tls
 func (ca *CertificateAuthority) SignLeafCert(domain string) (*tls.Certificate, error) {
 	if ca.caCert == nil || ca.caKey == nil {
 		return nil, fmt.Errorf("CA not initialized, call EnsureCA first")
+	}
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	if !ca.isSignableDomain(domain) {
+		return nil, fmt.Errorf("refusing to sign certificate for unmanaged host: %s", domain)
 	}
 
 	// 检查缓存
@@ -211,8 +265,22 @@ func (ca *CertificateAuthority) SignLeafCert(domain string) (*tls.Certificate, e
 		Leaf:        mustParseCert(certDER),
 	}
 
-	// 写入缓存
+	// 写入缓存（有上限：先清理过期项，仍超限则淘汰任意一项）
 	ca.cacheMu.Lock()
+	if len(ca.cache) >= maxLeafCache {
+		now := time.Now()
+		for name, entry := range ca.cache {
+			if now.After(entry.exp) {
+				delete(ca.cache, name)
+			}
+		}
+		if len(ca.cache) >= maxLeafCache {
+			for name := range ca.cache {
+				delete(ca.cache, name)
+				break
+			}
+		}
+	}
 	ca.cache[domain] = &cachedCert{cert: leaf, exp: time.Now().Add(leafMaxAge)}
 	ca.cacheMu.Unlock()
 

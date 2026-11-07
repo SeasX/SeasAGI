@@ -117,6 +117,8 @@ SeasAGI-Client/
 - Zod 前端表单校验
 - 隧道远程访问（Cloudflare Tunnel + Tailscale Funnel）
 - OAuth 2.0 PKCE（4 Provider + Token 自动刷新）
+- 云同步完整性：远端配置文件均为 HMAC-SHA256 签名信封。需配置 `SEASAGI_SYNC_HMAC_KEY`（多设备保持一致），或由客户端生成并保存到系统安全存储；密钥缺失或验签失败时拒绝应用远端文件（fail-closed），旧的未签名远端文件将无法拉取。
+- 信任边界：请求信封仅提供传输机密性（TLS 已覆盖同等目标），不是鉴权边界；设备绑定只是展示/审计线索，`device_id` 由客户端生成，不能用于席位或试用限制；授权、计价、额度、模型范围与结算周期一律由服务端裁决，客户端字段视为不可信输入。
 
 ### MITM 代理 — 一键接管 AI API 流量
 
@@ -161,7 +163,7 @@ SeasAGI-Client/
 [`scripts/version.txt`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/scripts/version.txt) 是唯一的版本号定义文件：
 
 ```
-0.2.0
+0.2.5
 ```
 
 - 更新版本号只需修改此文件
@@ -173,13 +175,14 @@ SeasAGI-Client/
 2. 将版本号通过 `export VITE_APP_VERSION="$VERSION"` 注入前端构建环境
 3. Vite 构建时，`import.meta.env.VITE_APP_VERSION` 被编译为静态值写入前端产物
 4. Wails 将前端产物打包进桌面客户端二进制中
+5. 同一版本号通过 `-ldflags "-X .../internal/buildinfo.Version=$VERSION"` 注入 Go 侧，「关于」菜单、`/api/info` 与更新检查显示同一版本
 
 ### 前端展示
 
 客户端界面左上角 Logo 右侧显示版本号徽标：
 
 ```
-[icon] SeasAGI  v0.2.0
+[icon] SeasAGI  v0.2.5
 ```
 
 实现位置：[`Layout.tsx`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/src-app/frontend/src/components/Layout.tsx) 中使用 `import.meta.env.VITE_APP_VERSION` 渲染。

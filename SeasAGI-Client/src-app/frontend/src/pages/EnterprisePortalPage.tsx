@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
-import { platformRequest, getPlatformAPIBaseURL, openInBrowser } from "../utils/commands";
+import { platformRequest, getPlatformAPIBaseURL, openInBrowser, asPlatformRecord } from "../utils/commands";
 import { useTranslation } from "../i18n";
 
 interface AuditLogEntry {
@@ -216,9 +216,10 @@ export function EnterprisePortalPage() {
 
   const isEnterprise = cloudBilling?.plan_id === "enterprise";
 
-  const getJSON = async (path: string) => {
+  // 返回已归一化的对象：字符串/HTML 错误体不会流入页面状态。
+  const getJSON = async (path: string): Promise<any> => {
     const r = await platformRequest("GET", path);
-    return r.status < 400 ? r.body : null;
+    return r.status < 400 ? asPlatformRecord(r.body) : null;
   };
 
   const doPost = async (path: string, body: any) => {

@@ -59,18 +59,45 @@ func CreateResponseCreatedEvent(model string) string {
 	return fmt.Sprintf("event: response.created\ndata: %s\n\n", string(eventJSON))
 }
 
+// ChatStreamUsage 从 Chat Completions 流式块中提取 usage（兼容 prompt/completion 与 input/output 命名）。
+// 返回 (输入 token, 输出 token, 是否携带 usage)。
+func ChatStreamUsage(chunk map[string]any) (int, int, bool) {
+	raw, ok := chunk["usage"].(map[string]any)
+	if !ok || len(raw) == 0 {
+		return 0, 0, false
+	}
+	in := int(toFloat(raw["prompt_tokens"]))
+	if in == 0 {
+		in = int(toFloat(raw["input_tokens"]))
+	}
+	out := int(toFloat(raw["completion_tokens"]))
+	if out == 0 {
+		out = int(toFloat(raw["output_tokens"]))
+	}
+	return in, out, true
+}
+
 // CreateResponseCompletedEvent 创建 response.completed 事件
 func CreateResponseCompletedEvent(model string, inputTokens, outputTokens int) string {
+	return CreateResponseCompletedEventEx(model, inputTokens, outputTokens, false)
+}
+
+// CreateResponseCompletedEventEx 创建 response.completed 事件；estimated 表示 usage 为本地估算。
+func CreateResponseCompletedEventEx(model string, inputTokens, outputTokens int, estimated bool) string {
+	usage := map[string]any{
+		"input_tokens":  inputTokens,
+		"output_tokens": outputTokens,
+		"total_tokens":  inputTokens + outputTokens,
+	}
+	if estimated {
+		usage["cost_estimated"] = true
+	}
 	event := map[string]any{
 		"type": "response.completed",
 		"response": map[string]any{
 			"status": "completed",
 			"model":  model,
-			"usage": map[string]any{
-				"input_tokens":  inputTokens,
-				"output_tokens": outputTokens,
-				"total_tokens":  inputTokens + outputTokens,
-			},
+			"usage":  usage,
 		},
 	}
 	eventJSON, _ := json.Marshal(event)

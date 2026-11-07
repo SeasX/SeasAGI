@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { platformRequest } from "../utils/commands";
+import { platformRequest, asPlatformRecord } from "../utils/commands";
 import { useTranslation } from "../i18n";
 import { useMarketStore, type MarketSettlement } from "../stores/marketStore";
 
@@ -18,8 +18,8 @@ export function TokenMySettlementsPage() {
     try {
       const resp = await platformRequest("GET", "/token-market/settlements");
       if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
-      const data = resp.body;
-      setMySettlements(data.data || []);
+      const data = asPlatformRecord(resp.body);
+      setMySettlements((data.data || []) as MarketSettlement[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

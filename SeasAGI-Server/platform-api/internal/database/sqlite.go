@@ -5,16 +5,30 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
+
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/timeutil"
 )
 
 var DB *sql.DB
+
+// ReadDB 是只读连接池：WAL 模式下允许多读单写，避免统计查询与写入请求互相阻塞。
+var ReadDB *sql.DB
 
 var dbFilePath string
 
 // Path returns the current database file path.
 func Path() string {
 	return dbFilePath
+}
+
+// Reader 返回读取用的连接池；未初始化读池时回退到主连接。
+func Reader() *sql.DB {
+	if ReadDB != nil {
+		return ReadDB
+	}
+	return DB
 }
 
 func Init(dbPath string) error {
@@ -26,18 +40,73 @@ func Init(dbPath string) error {
 	dbFilePath = dbPath
 	os.MkdirAll(filepath.Dir(dbPath), 0755)
 
+	// 还原备份等场景会重新 Init，先关闭旧连接池避免句柄泄漏。
+	Close()
+
 	var err error
 	DB, err = openSQLite(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-
+	// 单写连接：SQLite 同一时刻只允许一个写事务，串行化可避免 SQLITE_BUSY。
 	DB.SetMaxOpenConns(1)
+	DB.SetMaxIdleConns(1)
+
+	ReadDB, err = openSQLite(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to open read database: %w", err)
+	}
+	maxReaders := runtime.NumCPU() * 2
+	if maxReaders < 4 {
+		maxReaders = 4
+	}
+	ReadDB.SetMaxOpenConns(maxReaders)
+	ReadDB.SetMaxIdleConns(maxReaders)
+	// 读池回收长时间空闲/过期的连接，避免底层文件被替换（备份还原）后仍复用旧句柄。
+	ReadDB.SetConnMaxIdleTime(5 * time.Minute)
+	ReadDB.SetConnMaxLifetime(30 * time.Minute)
 
 	if err := migrate(); err != nil {
 		return fmt.Errorf("failed to migrate: %w", err)
 	}
+	if err := ensureQueryIndexes(DB); err != nil {
+		return fmt.Errorf("failed to create query indexes: %w", err)
+	}
 
+	return nil
+}
+
+// queryIndex 描述一个查询加速索引及其目标表。
+// 无法直接写进迁移的索引用它处理：社区版已移除计费相关表（如 invoices），
+// 直接建索引会导致迁移失败，因此先确认表存在再创建。
+type queryIndex struct {
+	table string
+	name  string
+	stmt  string
+}
+
+var queryIndexes = []queryIndex{
+	{
+		table: "invoices",
+		name:  "idx_invoices_user_period",
+		stmt:  `CREATE INDEX IF NOT EXISTS idx_invoices_user_period ON invoices(user_id, period_start)`,
+	},
+}
+
+// ensureQueryIndexes 幂等创建查询索引；目标表不存在时跳过。
+func ensureQueryIndexes(db *sql.DB) error {
+	for _, idx := range queryIndexes {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, idx.table).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			continue
+		}
+		if _, err := db.Exec(idx.stmt); err != nil {
+			return fmt.Errorf("%s: %w", idx.name, err)
+		}
+	}
 	return nil
 }
 
@@ -987,6 +1056,42 @@ func migrate() error {
 				`ALTER TABLE users DROP COLUMN plan`,
 			},
 		},
+		{
+			version: "2026-10-25-027-user-custom-channels",
+			// admin 的用户自定义通道查询此前指向不存在的表，必然 500；补建表迁移。
+			sqls: []string{
+				`CREATE TABLE IF NOT EXISTS user_custom_channels (
+					channel_id TEXT PRIMARY KEY,
+					user_id TEXT NOT NULL,
+					tenant_id TEXT NOT NULL DEFAULT 'default',
+					provider_type TEXT NOT NULL DEFAULT '',
+					display_name TEXT NOT NULL DEFAULT '',
+					base_url TEXT NOT NULL DEFAULT '',
+					models TEXT NOT NULL DEFAULT '[]',
+					encrypted_api_key TEXT NOT NULL DEFAULT '',
+					enabled INTEGER NOT NULL DEFAULT 1,
+					created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_user_custom_channels_user ON user_custom_channels(user_id)`,
+			},
+		},
+		{
+			version: "2026-10-25-028-usage-user-recorded-index",
+			// 用户维度时间范围统计的联合索引，避免全表扫描。
+			sqls: []string{
+				`CREATE INDEX IF NOT EXISTS idx_usage_records_user_recorded ON usage_records(user_id, recorded_at)`,
+			},
+		},
+		{
+			version: "2026-10-25-029-query-indexes",
+			// 用量与账单查询的高频过滤列联合索引，保持幂等。
+			sqls: []string{
+				`CREATE INDEX IF NOT EXISTS idx_usage_events_user_recorded ON usage_events(user_id, recorded_at)`,
+				`CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_recorded ON usage_events(tenant_id, recorded_at)`,
+				`CREATE INDEX IF NOT EXISTS idx_usage_records_user_model_recorded ON usage_records(user_id, model, recorded_at)`,
+			},
+		},
 	}
 
 	if _, err := DB.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {
@@ -1016,7 +1121,7 @@ func migrate() error {
 				return fmt.Errorf("migration failed: %w\nSQL: %s", err, statement)
 			}
 		}
-		if _, err := tx.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`, migration.version, time.Now().UTC().Format(time.RFC3339)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`, migration.version, timeutil.NowSQLite()); err != nil {
 			return err
 		}
 		if err := tx.Commit(); err != nil {
@@ -1035,7 +1140,7 @@ func isMigrationApplied(version string) (bool, error) {
 }
 
 func ListMigrations() ([]map[string]string, error) {
-	rows, err := DB.Query(`SELECT version, applied_at FROM schema_migrations ORDER BY applied_at ASC`)
+	rows, err := DB.Query(`SELECT version, applied_at FROM schema_migrations ORDER BY datetime(applied_at) ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -1046,13 +1151,28 @@ func ListMigrations() ([]map[string]string, error) {
 		if err := rows.Scan(&version, &appliedAt); err != nil {
 			return nil, err
 		}
-		items = append(items, map[string]string{"version": version, "applied_at": appliedAt})
+		// 兼容历史 RFC3339 数据：读取时统一为 SQLite 时间格式。
+		items = append(items, map[string]string{"version": version, "applied_at": timeutil.Normalize(appliedAt)})
 	}
 	return items, nil
 }
 
 func Close() {
 	if DB != nil {
-		DB.Close()
+		_ = DB.Close()
+		DB = nil
 	}
+	if ReadDB != nil {
+		_ = ReadDB.Close()
+		ReadDB = nil
+	}
+}
+
+// Checkpoint 将 WAL 内容合并回主库文件，供备份还原前调用。
+func Checkpoint() error {
+	if DB == nil {
+		return nil
+	}
+	_, err := DB.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	return err
 }

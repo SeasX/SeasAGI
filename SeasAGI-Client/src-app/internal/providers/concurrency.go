@@ -11,7 +11,7 @@ import (
 type ConcurrencyLimiter struct {
 	mu       sync.RWMutex
 	limits   map[string]int    // channelID → max concurrent (0=unlimited)
-	inflight map[string]*int32  // channelID → current in-flight count
+	inflight map[string]*int32 // channelID → current in-flight count
 }
 
 // NewConcurrencyLimiter creates a new limiter with empty state.
@@ -65,14 +65,16 @@ func (cl *ConcurrencyLimiter) Acquire(channelID string) bool {
 		cl.mu.Unlock()
 	}
 
-	current := atomic.LoadInt32(counter)
-	if int(current) >= limit {
-		return false
+	// CAS 失败只说明并发竞争导致计数变化，需重试；只有确实达到上限才拒绝。
+	for {
+		current := atomic.LoadInt32(counter)
+		if int(current) >= limit {
+			return false
+		}
+		if atomic.CompareAndSwapInt32(counter, current, current+1) {
+			return true
+		}
 	}
-	if !atomic.CompareAndSwapInt32(counter, current, current+1) {
-		return false
-	}
-	return true
 }
 
 // Release decrements the in-flight counter for the channel.

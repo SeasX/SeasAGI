@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 )
@@ -226,4 +227,37 @@ func TestConcurrentAccess(t *testing.T) {
 
 	wg.Wait()
 	// If we reach here without race condition or deadlock, the test passes
+}
+
+// TestPersistWritesPrivatePermissions 断言含 env 凭证的 MCP 配置以 0600/0700 落盘（CL-S8）。
+func TestPersistWritesPrivatePermissions(t *testing.T) {
+	_, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	svc := NewService()
+	server := MCPServer{
+		Name:    "secret-server",
+		Command: "node",
+		Env:     map[string]string{"API_KEY": "sk-test-secret"},
+		Enabled: false,
+		Apps:    []string{"claude"},
+	}
+	if err := svc.SaveServer(server); err != nil {
+		t.Fatalf("SaveServer: %v", err)
+	}
+
+	fileInfo, err := os.Stat(svc.path)
+	if err != nil {
+		t.Fatalf("stat config file: %v", err)
+	}
+	if perm := fileInfo.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("mcp_servers.json 权限 = %#o, want 0600", perm)
+	}
+	dirInfo, err := os.Stat(filepath.Dir(svc.path))
+	if err != nil {
+		t.Fatalf("stat config dir: %v", err)
+	}
+	if perm := dirInfo.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("mcp 配置目录权限 = %#o, want 0700", perm)
+	}
 }

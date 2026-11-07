@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,7 +20,7 @@ func (g *GeminiExecutor) Name() string {
 }
 
 func (g *GeminiExecutor) ChatCompletions(ctx context.Context, config *ProviderConfig, req *UpstreamRequest) (*UpstreamResponse, error) {
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := sharedHTTPClient
 
 	geminiBody := protocol.CanonicalToGemini(&protocol.CanonicalRequest{
 		Model:    req.Model,
@@ -33,25 +34,30 @@ func (g *GeminiExecutor) ChatCompletions(ctx context.Context, config *ProviderCo
 		return nil, err
 	}
 
-	action := "generateContent"
-	if req.Stream {
-		action = "streamGenerateContent"
-	}
-
 	apiKey := config.APIKey
 	baseURL := config.BaseURL
 	if baseURL == "" {
 		baseURL = "https://generativelanguage.googleapis.com"
 	}
 
-	endpoint := fmt.Sprintf("%s/v1/models/%s:%s?key=%s",
-		strings.TrimRight(baseURL, "/"), req.Model, action, apiKey)
+	// 密钥通过请求头传递，禁止拼进 URL（避免出现在日志/代理记录中）。
+	action := "generateContent"
+	query := ""
+	if req.Stream {
+		action = "streamGenerateContent"
+		query = "?alt=sse"
+	}
+	endpoint := fmt.Sprintf("%s/v1/models/%s:%s%s",
+		strings.TrimRight(baseURL, "/"), req.Model, action, query)
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bodyReader)
 	if err != nil {
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", contentType)
+	if apiKey != "" {
+		httpReq.Header.Set("x-goog-api-key", apiKey)
+	}
 	forwardProviderHeaders(httpReq, config.ProviderSpecificConfig, "header.")
 
 	resp, err := client.Do(httpReq)
@@ -88,7 +94,7 @@ func (g *GeminiExecutor) ChatCompletions(ctx context.Context, config *ProviderCo
 }
 
 func (g *GeminiExecutor) ListModels(ctx context.Context, config *ProviderConfig) ([]ModelInfo, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := metadataHTTPClient
 
 	apiKey := config.APIKey
 	baseURL := config.BaseURL
@@ -97,9 +103,12 @@ func (g *GeminiExecutor) ListModels(ctx context.Context, config *ProviderConfig)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		fmt.Sprintf("%s/v1/models?key=%s", strings.TrimRight(baseURL, "/"), apiKey), nil)
+		fmt.Sprintf("%s/v1/models", strings.TrimRight(baseURL, "/")), nil)
 	if err != nil {
 		return nil, err
+	}
+	if apiKey != "" {
+		req.Header.Set("x-goog-api-key", apiKey)
 	}
 
 	resp, err := client.Do(req)
@@ -114,7 +123,7 @@ func (g *GeminiExecutor) ListModels(ctx context.Context, config *ProviderConfig)
 
 	var payload struct {
 		Models []struct {
-			Name       string `json:"name"`
+			Name        string `json:"name"`
 			DisplayName string `json:"displayName"`
 		} `json:"models"`
 	}
@@ -159,14 +168,17 @@ func translateGeminiResponse(body io.ReadCloser, model string) (io.ReadCloser, h
 		return nil, nil, err
 	}
 
-	text := ""
-	if len(payload.Candidates) > 0 && len(payload.Candidates[0].Content.Parts) > 0 {
-		text = payload.Candidates[0].Content.Parts[0].Text
+	var textBuilder strings.Builder
+	if len(payload.Candidates) > 0 {
+		for _, part := range payload.Candidates[0].Content.Parts {
+			textBuilder.WriteString(part.Text)
+		}
 	}
+	text := textBuilder.String()
 
 	finishReason := "stop"
-	if len(payload.Candidates) > 0 && payload.Candidates[0].FinishReason == "MAX_TOKENS" {
-		finishReason = "length"
+	if len(payload.Candidates) > 0 {
+		finishReason = geminiFinishReason(payload.Candidates[0].FinishReason)
 	}
 
 	openAIResp := map[string]any{
@@ -201,6 +213,20 @@ func translateGeminiResponse(body io.ReadCloser, model string) (io.ReadCloser, h
 	return io.NopCloser(strings.NewReader(string(data))), headers, nil
 }
 
+// geminiFinishReason 将 Gemini finishReason 映射为 OpenAI finish_reason。
+func geminiFinishReason(reason string) string {
+	switch reason {
+	case "MAX_TOKENS":
+		return "length"
+	case "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT":
+		return "content_filter"
+	default:
+		return "stop"
+	}
+}
+
+// translateGeminiStream 将 Gemini（generateContent / streamGenerateContent?alt=sse）
+// 流式响应转换为 OpenAI Chat SSE，并累计 usage；上游缺失 usage 时本地估算并标记。
 func translateGeminiStream(body io.ReadCloser, model string) (io.ReadCloser, http.Header) {
 	reader, writer := io.Pipe()
 	headers := make(http.Header)
@@ -211,10 +237,42 @@ func translateGeminiStream(body io.ReadCloser, model string) (io.ReadCloser, htt
 		defer body.Close()
 		defer writer.Close()
 
-		dec := json.NewDecoder(body)
+		id := fmt.Sprintf("gemini-%d", time.Now().UnixNano())
+		created := time.Now().Unix()
+		scanner := bufio.NewScanner(body)
+		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 		sentRole := false
+		finishReason := "stop"
+		inputTokens, outputTokens := 0, 0
+		usageSeen := false
+		var textBuf strings.Builder
 
-		for {
+		writeRole := func() {
+			if sentRole {
+				return
+			}
+			sentRole = true
+			_ = writeSSEChunk(writer, map[string]any{
+				"id":      id,
+				"object":  "chat.completion.chunk",
+				"created": created,
+				"model":   model,
+				"choices": []map[string]any{
+					{"index": 0, "delta": map[string]any{"role": "assistant"}},
+				},
+			})
+		}
+
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || line == "data: [DONE]" {
+				continue
+			}
+			line = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if line == "" || line == "[" || line == "]" {
+				continue
+			}
+			line = strings.TrimSuffix(line, ",")
 			var payload struct {
 				Candidates []struct {
 					Content struct {
@@ -222,32 +280,43 @@ func translateGeminiStream(body io.ReadCloser, model string) (io.ReadCloser, htt
 							Text string `json:"text"`
 						} `json:"parts"`
 					} `json:"content"`
+					FinishReason string `json:"finishReason"`
 				} `json:"candidates"`
+				UsageMetadata struct {
+					PromptTokenCount     int `json:"promptTokenCount"`
+					CandidatesTokenCount int `json:"candidatesTokenCount"`
+					TotalTokenCount      int `json:"totalTokenCount"`
+				} `json:"usageMetadata"`
 			}
-			if err := dec.Decode(&payload); err != nil {
-				return
-			}
-
-			if !sentRole {
-				_ = writeSSEChunk(writer, map[string]any{
-					"id":      fmt.Sprintf("gemini-%d", time.Now().UnixNano()),
-					"object":  "chat.completion.chunk",
-					"created": time.Now().Unix(),
-					"model":   model,
-					"choices": []map[string]any{
-						{"index": 0, "delta": map[string]any{"role": "assistant"}},
-					},
-				})
-				sentRole = true
+			if err := json.Unmarshal([]byte(line), &payload); err != nil {
+				continue
 			}
 
-			if len(payload.Candidates) > 0 && len(payload.Candidates[0].Content.Parts) > 0 {
-				text := payload.Candidates[0].Content.Parts[0].Text
-				if text != "" {
+			writeRole()
+
+			if payload.UsageMetadata.PromptTokenCount > 0 {
+				inputTokens = payload.UsageMetadata.PromptTokenCount
+				usageSeen = true
+			}
+			if payload.UsageMetadata.CandidatesTokenCount > 0 {
+				outputTokens = payload.UsageMetadata.CandidatesTokenCount
+				usageSeen = true
+			}
+
+			if len(payload.Candidates) > 0 {
+				if payload.Candidates[0].FinishReason != "" {
+					finishReason = geminiFinishReason(payload.Candidates[0].FinishReason)
+				}
+				var textBuilder strings.Builder
+				for _, part := range payload.Candidates[0].Content.Parts {
+					textBuilder.WriteString(part.Text)
+				}
+				if text := textBuilder.String(); text != "" {
+					textBuf.WriteString(text)
 					_ = writeSSEChunk(writer, map[string]any{
-						"id":      fmt.Sprintf("gemini-%d", time.Now().UnixNano()),
+						"id":      id,
 						"object":  "chat.completion.chunk",
-						"created": time.Now().Unix(),
+						"created": created,
 						"model":   model,
 						"choices": []map[string]any{
 							{"index": 0, "delta": map[string]any{"content": text}},
@@ -256,6 +325,28 @@ func translateGeminiStream(body io.ReadCloser, model string) (io.ReadCloser, htt
 				}
 			}
 		}
+
+		// 收尾：输出累计 usage（缺失时本地估算），随后结束流。
+		outTokens := outputTokens
+		estimated := false
+		if outTokens <= 0 && textBuf.Len() > 0 {
+			outTokens = protocol.EstimateTokens(textBuf.String())
+			estimated = true
+		}
+		if !usageSeen && outTokens > 0 {
+			estimated = true
+		}
+		_ = writeSSEChunk(writer, map[string]any{
+			"id":      id,
+			"object":  "chat.completion.chunk",
+			"created": created,
+			"model":   model,
+			"choices": []map[string]any{
+				{"index": 0, "delta": map[string]any{}, "finish_reason": finishReason},
+			},
+			"usage": chatUsage(inputTokens, outTokens, estimated),
+		})
+		_, _ = io.WriteString(writer, "data: [DONE]\n\n")
 	}()
 
 	return reader, headers

@@ -7,10 +7,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 )
 
 func EncryptString(plain string) (string, error) {
-	key := normalizeKey(os.Getenv("SEASAGI_DATA_KEY"))
+	key, err := dataKey(os.Getenv("SEASAGI_DATA_KEY"))
+	if err != nil {
+		return "", err
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
@@ -28,7 +32,10 @@ func EncryptString(plain string) (string, error) {
 }
 
 func DecryptString(cipherValue string) (string, error) {
-	key := normalizeKey(os.Getenv("SEASAGI_DATA_KEY"))
+	key, err := dataKey(os.Getenv("SEASAGI_DATA_KEY"))
+	if err != nil {
+		return "", err
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
@@ -52,11 +59,22 @@ func DecryptString(cipherValue string) (string, error) {
 	return string(plain), nil
 }
 
-func normalizeKey(key string) []byte {
+// dataKey 读取并校验 SEASAGI_DATA_KEY。缺失或过短时直接失败：
+// 内置默认密钥等同于公开密钥，任何部署都能离线解密全部凭证。
+func dataKey(raw string) ([]byte, error) {
+	key := strings.TrimSpace(raw)
 	if key == "" {
-		key = "seasagi-default-data-key-32bytes!"
+		return nil, fmt.Errorf("SEASAGI_DATA_KEY is required; refusing to use a built-in default key")
+	}
+	if len(key) < 32 {
+		return nil, fmt.Errorf("SEASAGI_DATA_KEY must be at least 32 bytes (got %d)", len(key))
 	}
 	buf := make([]byte, 32)
-	copy(buf, []byte(key))
-	return buf[:32]
+	copy(buf, key)
+	return buf, nil
+}
+
+// normalizeKey 保留旧的补零/截断语义，供测试复用；空值或过短返回错误。
+func normalizeKey(key string) ([]byte, error) {
+	return dataKey(key)
 }

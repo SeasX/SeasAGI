@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
-import { platformRequest } from "../utils/commands";
+import { platformRequest, asPlatformRecord } from "../utils/commands";
 import { useTranslation } from "../i18n";
 import { useMarketStore, type MarketOrder } from "../stores/marketStore";
 
@@ -32,18 +32,19 @@ export function TokenScanTradePage() {
       try {
         const resp = await platformRequest("GET", `/token-market/orders/${orderId}`);
         if (resp.status >= 400) throw new Error(`HTTP ${resp.status}`);
-        const data = resp.body;
-        setOrder(data.data);
-        setTradeSession(data.data);
+        const data = asPlatformRecord(resp.body);
+        const orderData = data.data as MarketOrder;
+        setOrder(orderData);
+        setTradeSession(orderData);
         setCommissionPreview({
-          amount: data.data.amount,
-          commission: data.data.commission_amount,
-          payout: data.data.settlement_amount,
+          amount: orderData.amount,
+          commission: orderData.commission_amount,
+          payout: orderData.settlement_amount,
         });
         // 渲染真实二维码图形，便于面对面扫码核对
-        if (data.data.scan_code) {
+        if (orderData.scan_code) {
           try {
-            const url = await QRCode.toDataURL(data.data.scan_code, { width: 220, margin: 1 });
+            const url = await QRCode.toDataURL(orderData.scan_code, { width: 220, margin: 1 });
             setQrDataUrl(url);
           } catch {
             setQrDataUrl(null);
@@ -65,10 +66,10 @@ export function TokenScanTradePage() {
     try {
       const resp = await platformRequest("POST", `/token-market/orders/${orderId}/confirm`);
       if (resp.status >= 400) {
-        const errData = resp.body || {};
-        throw new Error(errData.error || `HTTP ${resp.status}`);
+        const errData = asPlatformRecord(resp.body);
+        throw new Error(String(errData.error || `HTTP ${resp.status}`));
       }
-      const data = resp.body;
+      const data = asPlatformRecord(resp.body);
       navigate(`/token-market/my-orders`, { state: { confirmedOrder: data.data } });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -84,8 +85,8 @@ export function TokenScanTradePage() {
     try {
       const resp = await platformRequest("POST", `/token-market/orders/${orderId}/cancel`);
       if (resp.status >= 400) {
-        const errData = resp.body || {};
-        throw new Error(errData.error || `HTTP ${resp.status}`);
+        const errData = asPlatformRecord(resp.body);
+        throw new Error(String(errData.error || `HTTP ${resp.status}`));
       }
       navigate("/token-market");
     } catch (err) {

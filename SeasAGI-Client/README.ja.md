@@ -117,6 +117,8 @@ SeasAGI-Client/
 - Zod フロントエンドフォームバリデーション
 - トンネルリモートアクセス（Cloudflare Tunnel + Tailscale Funnel）
 - OAuth 2.0 PKCE（4 Provider + Token 自動リフレッシュ）
+- クラウド同期の完全性：リモート設定ファイルは HMAC-SHA256 署名エンベロープです。`SEASAGI_SYNC_HMAC_KEY`（複数デバイスで同一）を設定するか、クライアントが生成してシステムの安全なストレージに保存します。鍵が利用できない場合や署名検証に失敗した場合、クライアントはリモートファイルの適用を拒否します（fail-closed）。旧形式の未署名リモートファイルは取得できません。
+- 信頼境界：リクエストエンベロープは伝送時の機密性のみを提供し（TLS が同等の目的を既にカバー）、認証境界ではありません。デバイスバインディングは表示・監査の手がかりに過ぎず、`device_id` はクライアント生成のためシートや試用制限には使用できません。認可、課金、クォータ、モデル範囲、請求サイクルは常にサーバーが決定し、クライアント提供のフィールドは信頼できない入力として扱います。
 
 ### MITM プロキシ — ワンクリック API ハイジャック
 
@@ -161,7 +163,7 @@ SeasAGI-Client/
 [`scripts/version.txt`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/scripts/version.txt) が唯一のバージョン番号定義ファイルです：
 
 ```
-0.2.0
+0.2.5
 ```
 
 - バージョン番号の更新はこのファイルを変更するだけで完了します
@@ -173,13 +175,14 @@ SeasAGI-Client/
 2. バージョン番号を `export VITE_APP_VERSION="$VERSION"` でフロントエンドのビルド環境に注入
 3. Vite ビルド時に `import.meta.env.VITE_APP_VERSION` が静的値としてコンパイルされ、フロントエンド成果物に書き込まれる
 4. Wails がフロントエンド成果物をデスクトップクライアントのバイナリにパッケージング
+5. 同じバージョン番号を `-ldflags "-X .../internal/buildinfo.Version=$VERSION"` で Go 側にも注入し、「About」メニュー、`/api/info`、更新チェックが同一バージョンを表示
 
 ### フロントエンド表示
 
 クライアントインターフェース左上の Logo 右側にバージョン番号バッジを表示：
 
 ```
-[icon] SeasAGI  v0.2.0
+[icon] SeasAGI  v0.2.5
 ```
 
 実装箇所：[`Layout.tsx`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/src-app/frontend/src/components/Layout.tsx) 内で `import.meta.env.VITE_APP_VERSION` を使用してレンダリング。

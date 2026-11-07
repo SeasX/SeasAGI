@@ -312,7 +312,7 @@ func (r *Resolver) expandStepCandidates(step config.ModelComboStep) []expandedCa
 	if len(step.Providers) > 0 {
 		candidates := make([]expandedCandidate, 0, len(step.Providers))
 		for _, provider := range step.Providers {
-			ch, ok := r.configSvc.GetChannel(provider.ChannelID)
+			ch, ok := r.lookupChannel(provider.ChannelID)
 			if !ok || !ch.Enabled {
 				continue
 			}
@@ -363,7 +363,7 @@ func (r *Resolver) expandStepCandidates(step config.ModelComboStep) []expandedCa
 	if len(step.Channels) > 0 {
 		candidates := make([]expandedCandidate, 0, len(step.Channels))
 		for _, channelID := range step.Channels {
-			ch, ok := r.configSvc.GetChannel(channelID)
+			ch, ok := r.lookupChannel(channelID)
 			if !ok || !ch.Enabled {
 				continue
 			}
@@ -507,9 +507,35 @@ func throughputScore(channelType string) int {
 	return 1
 }
 
+// lookupChannel 解析渠道：优先命中已配置渠道；`grant://{id}` 前缀则构造 Token 市场
+// Grant 虚拟渠道（经企业 relay 转发）。
+func (r *Resolver) lookupChannel(channelID string) (config.Channel, bool) {
+	if ch, ok := r.configSvc.GetChannel(channelID); ok {
+		return ch, true
+	}
+	if config.IsMarketGrantChannelID(channelID) {
+		return r.marketGrantChannel(channelID), true
+	}
+	return config.Channel{}, false
+}
+
+// marketGrantChannel 构造 Token 市场 Grant 的虚拟渠道。relay 基址取当前选中的 Grant relay。
+func (r *Resolver) marketGrantChannel(channelID string) config.Channel {
+	return config.Channel{
+		ChannelID:    channelID,
+		ChannelType:  "market_grant",
+		ProviderType: "market_grant",
+		Source:       "market_grant",
+		DisplayName:  "Token Market Grant",
+		BaseURL:      r.configSvc.GetSelectedGrantRelayURL(),
+		Enabled:      true,
+		HealthStatus: "healthy",
+	}
+}
+
 func (r *Resolver) appendSingleChannelStep(steps *[]PlanStep, comboStep config.ModelComboStep, role string) bool {
 	if comboStep.ChannelID != "" {
-		if channel, ok := r.configSvc.GetChannel(comboStep.ChannelID); ok && channel.Enabled {
+		if channel, ok := r.lookupChannel(comboStep.ChannelID); ok && channel.Enabled {
 			*steps = append(*steps, PlanStep{
 				Channel:       channel,
 				UpstreamModel: comboStep.Model,

@@ -1,4 +1,6 @@
-import type { Channel, DiscoveredModel, RequestLog, RuntimeStatus, AuthState, AppConfig, ModelCombo, CloudUsage, CloudBilling, CloudCombo, OptimizationPlan, OptimizationConfig, ModelStatsEntry, UsageSummary, ProviderHealthMetric, ProviderHealthSummary, BYOKPolicy, QuickStrategy, TaskProfile, MITMStatus, OverageRecord, Invoice, OAuthProvider } from "../utils/types";
+import type { Channel, DiscoveredModel, RequestLog, RuntimeStatus, AuthState, AppConfig, ModelCombo, CloudUsage, CloudBilling, CloudCombo, OptimizationPlan, OptimizationConfig, ModelStatsEntry, UsageSummary, ProviderHealthMetric, ProviderHealthSummary, BYOKPolicy, QuickStrategy, TaskProfile, MITMStatus, MITMRoutingConfig, OverageRecord, Invoice, OAuthProvider } from "../utils/types";
+
+export type LocalTokenStatus = { present: boolean; masked: string };
 
 type WailsAppApi = {
   StartLocalGateway(): Promise<void>;
@@ -41,8 +43,10 @@ type WailsAppApi = {
   ListLogs(limit: number, offset: number): Promise<RequestLog[]>;
   ListLogsFiltered(limit: number, offset: number, status: string, channelId: string, timeFrom: string, timeTo: string, keyword: string): Promise<RequestLog[]>;
   UpdateDefaultModel(modelName: string, channelId: string): Promise<void>;
-  GetLocalAccessToken(): Promise<string>;
-  ResetLocalAccessToken(): Promise<string>;
+  GetLocalAccessTokenStatus(): Promise<LocalTokenStatus>;
+  CopyLocalAccessToken(): Promise<void>;
+  CopyGatewaySnippet(): Promise<void>;
+  ResetLocalAccessToken(): Promise<LocalTokenStatus>;
   SetAutoLaunch(enabled: boolean): Promise<void>;
   UpdateRoutingSettings(strategy: string, stickyUses: number): Promise<void>;
   ListModelCombos(): Promise<ModelCombo[]>;
@@ -70,6 +74,9 @@ type WailsAppApi = {
   VideoGeneration(prompt: string, model: string, params: Record<string, any>): Promise<Record<string, any>>;
   VideoGenerationForChannel(channelId: string, prompt: string, model: string, params: Record<string, any>): Promise<Record<string, any>>;
   SyncCustomChannelsToCloud(channels: Record<string, any>[]): Promise<{ message: string; count: number }>;
+  ExportLocalAssets(): Promise<Record<string, any>[]>;
+  SyncAssetsToCloud(assets: Record<string, any>[]): Promise<Record<string, any>>;
+  ListMyAssets(): Promise<Record<string, any>[]>;
   GetOfficialComboTemplates(): Promise<ModelCombo[]>;
   FetchCloudCombos(): Promise<Record<string, any>[]>;
   PushCloudCombo(logicalName: string, displayName: string, description: string, strategy: string, stickyUses: number, quickStrategy: string, taskProfile: Record<string, any>, stepsJSON: string): Promise<Record<string, any>>;
@@ -83,7 +90,6 @@ type WailsAppApi = {
   CreateCheckoutSession(planId: string, quantity?: number): Promise<Record<string, any>>;
   GetPlatformAPIBaseURL(): Promise<string>;
   SetPlatformAPIBaseURL(url: string): Promise<void>;
-  GetPlatformToken(): Promise<string>;
   StartTunnel(tunnelType: string): Promise<void>;
   StopTunnel(): Promise<void>;
   IsTunnelRunning(): Promise<boolean>;
@@ -115,6 +121,10 @@ type WailsAppApi = {
   GetPluginHooks(): Promise<Record<string, any>[]>;
   GetPluginAuditLog(): Promise<Record<string, any>[]>;
   GetMITMTargets(): Promise<Record<string, any>[]>;
+  GetMITMRoutingConfig(): Promise<Record<string, any>>;
+  SetMITMRoutingConfig(cfg: Record<string, any>): Promise<void>;
+  GetMITMEnterpriseRules(): Promise<Record<string, any>[]>;
+  FetchMITMRoutingFromEnterprise(): Promise<Record<string, any>>;
   SearchNotion(apiKey: string, query: string): Promise<Record<string, any>>;
   SearchObsidian(apiKey: string, baseURL: string, query: string): Promise<Record<string, any>[]>;
   GetPerfAuditReport(): Promise<Record<string, any>>;
@@ -130,6 +140,9 @@ type WailsAppApi = {
   FetchMITMTargetsFromEnterprise(): Promise<Record<string, any>>;
   GetRateLimitConfig(): Promise<Record<string, any>>;
   SetRateLimitConfig(config: Record<string, any>): Promise<void>;
+  RegisterMarketNode(nodeURL: string, models: string[], protocols: string[]): Promise<Record<string, any>>;
+  GetMarketNodeStatus(): Promise<Record<string, any>>;
+  DisableMarketNode(): Promise<void>;
 };
 
 function getAppApi(): WailsAppApi {
@@ -198,6 +211,21 @@ export async function syncCustomChannelsToCloud(channels: Record<string, any>[])
   return getAppApi().SyncCustomChannelsToCloud(channels);
 }
 
+// exportLocalAssets 从本地通道生成可上架资产（含凭证与指纹）。
+export async function exportLocalAssets(): Promise<Record<string, any>[]> {
+  return getAppApi().ExportLocalAssets();
+}
+
+// syncAssetsToCloud 把资产注册到企业端（企业端 KMS 加密落库）。
+export async function syncAssetsToCloud(assets: Record<string, any>[]): Promise<Record<string, any>> {
+  return getAppApi().SyncAssetsToCloud(assets);
+}
+
+// listMyAssets 拉取企业端资产注册表（不含凭证）。
+export async function listMyAssets(): Promise<Record<string, any>[]> {
+  return getAppApi().ListMyAssets();
+}
+
 export async function getPlans(): Promise<Record<string, any>[]> {
   return getAppApi().GetPlans();
 }
@@ -247,7 +275,45 @@ export async function createCheckoutSession(planId: string, quantity?: number): 
 
 export interface PlatformResponse {
   status: number;
-  body: any;
+  // body 使用 unknown：后端在异常时可能返回字符串或 HTML 错误页，
+  // 直接标注 any 会让调用点把错误体误当成对象/列表。调用方须用下方类型守卫解析。
+  body: unknown;
+}
+
+// 是否为普通对象（非数组、非字符串、非 null）。
+export function isPlatformRecord(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// 归一化平台响应体为对象；字符串/HTML 错误体返回空对象，避免误当列表渲染。
+export function asPlatformRecord(body: unknown): Record<string, any> {
+  return isPlatformRecord(body) ? body : {};
+}
+
+// 读取 body.data；字符串/HTML 错误体不会命中。
+export function getPlatformData<T = any>(body: unknown): T | undefined {
+  const record = asPlatformRecord(body);
+  return record.data as T | undefined;
+}
+
+// 读取 body.data 并保证为数组；非数组时返回空数组（调用前应先确认请求成功）。
+export function getPlatformArray<T = any>(body: unknown): T[] {
+  const data = getPlatformData<T[]>(body);
+  return Array.isArray(data) ? data : [];
+}
+
+// 从响应体提取可读错误信息：优先 JSON error/message，其次剥离 HTML 标签的文本。
+export function describePlatformError(resp: PlatformResponse): string {
+  const body = resp.body;
+  if (typeof body === "string") {
+    const text = body.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    return text ? `HTTP ${resp.status}: ${text.slice(0, 300)}` : `HTTP ${resp.status}`;
+  }
+  if (isPlatformRecord(body)) {
+    const candidate = body.error ?? body.message;
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  }
+  return `HTTP ${resp.status}`;
 }
 
 // platformRequest 统一经 Go 后端代理平台 API：前端不再持有并外发平台 Token。
@@ -259,10 +325,6 @@ export async function platformRequest(method: string, path: string, body?: unkno
 
 export async function getPlatformAPIBaseURL(): Promise<string> {
   return getAppApi().GetPlatformAPIBaseURL();
-}
-
-export async function getPlatformToken(): Promise<string> {
-  return getAppApi().GetPlatformToken();
 }
 
 export async function setPlatformAPIBaseURL(url: string): Promise<void> {
@@ -290,11 +352,19 @@ export async function updateDefaultModel(modelName: string, channelId: string): 
   return getAppApi().UpdateDefaultModel(modelName, channelId);
 }
 
-export async function getLocalAccessToken(): Promise<string> {
-  return getAppApi().GetLocalAccessToken();
+export async function getLocalAccessTokenStatus(): Promise<LocalTokenStatus> {
+  return getAppApi().GetLocalAccessTokenStatus();
 }
 
-export async function resetLocalAccessToken(): Promise<string> {
+export async function copyLocalAccessToken(): Promise<void> {
+  return getAppApi().CopyLocalAccessToken();
+}
+
+export async function copyGatewaySnippet(): Promise<void> {
+  return getAppApi().CopyGatewaySnippet();
+}
+
+export async function resetLocalAccessToken(): Promise<LocalTokenStatus> {
   return getAppApi().ResetLocalAccessToken();
 }
 
@@ -457,9 +527,15 @@ export async function getOverageUsage(): Promise<OverageRecord | null> {
 // getInvoices 经 Go 后端代理平台发票列表接口，返回当前用户的发票记录。
 export async function getInvoices(): Promise<Invoice[]> {
   const res = await platformRequest("GET", "/invoices");
-  if (res.status !== 200 || !res.body) return [];
-  const data = Array.isArray(res.body) ? res.body : res.body.data;
-  return (data as Invoice[]) || [];
+  if (res.status !== 200) throw new Error(describePlatformError(res));
+  if (Array.isArray(res.body)) return res.body as Invoice[];
+  const data = getPlatformData<Invoice[]>(res.body);
+  if (Array.isArray(data)) return data;
+  // 字符串/HTML 错误体不能被当成「没有发票」
+  if (typeof res.body === "string" && res.body.trim()) {
+    throw new Error(describePlatformError(res));
+  }
+  return [];
 }
 
 export async function fetchActiveGrants(): Promise<Record<string, any>[]> {
@@ -654,6 +730,30 @@ export async function fetchMITMTargetsFromEnterprise(): Promise<Record<string, a
   return getAppApi().FetchMITMTargetsFromEnterprise();
 }
 
+export async function getMITMRoutingConfig(): Promise<MITMRoutingConfig> {
+  const raw = await getAppApi().GetMITMRoutingConfig();
+  return {
+    enabled: !!raw?.enabled,
+    default_action: (raw?.default_action || "passthrough") as MITMRoutingConfig["default_action"],
+    default_combo_name: raw?.default_combo_name || "",
+    default_model: raw?.default_model || "",
+    security_mode: (raw?.security_mode || "lenient") as MITMRoutingConfig["security_mode"],
+    rules: (raw?.rules || []) as MITMRoutingConfig["rules"],
+  };
+}
+
+export async function setMITMRoutingConfig(cfg: MITMRoutingConfig): Promise<void> {
+  return getAppApi().SetMITMRoutingConfig(cfg as unknown as Record<string, any>);
+}
+
+export async function getMITMEnterpriseRules(): Promise<Record<string, any>[]> {
+  return getAppApi().GetMITMEnterpriseRules();
+}
+
+export async function fetchMITMRoutingFromEnterprise(): Promise<Record<string, any>> {
+  return getAppApi().FetchMITMRoutingFromEnterprise();
+}
+
 export async function searchNotion(apiKey: string, query: string): Promise<Record<string, any>> {
   return getAppApi().SearchNotion(apiKey, query);
 }
@@ -708,4 +808,20 @@ export async function getRateLimitConfig(): Promise<Record<string, any>> {
 
 export async function setRateLimitConfig(config: Record<string, any>): Promise<void> {
   return getAppApi().SetRateLimitConfig(config);
+}
+
+export async function registerMarketNode(
+  nodeURL: string,
+  models: string[],
+  protocols: string[],
+): Promise<Record<string, any>> {
+  return getAppApi().RegisterMarketNode(nodeURL, models, protocols);
+}
+
+export async function getMarketNodeStatus(): Promise<Record<string, any>> {
+  return getAppApi().GetMarketNodeStatus();
+}
+
+export async function disableMarketNode(): Promise<void> {
+  return getAppApi().DisableMarketNode();
 }

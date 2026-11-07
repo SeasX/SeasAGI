@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import * as cmd from "../utils/commands";
 import type { RequestLog } from "../utils/types";
@@ -29,15 +30,10 @@ export function LogPage() {
   const setLogs = useAppStore((s) => s.setLogs);
   const { t } = useTranslation();
 
-  // Load logs on mount
-  useEffect(() => {
-    if (logs.length === 0) {
-      cmd.listLogs(500, 0).then(setLogs).catch(() => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const [search, setSearch] = useState("");
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const mitmOnly = searchParams.get("mitm") === "1";
+  const [search, setSearch] = useState(searchParams.get("q") || "");
   const [statusFilter, setStatusFilter] = useState("");
   const [channelFilter, setChannelFilter] = useState("");
   const [sortOrder, setSortOrder] = useState("newest");
@@ -45,8 +41,56 @@ export function LogPage() {
   const [presetName, setPresetName] = useState("");
   const [showPresets, setShowPresets] = useState(false);
   const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [channelOptions, setChannelOptions] = useState<string[]>([]);
 
-  const channelOptions = [...new Set(logs.map((l) => l.channel_id).filter(Boolean))];
+  // 卸载标记 + 请求序号：卸载或筛选变更后的过期响应不再写入状态。
+  const mountedRef = useRef(true);
+  const requestSeq = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const refreshLogs = useCallback(async () => {
+    const reqId = ++requestSeq.current;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const items = await cmd.listLogsFiltered(500, 0, statusFilter, channelFilter, "", "", "");
+      if (!mountedRef.current || reqId !== requestSeq.current) return;
+      const next = items || [];
+      setLogs(next);
+      setChannelOptions((prev) => {
+        const merged = new Set(prev);
+        for (const item of next) {
+          if (item.channel_id) merged.add(item.channel_id);
+        }
+        return Array.from(merged);
+      });
+    } catch (e) {
+      if (!mountedRef.current || reqId !== requestSeq.current) return;
+      setLoadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mountedRef.current && reqId === requestSeq.current) setLoading(false);
+    }
+  }, [channelFilter, setLogs, statusFilter]);
+
+  // 进入页面、切换筛选（搜索/状态/通道/排序）或重试时重新拉取。
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshLogs();
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [refreshLogs, search, sortOrder, mitmOnly, reloadKey]);
+
+  const handleRetry = () => setReloadKey((key) => key + 1);
 
   const channelTypeColors: Record<string, string> = {
     local: "var(--green)",
@@ -76,11 +120,15 @@ export function LogPage() {
   };
   const filtered = logs
     .filter((l) => {
+      if (mitmOnly && !l.mitm_target) return false;
       if (
         search &&
         !l.logical_model_name?.toLowerCase().includes(search.toLowerCase()) &&
         !l.channel_id?.toLowerCase().includes(search.toLowerCase()) &&
-        !l.error_message?.toLowerCase().includes(search.toLowerCase())
+        !l.error_message?.toLowerCase().includes(search.toLowerCase()) &&
+        !l.mitm_target?.toLowerCase().includes(search.toLowerCase()) &&
+        !l.resolved_target?.toLowerCase().includes(search.toLowerCase()) &&
+        !l.requested_model?.toLowerCase().includes(search.toLowerCase())
       ) {
         return false;
       }
@@ -122,8 +170,19 @@ export function LogPage() {
 
   const handleClear = async () => {
     if (!window.confirm(t("log.confirmClear"))) return;
-    await cmd.clearLogs();
-    setLogs([]);
+    setClearing(true);
+    setLoadError(null);
+    try {
+      await cmd.clearLogs();
+      setLogs([]);
+      setChannelOptions([]);
+      handleRetry();
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      setLoadError(`${t("log.clearFailed")}: ${detail}`);
+    } finally {
+      setClearing(false);
+    }
   };
 
   const handleSavePreset = () => {
@@ -142,6 +201,14 @@ export function LogPage() {
     const newPresets = presets.filter((p) => p.name !== name);
     setPresets(newPresets);
     savePresets(newPresets);
+  };
+
+  // P3-16：Log-to-Rule——按日志来源元数据回填并跳转到 MITM 路由编辑器。
+  const handleCreateRule = (log: RequestLog) => {
+    const params = new URLSearchParams({ tab: "mitm" });
+    if (log.mitm_target) params.set("rule_target", log.mitm_target);
+    if (log.requested_model) params.set("rule_model", log.requested_model);
+    navigate(`/settings?${params.toString()}`);
   };
 
   const handleCopyError = (log: RequestLog, format: "text" | "json" | "markdown") => {
@@ -236,8 +303,8 @@ export function LogPage() {
           <button onClick={handleExportCSV} className="btn-secondary">
             {t("log.exportCSV")}
           </button>
-          <button onClick={handleClear} className="btn-danger">
-            {t("log.clear")}
+          <button onClick={handleClear} className="btn-danger" disabled={clearing}>
+            {clearing ? t("common.processing") : t("log.clear")}
           </button>
         </div>
 
@@ -339,7 +406,16 @@ export function LogPage() {
           </div>
         </div>
 
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="loading-state">{t("common.loading")}</div>
+        ) : loadError ? (
+          <div className="form-error" role="alert">
+            <div style={{ marginBottom: 8 }}>{loadError}</div>
+            <button onClick={handleRetry} className="btn-secondary btn-sm">
+              {t("log.retry")}
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="empty-state">{t("log.noLogs")}</div>
         ) : (
           <div className="log-list">
@@ -358,6 +434,14 @@ export function LogPage() {
                         <span className="log-channel-badge" style={{ color: channelTypeColors[channelType], borderColor: channelTypeColors[channelType] }}>
                           {getChannelTypeLabel(channelType)}
                         </span>
+                        {log.mitm_target && (
+                          <span
+                            className="badge badge-blue"
+                            title={`来源工具: ${log.mitm_target}｜请求模型: ${log.requested_model || "-"}｜改写目标: ${log.resolved_target || "直连"}｜规则: ${log.mitm_rule_id || "默认动作"}`}
+                          >
+                            [MITM] {log.mitm_target}
+                          </span>
+                        )}
                       </div>
                       <div className="log-list-meta">
                         <span>{formatDateTime(log.created_at)}</span>
@@ -373,6 +457,16 @@ export function LogPage() {
                     <div className="log-list-side">
                       <span className="log-duration-pill">{formatDuration(log.duration_ms)}</span>
                       <div className="log-card-actions">
+                        {/* P3-16：未命中规则的接管请求可一键创建映射规则 */}
+                        {log.mitm_target && !log.resolved_target && (
+                          <button
+                            onClick={() => handleCreateRule(log)}
+                            className="btn-secondary btn-sm"
+                            title="按该请求的来源工具与模型创建一条 MITM 路由映射规则"
+                          >
+                            {t("log.createRule")}
+                          </button>
+                        )}
                         <button onClick={() => setExpandedRoute(isExpanded ? null : log.request_id)} className="btn-secondary btn-sm">
                           {isExpanded ? t("log.hideRoute") : t("log.route")}
                         </button>
