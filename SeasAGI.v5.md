@@ -56,7 +56,7 @@ Core capabilities:
 - Session sticky routing: SHA1 hash based on first user message, 30min TTL, prevents mid-conversation model switching
 - Dynamic 429 penalty degradation: PenaltyManager, 429 +3, success -1, 2min natural decay
 - Fallback sort presets: intelligence / speed / budget one-click reorder
-- 8 Provider executors: OpenAI, Azure, Anthropic, Gemini, Ollama, DeepSeek, Grok, platform relay
+- 18 Provider executors: OpenAI, Azure, Anthropic, Gemini, DeepSeek, Grok, Mistral, OpenRouter, Vertex, Ollama, 智谱 GLM, Kimi, MiniMax, MiMo, 豆包, 混元, 通义, Relay
 - 6 format translators: OpenAI Chat/Responses, Anthropic, Gemini, Vertex AI, Passthrough
 - Key health check: 5min periodic probe, 3 consecutive failures auto-mark unhealthy
 - Key-level Cooldown: per-key 120s TTL, precise cooling on 429, doesn't affect other keys
@@ -187,7 +187,7 @@ Current `v5` completed key capabilities:
 - Constant-time Key comparison (crypto/subtle)
 - Multi-modal content flattening
 - Playground instant test page
-- 8 Provider executors + 6 format translators
+- 18 Provider executors + 6 format translators
 - Log filtering, sorting, CSV export, structured error copy
 - RTK Token compression + tunnel remote access
 - Multi-account fault tolerance + OAuth 2.0 PKCE
