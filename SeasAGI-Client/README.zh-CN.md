@@ -94,7 +94,7 @@ SeasAGI-Client/
 
 ### Provider 与容错
 
-- 9 种 Provider 执行器：OpenAI / Azure / Anthropic / Gemini / Ollama / DeepSeek / Grok / Vertex / 平台中继
+- 18 种 Provider 执行器：OpenAI / Azure / Anthropic / Gemini / DeepSeek / Grok / Mistral / OpenRouter / Vertex / Ollama / 智谱 GLM / Kimi / MiniMax / MiMo / 豆包 / 混元 / 通义 / Relay
 - 6 种格式翻译：OpenAI Chat / OpenAI Responses / Anthropic / Gemini / Vertex AI / Passthrough
 - 多 Key 轮转 + 指数退避 + 熔断器 + 7 条错误规则
 - Key 健康检查：HealthChecker，5min 定时探活，连续 3 次失败自动标记 unhealthy

@@ -56,7 +56,7 @@ SeasAGI 在本地提供统一的 OpenAI 兼容入口，所有第三方客户端�
 - 会话粘性路由：基于首条用户消息的 SHA1 哈希，30 分钟 TTL，防止对话中途切换模型
 - 动态 429 惩罚降级：PenaltyManager，429 +3，成功 -1，2 分钟自然衰减
 - 回退排序预设：智能 / 速度 / 预算 一键重排
-- 8 个 Provider 执行器：OpenAI、Azure、Anthropic、Gemini、Ollama、DeepSeek、Grok、平台中继
+- 18 个 Provider 执行器：OpenAI、Azure、Anthropic、Gemini、DeepSeek、Grok、Mistral、OpenRouter、Vertex、Ollama、智谱 GLM、Kimi、MiniMax、MiMo、豆包、混元、通义、Relay
 - 6 个格式转换器：OpenAI Chat/Responses、Anthropic、Gemini、Vertex AI、Passthrough
 - Key 健康检查：5 分钟周期探测，连续 3 次失败自动标记不健康
 - 逐 Key Cooldown：每 Key 120 秒 TTL，429 精确冷却，不影响其他 Key
@@ -187,7 +187,7 @@ SeasAGI 在本地提供统一的 OpenAI 兼容入口，所有第三方客户端�
 - 恒定时间 Key 比较（crypto/subtle）
 - 多模态内容展平
 - Playground 即时测试页面
-- 8 个 Provider 执行器 + 6 个格式转换器
+- 18 个 Provider 执行器 + 6 个格式转换器
 - 日志过滤、排序、CSV 导出、结构化错误复制
 - RTK Token 压缩 + 隧道远程访问
 - 多账号容错 + OAuth 2.0 PKCE

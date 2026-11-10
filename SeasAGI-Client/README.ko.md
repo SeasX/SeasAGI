@@ -94,7 +94,7 @@ SeasAGI-Client/
 
 ### Provider 및 내결함성
 
-- 9가지 Provider 실행기: OpenAI / Azure / Anthropic / Gemini / Ollama / DeepSeek / Grok / Vertex / 플랫폼 릴레이
+- 18가지 Provider 실행기: OpenAI / Azure / Anthropic / Gemini / DeepSeek / Grok / Mistral / OpenRouter / Vertex / Ollama / 智谱 GLM / Kimi / MiniMax / MiMo / 豆包 / 混元 / 通义 / Relay
 - 6가지 형식 변환: OpenAI Chat / OpenAI Responses / Anthropic / Gemini / Vertex AI / Passthrough
 - 다중 Key 순환 + 지수 백오프 + 차단기 + 7가지 오류 규칙
 - Key 상태 확인: HealthChecker, 5분 간격 정기 탐지, 연속 3회 실패 시 자동으로 unhealthy 표시

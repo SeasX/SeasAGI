@@ -33,7 +33,7 @@ SeasAGI 是一个分层的 AI 网关平台，由三个子项目组成：
 | **会话粘性** | 基于 SHA1 哈希的会话→步骤映射，30 分钟 TTL，防止对话中途切换模型 |
 | **动态 429 惩罚降级** | PenaltyManager，429 +3（上限 10），成功 -1，2 分钟自然衰减 |
 | **成本优化引擎** | 按模型/渠道分组分析 + 任务类型差异化建议 + 四种快速策略一键预设 |
-| **8 个执行器 + 6 个转换器** | OpenAI / Azure / Anthropic / Gemini / Ollama / DeepSeek / Grok / Relay + 自动协议适配 |
+| **18 个执行器 + 6 个转换器** | OpenAI / Azure / Anthropic / Gemini / DeepSeek / Grok / Mistral / OpenRouter / Vertex / Ollama / 智谱 GLM / Kimi / MiniMax / MiMo / 豆包 / 混元 / 通义 / Relay + 自动协议适配 |
 | **全链路可观测性** | 错误分类分布 / 请求时间线 / 链路诊断 / Recharts 可视化 / 成本估算 |
 | **自动健康检查与容错** | Key 健康检查（5 分钟探测 + 自动禁用）+ 逐 Key Cooldown + 熔断器 + 指数退避 |
 | **本地优先 · 隐私安全** | API Keys 仅存储于 Keychain，恒定时间比较防止时序攻击，请求直连 Provider |
@@ -73,11 +73,11 @@ SeasAGI 是一个分层的 AI 网关平台，由三个子项目组成：
 │  │ :4318/v1 │  │Combo/    │  │Suggestions│  │Log/Diag/    │ │
 │  │ OpenAI   │  │Fallback  │  │Quick Strat│  │Chart/Cost   │ │
 │  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
-│  │8 Executor│  │6 Translator│ │ Keychain │  │ Playground  │ │
-│  │ Provider │  │Protocol  │  │Secure    │  │Instant Test │ │
-│  │          │  │Adaptation│  │Storage   │  │             │ │
-│  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ │
+│  ┌───────────┐ ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
+│  │18 Executor│ │6 Translator│ │ Keychain │  │ Playground  │ │
+│  │ Provider  │ │Protocol  │  │Secure    │  │Instant Test │ │
+│  │           │ │Adaptation│  │Storage   │  │             │ │
+│  └───────────┘ └──────────┘  └──────────┘  └─────────────┘ │
 └──────────────────────┬──────────────────────────────────────┘
                        │ API Protocol
 ┌──────────────────────┴──────────────────────────────────────┐
