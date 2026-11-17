@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -215,7 +216,7 @@ func init() {
 			return openAIChatTranslator{}.ToCanonical(body)
 		},
 		func(resp map[string]any, sf Format) (map[string]any, error) {
-			return transformAnthropicResponseToOpenAI(resp), nil
+			return transformAnthropicResponseToOpenAI(resp)
 		},
 	)
 
@@ -233,7 +234,7 @@ func init() {
 			return anthropicTranslator{}.ToCanonical(body)
 		},
 		func(resp map[string]any, sf Format) (map[string]any, error) {
-			return transformOpenAIResponseToAnthropic(resp), nil
+			return transformOpenAIResponseToAnthropic(resp)
 		},
 	)
 
@@ -262,68 +263,47 @@ func init() {
 
 // --- response transform helpers ---
 
-func transformAnthropicResponseToOpenAI(resp map[string]any) map[string]any {
-	// Convert Anthropic response to OpenAI chat completion format
-	out := map[string]any{}
-
-	if content, ok := resp["content"].([]interface{}); ok {
-		text := ""
-		for _, block := range content {
-			if b, ok := block.(map[string]any); ok {
-				if t, ok := b["type"].(string); ok && t == "text" {
-					if txt, ok := b["text"].(string); ok {
-						text += txt
-					}
-				}
-			}
-		}
-		out["choices"] = []map[string]any{
-			{
-				"index": 0,
-				"message": map[string]any{
-					"role":    "assistant",
-					"content": text,
-				},
-				"finish_reason": resp["stop_reason"],
-			},
-		}
+// transformAnthropicResponseToOpenAI 委托给唯一实现 AnthropicResponseToOpenAI，
+// 与 providers 的 Anthropic 执行器保持完全一致（含 tool_use → tool_calls、finish_reason 映射）。
+func transformAnthropicResponseToOpenAI(resp map[string]any) (map[string]any, error) {
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("encode anthropic response: %w", err)
 	}
-
-	if usage, ok := resp["usage"].(map[string]any); ok {
-		out["usage"] = transformAnthropicTokensToOpenAI(usage)
+	model, _ := resp["model"].(string)
+	out, err := AnthropicResponseToOpenAI(bytes.NewReader(raw), model)
+	if err != nil {
+		return nil, err
 	}
-
-	out["id"] = resp["id"]
-	out["model"] = resp["model"]
-	out["object"] = "chat.completion"
-
-	return out
+	return decodeObject(out)
 }
 
-func transformOpenAIResponseToAnthropic(resp map[string]any) map[string]any {
-	out := map[string]any{}
-
-	if choices, ok := resp["choices"].([]interface{}); ok && len(choices) > 0 {
-		if choice, ok := choices[0].(map[string]any); ok {
-			if msg, ok := choice["message"].(map[string]any); ok {
-				content, _ := msg["content"].(string)
-				out["content"] = []map[string]any{
-					{"type": "text", "text": content},
-				}
-			}
-			out["stop_reason"] = choice["finish_reason"]
-		}
+// transformOpenAIResponseToAnthropic 委托给网关使用的 convertOpenAIToAnthropic，
+// 保证注册表与 ConvertOpenAIResponseToSource 的 Anthropic 输出一致。
+func transformOpenAIResponseToAnthropic(resp map[string]any) (map[string]any, error) {
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("encode openai response: %w", err)
 	}
-
-	if usage, ok := resp["usage"].(map[string]any); ok {
-		out["usage"] = transformOpenAITokensToAnthropic(usage)
+	// 经 JSON 往返，保证嵌套结构是 []any / map[string]any（转换器按解码后的类型读取）。
+	var chat map[string]any
+	if err := json.Unmarshal(raw, &chat); err != nil {
+		return nil, err
 	}
+	model, _ := resp["model"].(string)
+	out, err := json.Marshal(convertOpenAIToAnthropic(chat, model))
+	if err != nil {
+		return nil, err
+	}
+	return decodeObject(out)
+}
 
-	out["id"] = resp["id"]
-	out["model"] = resp["model"]
-	out["type"] = "message"
-
-	return out
+func decodeObject(data []byte) (map[string]any, error) {
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func transformGeminiResponseToOpenAI(resp map[string]any) map[string]any {

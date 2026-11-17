@@ -1,12 +1,13 @@
 package channel
 
 import (
-	"database/sql"
+	"context"
+	"errors"
 	"net/http"
 
-	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
-	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/i18n"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/logging"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/secure"
+	"github.com/SeasAGI/SeasAGI-Server/shared/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -55,15 +56,32 @@ type UpdateChannelRequest struct {
 	APIKey       *string     `json:"api_key"`
 }
 
-func ListChannels(c *gin.Context) {
-	channels, err := fetchAllChannels()
+// Handler 承载渠道相关 HTTP 接口，依赖通过构造函数显式注入。
+type Handler struct {
+	repo    *Repository
+	encrypt func(string) (string, error)
+	decrypt func(string) (string, error)
+}
+
+// NewHandler 创建渠道处理器；凭证加解密使用 platform-api 的 SEASAGI_DATA_KEY。
+func NewHandler(repo *Repository) *Handler {
+	return &Handler{repo: repo, encrypt: secure.EncryptString, decrypt: secure.DecryptString}
+}
+
+// publicView 去掉凭证密文：任何 HTTP 响应都不得包含 encrypted_api_key。
+func publicView(ch Channel) Channel {
+	ch.EncryptedAPIKey = ""
+	return ch
+}
+
+func (h *Handler) ListChannels(c *gin.Context) {
+	channels, err := h.repo.List(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	// 凭证密文不下发到任何 HTTP 响应；只有服务端内部逻辑可读取。
 	for i := range channels {
-		channels[i].EncryptedAPIKey = ""
+		channels[i] = publicView(channels[i])
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -72,72 +90,58 @@ func ListChannels(c *gin.Context) {
 	})
 }
 
-func GetChannel(c *gin.Context) {
-	channelID := c.Param("id")
-
-	ch, err := fetchChannel(channelID)
+func (h *Handler) GetChannel(c *gin.Context) {
+	ch, err := h.repo.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": i18n.TFromContext(c, "channel.notFound")})
 		return
 	}
-	ch.EncryptedAPIKey = ""
-
-	c.JSON(http.StatusOK, ch)
+	c.JSON(http.StatusOK, publicView(*ch))
 }
 
-func CreateChannel(c *gin.Context) {
+func (h *Handler) CreateChannel(c *gin.Context) {
 	var req CreateChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	enabled := 1
-	if req.Enabled != nil && !*req.Enabled {
-		enabled = 0
-	}
 	if req.ChannelType == "" {
 		req.ChannelType = "platform"
 	}
 
-	_, err := database.DB.Exec(
-		`INSERT INTO channels (channel_id, channel_type, provider_type, display_name, base_url, enabled, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		req.ChannelID, req.ChannelType, req.ProviderType, req.DisplayName, req.BaseURL, enabled, req.SortOrder,
-	)
-	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	// 凭证加密失败时整体拒绝：此前会静默丢弃凭证，渠道创建成功却无法鉴权上游。
+	var encrypted string
+	if req.APIKey != "" {
+		var err error
+		if encrypted, err = h.encrypt(req.APIKey); err != nil {
+			logging.Errorf("channel %s: credential encryption failed: %v", req.ChannelID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encrypt channel credential"})
+			return
+		}
+	}
+
+	rec := ChannelRecord{
+		ChannelID:    req.ChannelID,
+		ChannelType:  req.ChannelType,
+		ProviderType: req.ProviderType,
+		DisplayName:  req.DisplayName,
+		BaseURL:      req.BaseURL,
+		Enabled:      req.Enabled == nil || *req.Enabled,
+		SortOrder:    req.SortOrder,
+	}
+	ctx := c.Request.Context()
+	if err := h.repo.Create(ctx, rec, encrypted, req.Models); err != nil {
+		if errors.Is(err, ErrConflict) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	if req.APIKey != "" {
-		encrypted, err := secure.EncryptString(req.APIKey)
-		if err == nil {
-			_, _ = database.DB.Exec(
-				`INSERT INTO channel_strategies (channel_id, encrypted_api_key, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-				 ON CONFLICT(channel_id) DO UPDATE SET encrypted_api_key=excluded.encrypted_api_key, updated_at=CURRENT_TIMESTAMP`,
-				req.ChannelID, encrypted,
-			)
-		}
-	}
-
-	for _, m := range req.Models {
-		capability := m.Capability
-		if capability == "" {
-			capability = "chat"
-		}
-		database.DB.Exec(
-			`INSERT OR IGNORE INTO channel_models (channel_id, model_id, model_name, capability)
-			 VALUES (?, ?, ?, ?)`,
-			req.ChannelID, m.ModelID, m.ModelName, capability,
-		)
-	}
-
-	ch, _ := fetchChannel(req.ChannelID)
-	c.JSON(http.StatusCreated, ch)
+	h.respondChannel(ctx, c, http.StatusCreated, req.ChannelID)
 }
 
-func UpdateChannel(c *gin.Context) {
+func (h *Handler) UpdateChannel(c *gin.Context) {
 	channelID := c.Param("id")
 
 	var req UpdateChannelRequest
@@ -146,190 +150,73 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 
-	existing, err := fetchChannel(channelID)
+	ctx := c.Request.Context()
+	existing, err := h.repo.Get(ctx, channelID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": i18n.TFromContext(c, "channel.notFound")})
 		return
 	}
 
-	channelType := existing.ChannelType
-	if req.ChannelType != nil {
-		channelType = *req.ChannelType
-	}
-	providerType := existing.ProviderType
-	if req.ProviderType != nil {
-		providerType = *req.ProviderType
-	}
-	displayName := existing.DisplayName
-	if req.DisplayName != nil {
-		displayName = *req.DisplayName
-	}
-	baseURL := existing.BaseURL
-	if req.BaseURL != nil {
-		baseURL = *req.BaseURL
-	}
-	enabled := existing.Enabled
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	}
-	sortOrder := existing.SortOrder
-	if req.SortOrder != nil {
-		sortOrder = *req.SortOrder
+	rec := ChannelRecord{
+		ChannelID:    channelID,
+		ChannelType:  derefOr(req.ChannelType, existing.ChannelType),
+		ProviderType: derefOr(req.ProviderType, existing.ProviderType),
+		DisplayName:  derefOr(req.DisplayName, existing.DisplayName),
+		BaseURL:      derefOr(req.BaseURL, existing.BaseURL),
+		Enabled:      derefOr(req.Enabled, existing.Enabled),
+		SortOrder:    derefOr(req.SortOrder, existing.SortOrder),
 	}
 
-	enabledInt := 0
-	if enabled {
-		enabledInt = 1
+	var encrypted *string
+	if req.APIKey != nil {
+		value, err := h.encrypt(*req.APIKey)
+		if err != nil {
+			logging.Errorf("channel %s: credential encryption failed: %v", channelID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encrypt channel credential"})
+			return
+		}
+		encrypted = &value
 	}
 
-	_, err = database.DB.Exec(
-		`UPDATE channels SET channel_type=?, provider_type=?, display_name=?, base_url=?, enabled=?, sort_order=?, updated_at=CURRENT_TIMESTAMP
-		 WHERE channel_id=?`,
-		channelType, providerType, displayName, baseURL, enabledInt, sortOrder, channelID,
-	)
-	if err != nil {
+	if err := h.repo.Update(ctx, rec, encrypted, req.Models != nil, req.Models); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": i18n.TFromContext(c, "channel.notFound")})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	if req.APIKey != nil {
-		encrypted, err := secure.EncryptString(*req.APIKey)
-		if err == nil {
-			_, _ = database.DB.Exec(
-				`INSERT INTO channel_strategies (channel_id, encrypted_api_key, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-				 ON CONFLICT(channel_id) DO UPDATE SET encrypted_api_key=excluded.encrypted_api_key, updated_at=CURRENT_TIMESTAMP`,
-				channelID, encrypted,
-			)
-		}
-	}
-
-	if req.Models != nil {
-		database.DB.Exec("DELETE FROM channel_models WHERE channel_id=?", channelID)
-		for _, m := range req.Models {
-			capability := m.Capability
-			if capability == "" {
-				capability = "chat"
-			}
-			database.DB.Exec(
-				`INSERT OR IGNORE INTO channel_models (channel_id, model_id, model_name, capability)
-				 VALUES (?, ?, ?, ?)`,
-				channelID, m.ModelID, m.ModelName, capability,
-			)
-		}
-	}
-
-	ch, _ := fetchChannel(channelID)
-	c.JSON(http.StatusOK, ch)
+	h.respondChannel(ctx, c, http.StatusOK, channelID)
 }
 
-func DeleteChannel(c *gin.Context) {
-	channelID := c.Param("id")
-
-	result, err := database.DB.Exec("DELETE FROM channels WHERE channel_id=?", channelID)
+func (h *Handler) DeleteChannel(c *gin.Context) {
+	found, err := h.repo.Delete(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
+	if !found {
 		c.JSON(http.StatusNotFound, gin.H{"error": i18n.TFromContext(c, "channel.notFound")})
 		return
 	}
-
-	database.DB.Exec("DELETE FROM channel_models WHERE channel_id=?", channelID)
 	c.JSON(http.StatusOK, gin.H{"message": "channel deleted"})
 }
 
-func fetchAllChannels() ([]Channel, error) {
-	rows, err := database.DB.Query(
-		`SELECT c.channel_id, c.channel_type, c.provider_type, c.display_name, c.base_url, c.enabled, c.sort_order,
-		 COALESCE(s.weight, 100), COALESCE(s.priority, 0), COALESCE(s.gray_percent, 0), COALESCE(s.read_only, 0), COALESCE(s.encrypted_api_key, '')
-		 FROM channels c
-		 LEFT JOIN channel_strategies s ON c.channel_id = s.channel_id
-		 ORDER BY COALESCE(s.priority, c.sort_order), c.channel_id`,
-	)
+// respondChannel 回读写入后的渠道（不含凭证密文）作为响应。
+func (h *Handler) respondChannel(ctx context.Context, c *gin.Context, status int, channelID string) {
+	ch, err := h.repo.Get(ctx, channelID)
 	if err != nil {
-		return nil, err
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "channel saved but could not be reloaded"})
+		return
 	}
-
-	var channels []Channel
-	for rows.Next() {
-		var ch Channel
-		var enabledInt, readOnlyInt int
-		if err := rows.Scan(&ch.ChannelID, &ch.ChannelType, &ch.ProviderType, &ch.DisplayName, &ch.BaseURL, &enabledInt, &ch.SortOrder, &ch.Weight, &ch.Priority, &ch.GrayPercent, &readOnlyInt, &ch.EncryptedAPIKey); err != nil {
-			return nil, err
-		}
-		ch.Enabled = enabledInt == 1
-		ch.ReadOnly = readOnlyInt == 1
-		channels = append(channels, ch)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-
-	// Read model rows after the outer query is fully drained and closed.
-	for i := range channels {
-		channels[i].Models, _ = fetchModelsForChannel(channels[i].ChannelID)
-	}
-
-	if channels == nil {
-		channels = []Channel{}
-	}
-	return channels, nil
+	c.JSON(status, publicView(*ch))
 }
 
-func fetchChannel(channelID string) (*Channel, error) {
-	var ch Channel
-	var enabledInt, readOnlyInt int
-	err := database.DB.QueryRow(
-		`SELECT c.channel_id, c.channel_type, c.provider_type, c.display_name, c.base_url, c.enabled, c.sort_order,
-		 COALESCE(s.weight, 100), COALESCE(s.priority, 0), COALESCE(s.gray_percent, 0), COALESCE(s.read_only, 0), COALESCE(s.encrypted_api_key, '')
-		 FROM channels c
-		 LEFT JOIN channel_strategies s ON c.channel_id = s.channel_id
-		 WHERE c.channel_id=?`,
-		channelID,
-	).Scan(&ch.ChannelID, &ch.ChannelType, &ch.ProviderType, &ch.DisplayName, &ch.BaseURL, &enabledInt, &ch.SortOrder, &ch.Weight, &ch.Priority, &ch.GrayPercent, &readOnlyInt, &ch.EncryptedAPIKey)
-	if err == sql.ErrNoRows {
-		return nil, err
+func derefOr[T any](p *T, fallback T) T {
+	if p != nil {
+		return *p
 	}
-	if err != nil {
-		return nil, err
-	}
-
-	ch.Enabled = enabledInt == 1
-	ch.ReadOnly = readOnlyInt == 1
-	ch.Models, _ = fetchModelsForChannel(ch.ChannelID)
-	return &ch, nil
-}
-
-func fetchModelsForChannel(channelID string) ([]ModelInfo, error) {
-	rows, err := database.DB.Query(
-		`SELECT model_id, model_name, capability FROM channel_models WHERE channel_id=? ORDER BY model_id`,
-		channelID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var models []ModelInfo
-	for rows.Next() {
-		var m ModelInfo
-		if err := rows.Scan(&m.ModelID, &m.ModelName, &m.Capability); err != nil {
-			return nil, err
-		}
-		models = append(models, m)
-	}
-
-	if models == nil {
-		models = []ModelInfo{}
-	}
-	return models, nil
+	return fallback
 }
 
 // FreeChannelSeed 表示从 OmniRoute 借鉴的免费通道种子数据。

@@ -1,0 +1,2 @@
+Content-Type: application/json
+{"choices":[{"finish_reason":"tool_calls","index":0,"message":{"content":"Checking.","role":"assistant","tool_calls":[{"function":{"arguments":"{\"city\":\"Paris\"}","name":"get_weather"},"id":"toolu_abc","type":"function"}]}}],"created":0,"id":"msg_2","model":"claude-test","object":"chat.completion","usage":{"completion_tokens":9,"prompt_tokens":30,"total_tokens":39}}

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/timeutil"
+	"github.com/SeasAGI/SeasAGI-Server/shared/timeutil"
 )
 
 // 未配置时使用默认值：保留 30 天、每 6 小时清理一次。

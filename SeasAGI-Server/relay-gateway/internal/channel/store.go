@@ -29,6 +29,25 @@ type Channel struct {
 	Extra        map[string]string `json:"extra,omitempty"`
 	Health       HealthStatus      `json:"health"`
 	LastCheck    time.Time         `json:"last_check"`
+
+	// Source 标记配置来源：SourceControlPlane 表示由 platform-api 同步下发并受其管理；
+	// 空值表示本地/历史配置，同步不会删除它。
+	Source string `json:"source,omitempty"`
+	// ConfigVersion 是控制面对该渠道配置（含凭证）的指纹，用于判断是否需要覆盖本地状态。
+	ConfigVersion string `json:"config_version,omitempty"`
+	// CredentialError 非空表示凭证不可用（如密文无法解密），该渠道不参与路由。
+	CredentialError string `json:"-"`
+
+	// storedAPIKey 保存解密失败时的原始密文，落库时原样写回，避免误删凭证。
+	storedAPIKey string
+}
+
+// SourceControlPlane 标记由控制面同步管理的渠道。
+const SourceControlPlane = "control_plane"
+
+// Routable 判断渠道当前能否承接请求：启用、非只读、凭证可用。
+func (ch Channel) Routable() bool {
+	return ch.Enabled && !ch.ReadOnly && ch.CredentialError == ""
 }
 
 type HealthStatus struct {
@@ -54,6 +73,9 @@ type PublicChannel struct {
 	Health       HealthStatus      `json:"health"`
 	LastCheck    time.Time         `json:"last_check"`
 	HasAPIKey    bool              `json:"has_api_key"`
+	Source       string            `json:"source,omitempty"`
+	// CredentialError 只描述错误类别，从不包含凭证内容。
+	CredentialError string `json:"credential_error,omitempty"`
 }
 
 // Public 返回不含凭证的渠道视图。
@@ -73,6 +95,9 @@ func (ch Channel) Public() PublicChannel {
 		Health:       ch.Health,
 		LastCheck:    ch.LastCheck,
 		HasAPIKey:    ch.APIKey != "",
+		Source:       ch.Source,
+
+		CredentialError: ch.CredentialError,
 	}
 }
 
@@ -95,49 +120,79 @@ type Store struct {
 	mu       sync.RWMutex
 	channels map[string]*Channel
 	mappings []ModelMapping
-	filePath string
+	dataDir  string
+	filePath string // 历史 JSON 存储，仅用于一次性导入，不再写入
 	dbPath   string
 	db       *sql.DB
+	cipher   credentialCipher
 
-	// saveCh 只做「有变更」标记；persistLoop 是唯一写库协程，
-	// 合并高频健康更新后批量落库，避免每请求全表重写与写冲突。
+	// persistLoop 是唯一写库协程：saveCh 只做「有变更」标记，flushCh 用于同步落库。
 	saveCh          chan struct{}
+	flushCh         chan chan error
 	stopCh          chan struct{}
 	doneCh          chan struct{}
 	closeOnce       sync.Once
+	closeErr        error
 	persistInterval time.Duration
+
+	// 以下字段只由 persistLoop（以及启动前的 load）访问，无需加锁。
+	persisted         map[string]string // channel_id -> 已落库行指纹
+	persistedMappings string
+	lastPersistErr    time.Time
 }
 
 // defaultPersistInterval 是内存状态合并落库的间隔。
 const defaultPersistInterval = 500 * time.Millisecond
 
-var globalStore *Store
+var (
+	globalMu    sync.RWMutex
+	globalStore *Store
+)
 
-func NewStore() *Store {
-	homeDir, _ := os.UserHomeDir()
-	return newStoreAt(filepath.Join(homeDir, ".seasagi"))
+// NewStore 在 ResolveDataDir 决定的目录下打开（或创建）relay 存储。
+// 数据库打不开、历史数据无法读取时直接返回错误，而不是静默降级为空配置。
+func NewStore() (*Store, error) {
+	dir, err := ResolveDataDir()
+	if err != nil {
+		return nil, err
+	}
+	return newStoreAt(dir)
 }
 
 // newStoreAt 在指定目录初始化存储；测试可用临时目录隔离。
-func newStoreAt(baseDir string) *Store {
+func newStoreAt(baseDir string) (*Store, error) {
 	s := &Store{
 		channels:        make(map[string]*Channel),
 		mappings:        make([]ModelMapping, 0),
+		dataDir:         baseDir,
 		filePath:        filepath.Join(baseDir, "relay-channels.json"),
 		dbPath:          filepath.Join(baseDir, "relay-gateway.db"),
+		cipher:          newCredentialCipher(),
 		saveCh:          make(chan struct{}, 1),
+		flushCh:         make(chan chan error),
 		stopCh:          make(chan struct{}),
 		doneCh:          make(chan struct{}),
 		persistInterval: defaultPersistInterval,
+		persisted:       make(map[string]string),
 	}
-	s.openDB()
-	s.load()
+	if err := s.openDB(); err != nil {
+		return nil, err
+	}
+	if err := s.load(); err != nil {
+		_ = s.db.Close()
+		return nil, err
+	}
 	go s.persistLoop()
+
+	globalMu.Lock()
 	globalStore = s
-	return s
+	globalMu.Unlock()
+	return s, nil
 }
 
 func GetGlobalStore() *Store {
+	globalMu.RLock()
+	defer globalMu.RUnlock()
 	return globalStore
 }
 
@@ -145,240 +200,9 @@ func (s *Store) DBPath() string {
 	return s.dbPath
 }
 
-func (s *Store) openDB() {
-	_ = os.MkdirAll(filepath.Dir(s.dbPath), 0755)
-	db, err := openSQLite(s.dbPath)
-	if err != nil {
-		return
-	}
-	s.db = db
-	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS relay_channels (
-		channel_id TEXT PRIMARY KEY,
-		provider_type TEXT NOT NULL,
-		display_name TEXT NOT NULL,
-		base_url TEXT NOT NULL,
-		api_key TEXT NOT NULL DEFAULT '',
-		enabled INTEGER NOT NULL DEFAULT 1,
-		models_json TEXT NOT NULL DEFAULT '[]',
-		weight INTEGER NOT NULL DEFAULT 100,
-		priority INTEGER NOT NULL DEFAULT 0,
-		gray_percent INTEGER NOT NULL DEFAULT 0,
-		read_only INTEGER NOT NULL DEFAULT 0,
-		extra_json TEXT NOT NULL DEFAULT '{}',
-		healthy INTEGER NOT NULL DEFAULT 1,
-		status_code INTEGER NOT NULL DEFAULT 0,
-		error TEXT NOT NULL DEFAULT '',
-		consec_fail INTEGER NOT NULL DEFAULT 0,
-		last_check DATETIME
-	)`)
-	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS relay_model_mappings (
-		logical_model TEXT NOT NULL,
-		channel_id TEXT NOT NULL,
-		upstream_model TEXT NOT NULL,
-		PRIMARY KEY(logical_model, channel_id)
-	)`)
-	_, _ = s.db.Exec(`CREATE TABLE IF NOT EXISTS model_catalog (
-		model_id TEXT PRIMARY KEY,
-		display_name TEXT NOT NULL DEFAULT '',
-		description TEXT NOT NULL DEFAULT '',
-		category TEXT NOT NULL DEFAULT '',
-		family TEXT NOT NULL DEFAULT '',
-		provider TEXT NOT NULL DEFAULT '',
-		modality TEXT NOT NULL DEFAULT 'chat',
-		context_window INTEGER NOT NULL DEFAULT 0,
-		max_output_tokens INTEGER NOT NULL DEFAULT 0,
-		input_price_usd_per_1m REAL NOT NULL DEFAULT 0,
-		output_price_usd_per_1m REAL NOT NULL DEFAULT 0,
-		capabilities TEXT NOT NULL DEFAULT '[]',
-		input_modalities TEXT NOT NULL DEFAULT '[]',
-		output_modalities TEXT NOT NULL DEFAULT '[]',
-		supported_parameters TEXT NOT NULL DEFAULT '[]',
-		metadata TEXT NOT NULL DEFAULT '{}'
-	)`)
-}
-
-func (s *Store) load() {
-	if s.db != nil && s.loadFromDB() {
-		return
-	}
-	s.loadFromDisk()
-	if s.db != nil {
-		s.saveToDB()
-	}
-}
-
-func (s *Store) loadFromDisk() {
-	data, err := os.ReadFile(s.filePath)
-	if err != nil {
-		return
-	}
-	var payload struct {
-		Channels []Channel      `json:"channels"`
-		Mappings []ModelMapping `json:"mappings"`
-	}
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return
-	}
-	for i := range payload.Channels {
-		if payload.Channels[i].Weight <= 0 {
-			payload.Channels[i].Weight = 100
-		}
-		s.channels[payload.Channels[i].ChannelID] = &payload.Channels[i]
-	}
-	s.mappings = payload.Mappings
-}
-
-func (s *Store) loadFromDB() bool {
-	rows, err := s.db.Query(`SELECT channel_id, provider_type, display_name, base_url, api_key, enabled, models_json, weight, priority, gray_percent, read_only, extra_json, healthy, status_code, error, consec_fail, last_check FROM relay_channels`)
-	if err != nil {
-		return false
-	}
-	defer rows.Close()
-
-	loaded := false
-	for rows.Next() {
-		var ch Channel
-		var enabledInt, readOnlyInt, healthyInt int
-		var modelsJSON, extraJSON string
-		if err := rows.Scan(&ch.ChannelID, &ch.ProviderType, &ch.DisplayName, &ch.BaseURL, &ch.APIKey, &enabledInt, &modelsJSON, &ch.Weight, &ch.Priority, &ch.GrayPercent, &readOnlyInt, &extraJSON, &healthyInt, &ch.Health.StatusCode, &ch.Health.Error, &ch.Health.ConsecFail, &ch.LastCheck); err != nil {
-			continue
-		}
-		ch.Enabled = enabledInt == 1
-		ch.ReadOnly = readOnlyInt == 1
-		ch.Health.Healthy = healthyInt == 1
-		_ = json.Unmarshal([]byte(modelsJSON), &ch.Models)
-		_ = json.Unmarshal([]byte(extraJSON), &ch.Extra)
-		s.channels[ch.ChannelID] = &ch
-		loaded = true
-	}
-
-	mappingRows, err := s.db.Query(`SELECT logical_model, channel_id, upstream_model FROM relay_model_mappings`)
-	if err == nil {
-		defer mappingRows.Close()
-		for mappingRows.Next() {
-			var m ModelMapping
-			if mappingRows.Scan(&m.LogicalModel, &m.ChannelID, &m.UpstreamModel) == nil {
-				s.mappings = append(s.mappings, m)
-			}
-		}
-	}
-
-	return loaded
-}
-
-func (s *Store) save() {
-	s.saveToDisk()
-	s.saveToDB()
-}
-
-// persistLoop 是唯一落库协程：把短时间内的多次变更合并成一次写入。
-func (s *Store) persistLoop() {
-	ticker := time.NewTicker(s.persistInterval)
-	defer ticker.Stop()
-
-	dirty := false
-	for {
-		select {
-		case <-s.saveCh:
-			dirty = true
-		case <-ticker.C:
-			if dirty {
-				s.save()
-				dirty = false
-			}
-		case <-s.stopCh:
-			// 停止前把尚在通道中的变更标记合并进本次落库。
-			select {
-			case <-s.saveCh:
-				dirty = true
-			default:
-			}
-			if dirty {
-				s.save()
-			}
-			close(s.doneCh)
-			return
-		}
-	}
-}
-
-// requestSave 非阻塞地标记「需要落库」，由 persistLoop 合并处理。
-func (s *Store) requestSave() {
-	select {
-	case s.saveCh <- struct{}{}:
-	default:
-	}
-}
-
-func (s *Store) saveToDisk() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	channels := make([]Channel, 0, len(s.channels))
-	for _, ch := range s.channels {
-		channels = append(channels, *ch)
-	}
-	payload := struct {
-		Channels []Channel      `json:"channels"`
-		Mappings []ModelMapping `json:"mappings"`
-	}{Channels: channels, Mappings: s.mappings}
-
-	data, _ := json.MarshalIndent(payload, "", "  ")
-	_ = os.MkdirAll(filepath.Dir(s.filePath), 0755)
-	tmpFile := s.filePath + ".tmp"
-	_ = os.WriteFile(tmpFile, data, 0644)
-	_ = os.Rename(tmpFile, s.filePath)
-}
-
-func (s *Store) saveToDB() {
-	if s.db == nil {
-		return
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return
-	}
-	defer tx.Rollback()
-
-	_, _ = tx.Exec(`DELETE FROM relay_channels`)
-	_, _ = tx.Exec(`DELETE FROM relay_model_mappings`)
-	for _, ch := range s.channels {
-		modelsJSON, _ := json.Marshal(ch.Models)
-		extraJSON, _ := json.Marshal(ch.Extra)
-		enabledInt := 0
-		if ch.Enabled {
-			enabledInt = 1
-		}
-		readOnlyInt := 0
-		if ch.ReadOnly {
-			readOnlyInt = 1
-		}
-		healthyInt := 0
-		if ch.Health.Healthy {
-			healthyInt = 1
-		}
-		_, _ = tx.Exec(`INSERT INTO relay_channels (channel_id, provider_type, display_name, base_url, api_key, enabled, models_json, weight, priority, gray_percent, read_only, extra_json, healthy, status_code, error, consec_fail, last_check) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, ch.ChannelID, ch.ProviderType, ch.DisplayName, ch.BaseURL, ch.APIKey, enabledInt, string(modelsJSON), ch.Weight, ch.Priority, ch.GrayPercent, readOnlyInt, string(extraJSON), healthyInt, ch.Health.StatusCode, ch.Health.Error, ch.Health.ConsecFail, ch.LastCheck)
-	}
-	for _, m := range s.mappings {
-		_, _ = tx.Exec(`INSERT INTO relay_model_mappings (logical_model, channel_id, upstream_model) VALUES (?, ?, ?)`, m.LogicalModel, m.ChannelID, m.UpstreamModel)
-	}
-	_ = tx.Commit()
-}
-
-// Close 停止落库协程并关闭数据库；重复调用安全。
-func (s *Store) Close() error {
-	var err error
-	s.closeOnce.Do(func() {
-		close(s.stopCh)
-		<-s.doneCh
-		if s.db != nil {
-			err = s.db.Close()
-		}
-	})
-	return err
+// DataDir 返回存储所在目录。
+func (s *Store) DataDir() string {
+	return s.dataDir
 }
 
 func (s *Store) GetStats() map[string]interface{} {
@@ -447,7 +271,8 @@ func (s *Store) ListEnabledChannels() []Channel {
 	defer s.mu.RUnlock()
 	result := make([]Channel, 0)
 	for _, ch := range s.channels {
-		if ch.Enabled {
+		// 凭证不可用的渠道既不能路由也不应被健康检查（无凭证探测必然失败并被误判）。
+		if ch.Enabled && ch.CredentialError == "" {
 			result = append(result, *ch)
 		}
 	}
@@ -529,7 +354,7 @@ func (s *Store) ResolveChannel(logicalModel string) (*Channel, string) {
 
 	for _, m := range s.mappings {
 		if m.LogicalModel == logicalModel {
-			if ch, ok := s.channels[m.ChannelID]; ok && ch.Enabled && ch.Health.Healthy && !ch.ReadOnly {
+			if ch, ok := s.channels[m.ChannelID]; ok && ch.Routable() && ch.Health.Healthy {
 				cp := *ch
 				return &cp, m.UpstreamModel
 			}
@@ -538,7 +363,7 @@ func (s *Store) ResolveChannel(logicalModel string) (*Channel, string) {
 
 	candidates := make([]*Channel, 0)
 	for _, ch := range s.channels {
-		if ch.Enabled && ch.Health.Healthy && !ch.ReadOnly {
+		if ch.Routable() && ch.Health.Healthy {
 			for _, model := range ch.Models {
 				if model == logicalModel {
 					candidates = append(candidates, ch)
@@ -617,20 +442,32 @@ func (s *Store) LoadModelCatalog() error {
 		return fmt.Errorf("database not initialized")
 	}
 
+	// 目录整体在一个事务内写入：任一行失败即回滚，不留下半份目录。
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin model catalog tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	for _, m := range cat.Models {
 		caps, _ := json.Marshal(m.Capabilities)
 		inMods, _ := json.Marshal(m.InputModalities)
 		outMods, _ := json.Marshal(m.OutputModalities)
 		params, _ := json.Marshal(m.SupportedParameters)
 		meta, _ := json.Marshal(m.Metadata)
-		_, _ = s.db.Exec(`INSERT OR REPLACE INTO model_catalog
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO model_catalog
 			(model_id, display_name, description, category, family, provider, modality,
 			 context_window, max_output_tokens, input_price_usd_per_1m, output_price_usd_per_1m,
 			 capabilities, input_modalities, output_modalities, supported_parameters, metadata)
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			m.Name, m.DisplayName, m.Description, m.Category, m.Family, m.Provider, m.Modality,
 			m.ContextWindow, m.MaxOutputTokens, m.InputPriceUSDPer1M, m.OutputPriceUSDPer1M,
-			string(caps), string(inMods), string(outMods), string(params), string(meta))
+			string(caps), string(inMods), string(outMods), string(params), string(meta)); err != nil {
+			return fmt.Errorf("store model catalog entry %q: %w", m.Name, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit model catalog: %w", err)
 	}
 
 	logging.Infof("model catalog loaded: %d models from %s", len(cat.Models), catalogPath)

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/auth"
-	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/i18n"
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/logging"
+	"github.com/SeasAGI/SeasAGI-Server/shared/i18n"
 	"github.com/gin-gonic/gin"
 )
 

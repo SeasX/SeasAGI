@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/channel"
-	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/i18n"
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/trace"
+	"github.com/SeasAGI/SeasAGI-Server/shared/i18n"
+	"github.com/gin-gonic/gin"
 )
 
 func GetOverview(c *gin.Context) {

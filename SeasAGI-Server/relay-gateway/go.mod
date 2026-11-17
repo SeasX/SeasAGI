@@ -2,6 +2,12 @@ module github.com/SeasAGI/SeasAGI-Server/relay-gateway
 
 go 1.25.0
 
+require github.com/SeasAGI/SeasAGI-Server/shared v0.0.0
+
+// shared 是同仓库内的兄弟模块（日志 / i18n / 时间格式 / 凭证加密），用相对路径解析，
+// 本地与 CI 均可复现，不依赖任何开发者本机绝对路径。
+replace github.com/SeasAGI/SeasAGI-Server/shared => ../shared
+
 require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/golang-jwt/jwt/v5 v5.2.1

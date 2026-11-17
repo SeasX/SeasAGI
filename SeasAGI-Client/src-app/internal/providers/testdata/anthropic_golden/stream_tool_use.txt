@@ -1,0 +1,17 @@
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+data: {"choices":[{"delta":{"role":"assistant"},"index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"Let me check."},"index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"","name":"get_weather"},"id":"toolu_xyz","index":0,"type":"function"}]},"index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"city\":"},"index":0}]},"index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\"Paris\"}"},"index":0}]},"index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"usage":{"completion_tokens":15,"prompt_tokens":40,"total_tokens":55}},"finish_reason":"tool_calls","index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: [DONE]
+

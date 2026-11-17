@@ -1,0 +1,2 @@
+Content-Type: application/json
+{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"Hello world","role":"assistant"}}],"created":0,"id":"msg_1","model":"claude-test","object":"chat.completion","usage":{"completion_tokens":5,"prompt_tokens":12,"total_tokens":17}}

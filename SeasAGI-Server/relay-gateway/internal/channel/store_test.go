@@ -40,7 +40,7 @@ func TestPublicChannelOmitsAPIKey(t *testing.T) {
 
 // GetChannel 必须返回副本，调用方修改不得影响内部状态。
 func TestGetChannelReturnsCopy(t *testing.T) {
-	store := newStoreAt(t.TempDir())
+	store := mustStore(t, t.TempDir())
 	defer store.Close()
 
 	store.AddChannel(Channel{
@@ -72,7 +72,7 @@ func TestGetChannelReturnsCopy(t *testing.T) {
 // 健康更新走异步批量落库；Close 时应保证最后一次变更已写入。
 func TestUpdateHealthPersistsOnClose(t *testing.T) {
 	dir := t.TempDir()
-	store := newStoreAt(dir)
+	store := mustStore(t, dir)
 	store.AddChannel(Channel{ChannelID: "ch_1", Enabled: true, Weight: 100})
 	store.UpdateHealth("ch_1", HealthStatus{Healthy: false, StatusCode: 500, ConsecFail: 2})
 
@@ -80,7 +80,7 @@ func TestUpdateHealthPersistsOnClose(t *testing.T) {
 		t.Fatalf("close store failed: %v", err)
 	}
 
-	reopened := newStoreAt(dir)
+	reopened := mustStore(t, dir)
 	defer reopened.Close()
 	ch, ok := reopened.GetChannel("ch_1")
 	if !ok {
@@ -93,7 +93,7 @@ func TestUpdateHealthPersistsOnClose(t *testing.T) {
 
 // 并发健康更新不得丢失最终状态，也不得触发写冲突。
 func TestConcurrentHealthUpdatesKeepLastState(t *testing.T) {
-	store := newStoreAt(t.TempDir())
+	store := mustStore(t, t.TempDir())
 	defer store.Close()
 
 	store.AddChannel(Channel{ChannelID: "ch_1", Enabled: true, Weight: 100})
@@ -119,11 +119,20 @@ func TestConcurrentHealthUpdatesKeepLastState(t *testing.T) {
 
 // 重复 Close 不得 panic。
 func TestCloseIsIdempotent(t *testing.T) {
-	store := newStoreAt(t.TempDir())
+	store := mustStore(t, t.TempDir())
 	if err := store.Close(); err != nil {
 		t.Fatalf("first close failed: %v", err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("second close failed: %v", err)
 	}
+}
+
+func mustStore(t *testing.T, dir string) *Store {
+	t.Helper()
+	s, err := newStoreAt(dir)
+	if err != nil {
+		t.Fatalf("newStoreAt(%s): %v", dir, err)
+	}
+	return s
 }
