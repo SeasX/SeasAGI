@@ -1,3 +1,5 @@
+github.com/SeasX/SeasLog4Go v0.0.0-20260827185136-886c6147213a h1:xikNynEXQAoVe0qoISBzPduyw6ehcYA+cJPMaZLmbd4=
+github.com/SeasX/SeasLog4Go v0.0.0-20260827185136-886c6147213a/go.mod h1:bxaKp6TOiBC9zl9sFxB6PcGHEei24HPAL03bdhGzXXk=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/bytedance/sonic v1.11.6 h1:oUp34TzMlL+OY1OUWxHqsdkgC/Zfc85zGqw9siXjrc0=
