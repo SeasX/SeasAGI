@@ -3,15 +3,12 @@ module github.com/SeasAGI/SeasAGI-Client
 go 1.25.0
 
 require (
-	github.com/SeasX/SeasLog4Go v0.0.0-00010101000000-000000000000
 	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/wailsapp/wails/v2 v2.15.0
 	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.57.0
 )
-
-replace github.com/SeasX/SeasLog4Go => /Users/Neeke/data/www/SeasAGI/SeasLog4Go
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect

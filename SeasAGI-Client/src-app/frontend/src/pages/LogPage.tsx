@@ -437,7 +437,12 @@ export function LogPage() {
                         {log.mitm_target && (
                           <span
                             className="badge badge-blue"
-                            title={`来源工具: ${log.mitm_target}｜请求模型: ${log.requested_model || "-"}｜改写目标: ${log.resolved_target || "直连"}｜规则: ${log.mitm_rule_id || "默认动作"}`}
+                            title={t("log.mitmSourceTooltip", {
+                              tool: log.mitm_target,
+                              model: log.requested_model || "-",
+                              target: log.resolved_target || t("log.mitmDirect"),
+                              rule: log.mitm_rule_id || t("log.mitmDefaultAction"),
+                            })}
                           >
                             [MITM] {log.mitm_target}
                           </span>

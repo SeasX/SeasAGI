@@ -267,7 +267,7 @@ export interface Invoice {
   created_at: string;
 }
 
-export type PlanTier = "free" | "pro" | "enterprise";
+export type PlanTier = "free" | "pro" | "teams" | "enterprise";
 
 export interface CloudCombo {
   name: string;

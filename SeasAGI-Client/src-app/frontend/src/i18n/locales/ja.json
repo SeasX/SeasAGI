@@ -1792,5 +1792,12 @@
   "settings.mitmColLatency": "レイテンシ",
   "settings.mitmEnvHint": "MITM プロキシを起動すると CLI 環境変数の設定コマンドが表示されます。",
   "settings.mitmCopy": "コピー",
-  "settings.mitmUnsetHint": "停止後に解除する場合:"
+  "settings.mitmUnsetHint": "停止後に解除する場合:",
+  "home.marketModelPrompt": "このマーケット資産をルーティングするモデル名を入力（例: claude-sonnet-4）:",
+  "home.marketComboNamePrompt": "Combo 名:",
+  "home.marketComboCreated": "Combo「{{name}}」を作成しました。「組み合わせ」ページで確認・適用できます。",
+  "home.marketComboFailed": "作成に失敗しました: {{error}}",
+  "log.mitmSourceTooltip": "取得元ツール: {{tool}}｜要求モデル: {{model}}｜書き換え先: {{target}}｜ルール: {{rule}}",
+  "log.mitmDirect": "直接接続",
+  "log.mitmDefaultAction": "既定のアクション"
 }

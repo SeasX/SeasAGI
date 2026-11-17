@@ -152,11 +152,16 @@ func BuildRouter() (*gin.Engine, error) {
 		internalGroup := api.Group("/internal", usage.InternalAuth())
 		{
 			internalGroup.POST("/usage", usage.IngestUsage)
+			// 供 relay-gateway 同步通道策略快照，替代此前恒 401 的匿名 /api/v1/channels。
+			internalGroup.GET("/channels/snapshot", channel.InternalChannelSnapshot)
 		}
 
 		authenticated := api.Group("")
 		authenticated.Use(auth.Middleware())
 		{
+			// 注销：递增 token_version，立即失效已签发的 access/refresh token（P1-9）。
+			authenticated.POST("/auth/logout", auth.Logout)
+
 			authenticated.GET("/user/profile", user.GetProfile)
 			authenticated.GET("/user/optimization", user.GetOptimizationConfig)
 			authenticated.PUT("/user/optimization", user.SetOptimizationConfig)
@@ -188,10 +193,17 @@ func BuildRouter() (*gin.Engine, error) {
 			authenticated.GET("/usage/timeline", usage.GetUsageTimeline)
 		}
 
+		// 管理后台会话：用 ADMIN_SECRET 换一次短时 HttpOnly Cookie。
+		// 登录/注销挂在鉴权组之外，由 handler 自身校验密钥与会话令牌；
+		// 之后所有后台请求只依赖 Cookie，不再把长期密钥留在浏览器可读存储里。
+		api.POST("/admin/session", admin.CreateSession)
+		api.DELETE("/admin/session", admin.DeleteSession)
+
 		// Admin routes (community edition: user/channel/combo/relay basic management)
-		// 全部管理端点必须携带 ADMIN_SECRET，禁止匿名访问。
+		// 全部管理端点必须携带有效会话或 ADMIN_SECRET，禁止匿名访问。
 		adminGroup := api.Group("/admin", admin.Middleware())
 		{
+			adminGroup.GET("/session", admin.GetSession)
 			adminGroup.GET("/users", admin.ListUsers)
 			adminGroup.GET("/users/:id", admin.GetUser)
 			adminGroup.DELETE("/users/:id", admin.DeleteUser)

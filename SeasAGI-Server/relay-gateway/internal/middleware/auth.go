@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/auth"
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/i18n"
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/logging"
+	"github.com/gin-gonic/gin"
 )
 
 // AdminAuth 保护运维端点（/ops/*）。使用 ADMIN_SECRET 作为 Bearer 令牌，
@@ -59,10 +59,10 @@ func AuthRequired() gin.HandlerFunc {
 		c.Set("channel_id", claims.ChannelID)
 		c.Set("device_id", claims.DeviceID)
 
+		// 租户身份只能来自服务端签名令牌。客户端提供的 X-Tenant-Id 曾经
+		// 被用作回退值，等于允许任意用户伪装成其他租户写 trace、影响路由；
+		// 现统一改为：令牌无 tenant_id 时落到 default，不再读取请求头。
 		tenantID := claims.TenantID
-		if tenantID == "" {
-			tenantID = c.GetHeader("X-Tenant-Id")
-		}
 		if tenantID == "" {
 			tenantID = "default"
 		}

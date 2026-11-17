@@ -22,6 +22,10 @@ export function ApplyRecommendation(arg1, arg2) {
   return window['go']['main']['App']['ApplyRecommendation'](arg1, arg2);
 }
 
+export function BindMCPDataSource() {
+  return window['go']['main']['App']['BindMCPDataSource']();
+}
+
 export function ChatCompletion(arg1, arg2) {
   return window['go']['main']['App']['ChatCompletion'](arg1, arg2);
 }
@@ -200,6 +204,10 @@ export function GetEvalScorecard(arg1) {
 
 export function GetIntentScenarioStats() {
   return window['go']['main']['App']['GetIntentScenarioStats']();
+}
+
+export function GetKeyQuotaStatus() {
+  return window['go']['main']['App']['GetKeyQuotaStatus']();
 }
 
 export function GetLocalAccessTokenStatus() {
@@ -506,6 +514,10 @@ export function RegisterMarketNode(arg1, arg2, arg3) {
   return window['go']['main']['App']['RegisterMarketNode'](arg1, arg2, arg3);
 }
 
+export function RemoveKeyQuota() {
+  return window['go']['main']['App']['RemoveKeyQuota']();
+}
+
 export function RemoveMITMRule(arg1) {
   return window['go']['main']['App']['RemoveMITMRule'](arg1);
 }
@@ -584,6 +596,10 @@ export function SetByokPolicy(arg1) {
 
 export function SetDefaultComboName(arg1) {
   return window['go']['main']['App']['SetDefaultComboName'](arg1);
+}
+
+export function SetKeyQuota(arg1) {
+  return window['go']['main']['App']['SetKeyQuota'](arg1);
 }
 
 export function SetLocale(arg1) {

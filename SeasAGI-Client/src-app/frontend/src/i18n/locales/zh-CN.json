@@ -1793,5 +1793,12 @@
   "settings.mitmColLatency": "延迟",
   "settings.mitmEnvHint": "启动 MITM 代理后显示 CLI 环境变量设置命令。",
   "settings.mitmCopy": "复制",
-  "settings.mitmUnsetHint": "停止后取消设置："
+  "settings.mitmUnsetHint": "停止后取消设置：",
+  "home.marketModelPrompt": "输入该市场资产要路由到的模型名（如 claude-sonnet-4）：",
+  "home.marketComboNamePrompt": "Combo 名称：",
+  "home.marketComboCreated": "已生成 Combo「{{name}}」，可在「组合」页查看与应用。",
+  "home.marketComboFailed": "生成失败：{{error}}",
+  "log.mitmSourceTooltip": "来源工具: {{tool}}｜请求模型: {{model}}｜改写目标: {{target}}｜规则: {{rule}}",
+  "log.mitmDirect": "直连",
+  "log.mitmDefaultAction": "默认动作"
 }

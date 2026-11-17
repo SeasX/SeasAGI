@@ -1793,5 +1793,12 @@
   "settings.mitmColLatency": "Latency",
   "settings.mitmEnvHint": "Start the MITM proxy to show CLI environment variable commands.",
   "settings.mitmCopy": "Copy",
-  "settings.mitmUnsetHint": "To unset after stopping:"
+  "settings.mitmUnsetHint": "To unset after stopping:",
+  "home.marketModelPrompt": "Enter the model this marketplace asset should route to (e.g. claude-sonnet-4):",
+  "home.marketComboNamePrompt": "Combo name:",
+  "home.marketComboCreated": "Combo \"{{name}}\" created. View and apply it on the Combos page.",
+  "home.marketComboFailed": "Failed to create: {{error}}",
+  "log.mitmSourceTooltip": "Source tool: {{tool}} | Requested model: {{model}} | Rewritten target: {{target}} | Rule: {{rule}}",
+  "log.mitmDirect": "direct",
+  "log.mitmDefaultAction": "default action"
 }

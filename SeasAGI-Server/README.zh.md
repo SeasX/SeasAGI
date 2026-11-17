@@ -55,7 +55,7 @@ SeasAGI-Server/
 - **模型目录**：`data/model-catalog.yaml` 解析入库，通过 `/models` 与 `/models/:name` 查询
 - **基础 Combo**：用户级 Combo CRUD + 官方模板拉取
 - **基础用量**：用户用量、按模型/通道分组、时间线、错误分布、近期错误
-- **基础租户管理**：成员、邀请链接、自定义通道同步、策略、模板、配置快照
+- **租户上下文**：JWT 携带由服务端签发（数据库为准）的 `tenant_id`，用量与 trace 按租户隔离；网关不再采信客户端 `X-Tenant-Id`。成员管理、邀请链接、策略模板、配置快照等治理端点**未包含在社区版**，见下节「不包含能力」
 - **基础 Admin API**：用户 / 通道 / Combo / Relay Gateway 基础管理
 - **SQLite 在线备份**：`VACUUM INTO` 备份、SHA-256 校验、恢复、30 天保留
 - **免费通道种子**：`GET /free-channels` 返回 23 家免费 Provider（OpenCode、DuckDuckGo、DeepSeek、腾讯元宝、豆包、讯飞、Coze、AI Horde 等）

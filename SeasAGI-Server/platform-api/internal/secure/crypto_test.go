@@ -1,8 +1,12 @@
 package secure
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/base64"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -22,8 +26,11 @@ func TestEncryptString_ReturnsNonEmptyBase64(t *testing.T) {
 	if result == "" {
 		t.Fatal("EncryptString returned empty string")
 	}
-	// Verify it's valid base64
-	decoded, err := base64.StdEncoding.DecodeString(result)
+	// Verify it's versioned and valid base64
+	if !strings.HasPrefix(result, ciphertextV2Prefix) {
+		t.Fatalf("ciphertext missing %q prefix: %q", ciphertextV2Prefix, result)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(result, ciphertextV2Prefix))
 	if err != nil {
 		t.Fatalf("EncryptString returned invalid base64: %v", err)
 	}
@@ -92,14 +99,14 @@ func TestDecryptString_TamperedCiphertext(t *testing.T) {
 	}
 
 	// Decode, tamper with the ciphertext bytes, re-encode
-	data, _ := base64.StdEncoding.DecodeString(encrypted)
+	data, _ := base64.StdEncoding.DecodeString(strings.TrimPrefix(encrypted, ciphertextV2Prefix))
 	tampered := make([]byte, len(data))
 	copy(tampered, data)
 	// Flip a bit in the ciphertext portion (after the nonce)
 	if len(tampered) > 12 {
 		tampered[12] ^= 0xFF
 	}
-	tamperedEncoded := base64.StdEncoding.EncodeToString(tampered)
+	tamperedEncoded := ciphertextV2Prefix + base64.StdEncoding.EncodeToString(tampered)
 
 	_, err = DecryptString(tamperedEncoded)
 	if err == nil {
@@ -107,44 +114,66 @@ func TestDecryptString_TamperedCiphertext(t *testing.T) {
 	}
 }
 
-func TestNormalizeKey_Empty(t *testing.T) {
-	if _, err := normalizeKey(""); err == nil {
+func TestDataKey_Empty(t *testing.T) {
+	if _, err := dataKey(""); err == nil {
 		t.Fatal("empty key must return an error instead of a built-in default")
 	}
 }
 
-func TestNormalizeKey_ShortKey(t *testing.T) {
+func TestDataKey_ShortKey(t *testing.T) {
 	shortKey := "short"
-	if _, err := normalizeKey(shortKey); err == nil {
+	if _, err := dataKey(shortKey); err == nil {
 		t.Fatal("short key must be rejected")
 	}
 }
 
-func TestNormalizeKey_32ByteKey(t *testing.T) {
+func TestDataKey_Derives32Bytes(t *testing.T) {
 	key32 := "abcdefghijklmnopqrstuvwxyz123456" // exactly 32 bytes
-	result, err := normalizeKey(key32)
+	result, err := dataKey(key32)
 	if err != nil {
-		t.Fatalf("normalizeKey failed: %v", err)
+		t.Fatalf("dataKey failed: %v", err)
 	}
 	if len(result) != 32 {
 		t.Fatalf("expected 32 bytes, got %d", len(result))
 	}
-	if string(result) != key32 {
-		t.Fatalf("32-byte key: got %q, want %q", string(result), key32)
+	// HKDF 派生结果不应等于原始口令，避免直接当 AES 密钥使用。
+	if string(result) == key32 {
+		t.Fatal("derived key must differ from the raw secret")
 	}
 }
 
-func TestNormalizeKey_LongKey(t *testing.T) {
+func TestDataKey_LongKeyUsesAllEntropy(t *testing.T) {
 	longKey := "this-is-a-very-long-key-that-exceeds-thirty-two-bytes-for-testing"
-	result, err := normalizeKey(longKey)
+	result, err := dataKey(longKey)
 	if err != nil {
-		t.Fatalf("normalizeKey failed: %v", err)
+		t.Fatalf("dataKey failed: %v", err)
 	}
 	if len(result) != 32 {
 		t.Fatalf("expected 32 bytes, got %d", len(result))
 	}
-	if string(result) != longKey[:32] {
-		t.Fatalf("long key: got %q, want %q", string(result), longKey[:32])
+	// 与旧实现的截断结果不同，说明超长密钥的后半段熵也参与派生。
+	if string(result) == longKey[:32] {
+		t.Fatal("derived key must not be a plain truncation of the secret")
+	}
+}
+
+func TestDataKey_Deterministic(t *testing.T) {
+	input := "some-key-0123456789abcdefghijklmnop"
+	r1, err := dataKey(input)
+	if err != nil {
+		t.Fatalf("dataKey failed: %v", err)
+	}
+	r2, err := dataKey(input)
+	if err != nil {
+		t.Fatalf("dataKey failed: %v", err)
+	}
+	if len(r1) != len(r2) {
+		t.Fatal("dataKey produced different lengths for same input")
+	}
+	for i := range r1 {
+		if r1[i] != r2[i] {
+			t.Fatalf("dataKey produced different value at byte %d", i)
+		}
 	}
 }
 
@@ -215,27 +244,6 @@ func TestEncryptDecrypt_DifferentEnvKeys(t *testing.T) {
 	}
 }
 
-// Test that normalizeKey is deterministic for the same input
-func TestNormalizeKey_Deterministic(t *testing.T) {
-	input := "some-key-0123456789abcdefghijklmnop"
-	r1, err := normalizeKey(input)
-	if err != nil {
-		t.Fatalf("normalizeKey failed: %v", err)
-	}
-	r2, err := normalizeKey(input)
-	if err != nil {
-		t.Fatalf("normalizeKey failed: %v", err)
-	}
-	if len(r1) != len(r2) {
-		t.Fatal("normalizeKey produced different lengths for same input")
-	}
-	for i := range r1 {
-		if r1[i] != r2[i] {
-			t.Fatalf("normalizeKey produced different value at byte %d", i)
-		}
-	}
-}
-
 func TestEncryptString_EmptyString(t *testing.T) {
 	encrypted, err := EncryptString("")
 	if err != nil {
@@ -265,5 +273,33 @@ func TestEncryptDecrypt_EnvVarChanged(t *testing.T) {
 	_, err = DecryptString(encrypted)
 	if err == nil {
 		t.Fatal("DecryptString after env var change should return error, got nil")
+	}
+}
+
+// 历史密文（无 v2: 前缀）必须仍能用旧派生方式解密，保证升级不丢数据。
+func TestDecryptString_LegacyCiphertext(t *testing.T) {
+	key, err := legacyDataKey(os.Getenv("SEASAGI_DATA_KEY"))
+	if err != nil {
+		t.Fatalf("legacyDataKey failed: %v", err)
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		t.Fatalf("aes.NewCipher failed: %v", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatalf("cipher.NewGCM failed: %v", err)
+	}
+	iv := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(iv); err != nil {
+		t.Fatalf("rand.Read failed: %v", err)
+	}
+	legacy := base64.StdEncoding.EncodeToString(gcm.Seal(iv, iv, []byte("legacy secret"), nil))
+	plain, err := DecryptString(legacy)
+	if err != nil {
+		t.Fatalf("DecryptString legacy failed: %v", err)
+	}
+	if plain != "legacy secret" {
+		t.Fatalf("legacy round-trip = %q", plain)
 	}
 }

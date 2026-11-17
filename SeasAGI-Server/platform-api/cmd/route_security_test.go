@@ -19,6 +19,10 @@ func isPublicWriteRoute(path string) bool {
 		return true
 	case "/healthz":
 		return true
+	case "/api/v1/admin/session":
+		// 公开 ≠ 无鉴权：登录端点由 handler 自己校验 ADMIN_SECRET 与登录限流，
+		// 无法用 JWT / Bearer 前置中间件保护，否则浏览器拿不到会话 Cookie。
+		return true
 	}
 	return strings.HasPrefix(path, "/api/v1/auth/oauth/") ||
 		strings.HasPrefix(path, "/api/v1/version/")

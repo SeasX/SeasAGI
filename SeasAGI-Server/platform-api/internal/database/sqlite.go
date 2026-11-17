@@ -1092,6 +1092,81 @@ func migrate() error {
 				`CREATE INDEX IF NOT EXISTS idx_usage_records_user_model_recorded ON usage_records(user_id, model, recorded_at)`,
 			},
 		},
+		{
+			version: "2026-11-15-030-usage-idempotency",
+			// 内部用量上报此前每次投递各插一行，重放会重复计入统计；
+			// 且请求里的 cost_usd / total_cost_usd 接收后被丢弃。
+			// 这里只通过 ALTER 加列，避免与新库的 001 建表语句重复列。
+			sqls: []string{
+				`ALTER TABLE usage_records ADD COLUMN request_id TEXT NOT NULL DEFAULT ''`,
+				`ALTER TABLE usage_records ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`,
+				`ALTER TABLE usage_records ADD COLUMN total_cost_usd REAL NOT NULL DEFAULT 0`,
+				`CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_records_request_id ON usage_records(request_id) WHERE request_id <> ''`,
+			},
+		},
+		{
+			version: "2026-11-15-031-admin-sessions",
+			// 管理后台 HttpOnly 会话：只存令牌摘要，浏览器 JS 无法读取长期密钥。
+			sqls: []string{
+				`CREATE TABLE IF NOT EXISTS admin_sessions (
+					session_id TEXT PRIMARY KEY,
+					token_hash TEXT NOT NULL UNIQUE,
+					admin_id TEXT NOT NULL DEFAULT 'admin',
+					expires_at TEXT NOT NULL,
+					created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at)`,
+			},
+		},
+		{
+			version: "2026-11-17-032-token-version",
+			// JWT 无状态且无黑名单，凭据泄露后 7 天内无法作废。
+			// 注销时递增该版本号，中间件比对不一致即拒绝，旧令牌立即失效。
+			sqls: []string{
+				`ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0`,
+			},
+		},
+		{
+			version: "2026-11-17-033-remove-unused-enterprise-schema",
+			// P2-10：社区版没有任何 handler/查询引用这些企业版与商业化表，
+			// 与 026-remove-billing 一致，按 append-only 迁移策略清理死表，
+			// 避免备份/审计时把空表误认为已交付能力。
+			sqls: []string{
+				`DROP TABLE IF EXISTS outbox_events`,
+				`DROP TABLE IF EXISTS webhooks`,
+				`DROP TABLE IF EXISTS audit_logs`,
+				`DROP TABLE IF EXISTS ban_records`,
+				`DROP TABLE IF EXISTS rate_limit_policies`,
+				`DROP TABLE IF EXISTS alert_rules`,
+				`DROP TABLE IF EXISTS alert_events`,
+				`DROP TABLE IF EXISTS sla_status`,
+				`DROP TABLE IF EXISTS sla_events`,
+				`DROP TABLE IF EXISTS enterprise_leads`,
+				`DROP TABLE IF EXISTS organizations`,
+				`DROP TABLE IF EXISTS tenant_members`,
+				`DROP TABLE IF EXISTS tenant_strategies`,
+				`DROP TABLE IF EXISTS tenant_combo_templates`,
+				`DROP TABLE IF EXISTS tenant_invite_links`,
+				`DROP TABLE IF EXISTS tenant_config_snapshots`,
+				`DROP TABLE IF EXISTS enterprise_sso_configs`,
+				`DROP TABLE IF EXISTS enterprise_scim_configs`,
+				`DROP TABLE IF EXISTS enterprise_roles`,
+				`DROP TABLE IF EXISTS enterprise_model_policies`,
+				`DROP TABLE IF EXISTS enterprise_ip_whitelist`,
+				`DROP TABLE IF EXISTS enterprise_compliance_reports`,
+				`DROP TABLE IF EXISTS enterprise_audit_retention`,
+				`DROP TABLE IF EXISTS enterprise_policy_rollouts`,
+				`DROP TABLE IF EXISTS enterprise_contracts`,
+				`DROP TABLE IF EXISTS enterprise_quota_approvals`,
+				`DROP TABLE IF EXISTS enterprise_data_regions`,
+				`DROP TABLE IF EXISTS enterprise_licenses`,
+				`DROP TABLE IF EXISTS enterprise_byok_policies`,
+				`DROP TABLE IF EXISTS model_combo_metrics`,
+				`DROP TABLE IF EXISTS combo_visibility_policies`,
+				`DROP TABLE IF EXISTS combo_deployment_approvals`,
+				`DROP TABLE IF EXISTS provider_health_metrics`,
+			},
+		},
 	}
 
 	if _, err := DB.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {

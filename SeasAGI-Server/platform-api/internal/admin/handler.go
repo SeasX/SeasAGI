@@ -20,6 +20,16 @@ func Middleware() gin.HandlerFunc {
 		logging.Fatal("ADMIN_SECRET environment variable is required. Set it in production!")
 	}
 	return func(c *gin.Context) {
+		// 优先使用 HttpOnly 会话 Cookie（浏览器管理后台）；会话缺失或过期时
+		// 回退到 Bearer ADMIN_SECRET，保持 CLI / 自动化脚本兼容。
+		if sessionToken, err := c.Cookie(sessionCookieName); err == nil && sessionToken != "" {
+			if adminID, ok := resolveSession(sessionToken); ok {
+				c.Set("admin_id", adminID)
+				c.Next()
+				return
+			}
+		}
+
 		authHeader := c.GetHeader("Authorization")
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(adminSecret)) != 1 {

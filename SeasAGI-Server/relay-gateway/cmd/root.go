@@ -145,6 +145,19 @@ func BuildRouter() (*gin.Engine, error) {
 		opsGroup.PUT("/channels/:channel_id/weight", ops.SetChannelWeight)
 		opsGroup.PUT("/channels/:channel_id/gray", ops.SetChannelGray)
 		opsGroup.GET("/alerts", ops.GetAlertPanel)
+		// 按 key（user:/device:/ip:）下发运行时 RPM 策略；rpm<=0 表示删除策略回退到全局速率。
+		opsGroup.PUT("/rate-limit/policies", func(c *gin.Context) {
+			var req struct {
+				Key string `json:"key"`
+				RPM int    `json:"rpm"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Key) == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "key is required"})
+				return
+			}
+			limiter.SetPolicy(req.Key, req.RPM)
+			c.JSON(http.StatusOK, gin.H{"status": "ok", "key": req.Key, "rpm": req.RPM})
+		})
 	}
 
 	relayGroup := r.Group("/relay")

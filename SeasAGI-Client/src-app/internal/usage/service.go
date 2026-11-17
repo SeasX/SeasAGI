@@ -382,8 +382,8 @@ type UsageDetail struct {
 }
 
 // RecordUsageV2 records a request with full token v2 breakdown, TTFT, service tier,
-// and response header snapshot.
-func (s *Service) RecordUsageV2(detail UsageDetail) {
+// and response header snapshot. 返回本次记录的美元成本，供按 key 配额扣减使用。
+func (s *Service) RecordUsageV2(detail UsageDetail) float64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -448,6 +448,7 @@ func (s *Service) RecordUsageV2(detail UsageDetail) {
 	if s.appended >= maxRecords || s.appendedBytes >= usageCompactBytes {
 		s.persist()
 	}
+	return costUSD
 }
 
 // estimateCost computes the USD cost of a request. When the granular v2 token

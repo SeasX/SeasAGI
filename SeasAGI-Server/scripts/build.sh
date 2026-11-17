@@ -21,7 +21,11 @@ mkdir -p "${BUILD_DIR}"
 echo ""
 echo "--- Building admin frontend ---"
 cd "${SRC_ADMIN_DIR}"
-npm install --quiet
+if [ -f package-lock.json ]; then
+    npm ci --quiet
+else
+    npm install --quiet
+fi
 npm run build
 rm -rf "${PLATFORM_API_DIR}/cmd/admin_dist"
 cp -r "${SRC_ADMIN_DIR}/dist" "${PLATFORM_API_DIR}/cmd/admin_dist"

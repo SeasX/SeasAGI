@@ -3,13 +3,11 @@ module github.com/SeasAGI/SeasAGI-Server/platform-api
 go 1.25.0
 
 require (
-	github.com/SeasX/SeasLog4Go v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.10.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	golang.org/x/crypto v0.26.0
 )
 
-replace github.com/SeasX/SeasLog4Go => /Users/Neeke/data/www/SeasAGI/SeasLog4Go
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

@@ -4,10 +4,10 @@ import (
 	"database/sql"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/i18n"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/secure"
+	"github.com/gin-gonic/gin"
 )
 
 type Channel struct {
@@ -338,7 +338,7 @@ type FreeChannelSeed struct {
 	DisplayName   string      `json:"display_name"`
 	AuthType      string      `json:"auth_type"` // noauth / oauth / apikey / web-cookie
 	BaseURL       string      `json:"base_url"`
-	FreeType      string      `json:"free_type"`    // keyless / recurring-monthly / one-time-initial 等
+	FreeType      string      `json:"free_type"`      // keyless / recurring-monthly / one-time-initial 等
 	MonthlyTokens string      `json:"monthly_tokens"` // 人类可读的额度描述
 	Models        []ModelInfo `json:"models"`
 	Description   string      `json:"description"`

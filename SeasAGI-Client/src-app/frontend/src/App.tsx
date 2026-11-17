@@ -11,6 +11,7 @@ import { OptimizationWorkbenchPage } from "./pages/OptimizationWorkbenchPage";
 import { AccessTokenPage } from "./pages/AccessTokenPage";
 import { SubscriptionPage } from "./pages/SubscriptionPage";
 import { TeamWorkspacePage } from "./pages/TeamWorkspacePage";
+import { EnterprisePortalPage } from "./pages/EnterprisePortalPage";
 import { PlaygroundPage } from "./pages/PlaygroundPage";
 import { TokenMarketPage } from "./pages/TokenMarketPage";
 import { TokenListingCreatePage } from "./pages/TokenListingCreatePage";
@@ -44,7 +45,7 @@ export default function App() {
             <Route path="/access-token" element={<AccessTokenPage />} />
             <Route path="/subscription" element={<SubscriptionPage />} />
             <Route path="/team" element={<TeamWorkspacePage />} />
-            <Route path="/enterprise" element={<Navigate to="/" replace />} />
+            <Route path="/enterprise" element={<EnterprisePortalPage />} />
             <Route path="/playground" element={<PlaygroundPage />} />
             <Route path="/token-market" element={<TokenMarketPage />} />
             <Route path="/model-index" element={<ModelIndexPage />} />

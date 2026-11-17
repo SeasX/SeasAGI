@@ -102,10 +102,8 @@ func mustScanAttack(t *testing.T, query string, args []any, dest ...any) {
 //   - B 修改/删除 A 的 combo → 404/403 且 A 数据不变；
 //   - B 解绑 A 的设备 → 404 且绑定关系仍在；
 //   - 伪造 X-Tenant-Id / X-Device-Id 不改变用户接口的数据归属；
-//   - 同一 request_id 重复上报用量：社区版 usage_records 没有 request_id 列，
-//     usage 上报入口也不做客户端幂等（request_id 字段被忽略），因此按服务端规则
-//     每次已鉴权的内部上报都记为独立事件（不产生同一请求内的重复行）。
-//     若后续为社区版增加 request_id 幂等，应改为断言第二次 ingested=0。
+//   - 同一 request_id 重复上报用量：现已由 usage_records 的部分唯一索引 +
+//     INSERT OR IGNORE 实现幂等，第二次上报 ingested=0、库中仍只有一行。
 func TestAttackMatrixCrossUserWrites(t *testing.T) {
 	initAttackDB(t)
 	setAttackEnv(t)
@@ -254,19 +252,21 @@ func TestAttackMatrixCrossUserWrites(t *testing.T) {
 			t.Fatalf("usage ingest failed: %d / %d", first.Code, second.Code)
 		}
 		var firstResp, secondResp struct {
-			Ingested int `json:"ingested"`
+			Ingested   int `json:"ingested"`
+			Duplicates int `json:"duplicates"`
 		}
 		_ = json.Unmarshal(first.Body.Bytes(), &firstResp)
 		_ = json.Unmarshal(second.Body.Bytes(), &secondResp)
-		// 社区版不做 request_id 幂等：每次上报各自生成一行，客户端 request_id 被忽略。
-		if firstResp.Ingested != 1 || secondResp.Ingested != 1 {
-			t.Fatalf("community ingest rule changed: first=%d second=%d (expected 1/1)", firstResp.Ingested, secondResp.Ingested)
+		// 重放必须被 request_id 幂等挡住，避免重复计入用量与成本。
+		if firstResp.Ingested != 1 || secondResp.Ingested != 0 || secondResp.Duplicates != 1 {
+			t.Fatalf("replay not deduplicated: first ingested=%d, second ingested=%d duplicates=%d (want 1/0/1)",
+				firstResp.Ingested, secondResp.Ingested, secondResp.Duplicates)
 		}
 		var count int
 		mustScanAttack(t, `SELECT COUNT(*) FROM usage_records WHERE user_id = ? AND channel_id = 'ch-replay'`,
 			[]any{userA}, &count)
-		if count != 2 {
-			t.Fatalf("expected two independent usage rows (no client-side idempotency), got %d", count)
+		if count != 1 {
+			t.Fatalf("expected one usage row after replay, got %d", count)
 		}
 	})
 }
