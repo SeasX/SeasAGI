@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/timeutil"
+	"github.com/SeasAGI/SeasAGI-Server/shared/timeutil"
 )
 
 var testStore *TraceStore

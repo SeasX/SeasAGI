@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	locales   map[string]map[string]string
-	loadOnce  sync.Once
+	locales    map[string]map[string]string
+	loadOnce   sync.Once
 	localesDir string
 )
 

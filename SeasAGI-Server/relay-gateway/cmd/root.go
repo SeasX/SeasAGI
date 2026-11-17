@@ -27,6 +27,7 @@ import (
 )
 
 var (
+	routerSyncer  *policy.Syncer
 	routerStore   *channel.Store
 	routerLimiter *ratelimit.Limiter
 	routerRateRPM float64
@@ -49,11 +50,13 @@ func Execute() error {
 	}
 
 	trace.InitStore(store.DBPath())
-	policy.InitCache()
 
-	// 优雅退出上下文：trace 保留清理与 HTTP 服务共用，进程退出时一并停止。
+	// 优雅退出上下文：trace 保留清理、控制面同步与 HTTP 服务共用，进程退出时一并停止。
 	appCtx, stopApp := context.WithCancel(context.Background())
 	defer stopApp()
+
+	// 控制面 → 数据面配置同步：首次同步立即执行，失败时保留本地最后已知配置并退避重试。
+	go routerSyncer.Run(appCtx)
 	trace.StartRetention(appCtx, trace.GetStore(), trace.RetentionConfigFromEnv())
 
 	go routerLimiter.CleanupLoop(time.Minute)
@@ -95,8 +98,12 @@ func Execute() error {
 // BuildRouter 构建 relay 数据面路由（不监听端口、不启动健康检查/后台循环），
 // 供进程启动与路由安全/攻击测试复用。
 func BuildRouter() (*gin.Engine, error) {
-	store := channel.NewStore()
+	store, err := channel.NewStore()
+	if err != nil {
+		return nil, fmt.Errorf("init relay channel store: %w", err)
+	}
 	routerStore = store
+	routerSyncer = policy.NewSyncer(policy.ConfigFromEnv(), store)
 	relay.SetChannelStore(store)
 	middleware.SetChannelStatsProvider(func() []middleware.ChannelStat {
 		stats := make([]middleware.ChannelStat, 0)
@@ -134,6 +141,10 @@ func BuildRouter() (*gin.Engine, error) {
 				"data":  channel.PublicList(store.ListChannels()),
 				"stats": store.GetStats(),
 			})
+		})
+		// 控制面同步状态（不含凭证）。
+		opsGroup.GET("/sync", func(c *gin.Context) {
+			c.JSON(http.StatusOK, routerSyncer.Status())
 		})
 		opsGroup.GET("/overview", ops.GetOverview)
 		opsGroup.GET("/channels/health", ops.ListChannelHealth)

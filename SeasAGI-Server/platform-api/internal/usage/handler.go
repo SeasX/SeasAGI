@@ -11,7 +11,7 @@ import (
 
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/logging"
-	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/timeutil"
+	"github.com/SeasAGI/SeasAGI-Server/shared/timeutil"
 	"github.com/gin-gonic/gin"
 )
 

@@ -1,0 +1,2 @@
+Content-Type: application/json
+{"choices":[{"finish_reason":"length","index":0,"message":{"content":"","role":"assistant"}}],"created":0,"id":"msg_4","model":"claude-test","object":"chat.completion","usage":{"completion_tokens":0,"prompt_tokens":0,"total_tokens":0}}

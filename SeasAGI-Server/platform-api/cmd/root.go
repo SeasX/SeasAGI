@@ -130,6 +130,10 @@ func BuildRouter() (*gin.Engine, error) {
 
 	registerAdminUI(r)
 
+	// 渠道仓储显式注入；传入 database.Writer 以便备份还原替换连接后仍然有效。
+	channels := channel.NewHandler(channel.NewRepository(database.Writer))
+	relayGateways := relay.NewHandler(relay.NewRepository(database.Writer))
+
 	api := r.Group("/api/v1")
 	{
 		authGroup := api.Group("/auth")
@@ -153,7 +157,9 @@ func BuildRouter() (*gin.Engine, error) {
 		{
 			internalGroup.POST("/usage", usage.IngestUsage)
 			// 供 relay-gateway 同步通道策略快照，替代此前恒 401 的匿名 /api/v1/channels。
-			internalGroup.GET("/channels/snapshot", channel.InternalChannelSnapshot)
+			internalGroup.GET("/channels/snapshot", channels.InternalChannelSnapshot)
+			// relay-gateway 配置同步（含解密凭证，仅限服务间令牌访问）。
+			internalGroup.GET("/relay/config", channels.InternalRelayConfig)
 		}
 
 		authenticated := api.Group("")
@@ -166,8 +172,8 @@ func BuildRouter() (*gin.Engine, error) {
 			authenticated.GET("/user/optimization", user.GetOptimizationConfig)
 			authenticated.PUT("/user/optimization", user.SetOptimizationConfig)
 
-			authenticated.GET("/channels", channel.ListChannels)
-			authenticated.GET("/channels/:id", channel.GetChannel)
+			authenticated.GET("/channels", channels.ListChannels)
+			authenticated.GET("/channels/:id", channels.GetChannel)
 			authenticated.GET("/free-channels", channel.ListFreeChannels)
 
 			authenticated.GET("/models", modelcatalog.ListModels)
@@ -185,7 +191,7 @@ func BuildRouter() (*gin.Engine, error) {
 			authenticated.PUT("/combos/:id", combo.UpdateUserCombo)
 			authenticated.DELETE("/combos/:id", combo.DeleteUserCombo)
 
-			authenticated.GET("/relay-gateways", relay.ListRelayGateways)
+			authenticated.GET("/relay-gateways", relayGateways.ListRelayGateways)
 
 			authenticated.GET("/usage", usage.GetUserUsage)
 			authenticated.GET("/usage/models", usage.GetUserModelUsage)
@@ -211,10 +217,10 @@ func BuildRouter() (*gin.Engine, error) {
 			adminGroup.POST("/channels/seed", admin.SeedChannel)
 			adminGroup.POST("/channels/:id/models", admin.SeedChannelModels)
 			adminGroup.POST("/models/sync", modelcatalog.SyncCatalog)
-			adminGroup.GET("/channels", channel.ListChannels)
-			adminGroup.POST("/channels", channel.CreateChannel)
-			adminGroup.PUT("/channels/:id", channel.UpdateChannel)
-			adminGroup.DELETE("/channels/:id", channel.DeleteChannel)
+			adminGroup.GET("/channels", channels.ListChannels)
+			adminGroup.POST("/channels", channels.CreateChannel)
+			adminGroup.PUT("/channels/:id", channels.UpdateChannel)
+			adminGroup.DELETE("/channels/:id", channels.DeleteChannel)
 
 			// 通道资源（含明文解密端点）只允许管理员访问。
 			adminGroup.GET("/channels/:id/resources", providerresource.ListResources)
@@ -234,10 +240,10 @@ func BuildRouter() (*gin.Engine, error) {
 			adminGroup.GET("/usage/stats", admin.GetUsageStats)
 			adminGroup.GET("/usage/records", admin.ListAllUsage)
 
-			adminGroup.GET("/relay-gateways", relay.AdminListRelayGateways)
-			adminGroup.POST("/relay-gateways", relay.AdminCreateRelayGateway)
-			adminGroup.PUT("/relay-gateways/:id", relay.AdminUpdateRelayGateway)
-			adminGroup.DELETE("/relay-gateways/:id", relay.AdminDeleteRelayGateway)
+			adminGroup.GET("/relay-gateways", relayGateways.AdminListRelayGateways)
+			adminGroup.POST("/relay-gateways", relayGateways.AdminCreateRelayGateway)
+			adminGroup.PUT("/relay-gateways/:id", relayGateways.AdminUpdateRelayGateway)
+			adminGroup.DELETE("/relay-gateways/:id", relayGateways.AdminDeleteRelayGateway)
 
 			adminGroup.GET("/sqlite/backups", backup.ListBackups)
 			adminGroup.POST("/sqlite/backups", backup.CreateBackup)

@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
-	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/i18n"
+	"github.com/SeasAGI/SeasAGI-Server/shared/i18n"
 	"github.com/gin-gonic/gin"
 )
 

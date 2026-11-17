@@ -170,6 +170,7 @@ In production (`GIN_MODE=release`), both services refuse to start when `JWT_SECR
 | `JWT_SECRET` | JWT signing secret (required in production) | — |
 | `JWT_REFRESH_SECRET` | JWT refresh token secret (required in production) | — |
 | `ADMIN_SECRET` | Admin API secret | — |
+| `INTERNAL_API_TOKEN` | Service-to-service token for `/api/v1/internal/*` (usage ingest, relay config sync); must match on both services | falls back to `ADMIN_SECRET` |
 | `CORS_ALLOWED_ORIGINS` | CORS allowed origins (comma-separated, exact match; `*` is rejected in production) | loopback only (`localhost` / `127.0.0.1` / `[::1]`) |
 | `MAX_REQUEST_BODY_BYTES` | Maximum request body size in bytes | `8388608` (8MB) |
 | `SEASAGI_DATA_KEY` | AES-256-GCM encryption key for API Keys | — |
@@ -191,8 +192,12 @@ In production (`GIN_MODE=release`), both services refuse to start when `JWT_SECR
 | `RELAY_PORT` | Relay gateway port | `8318` |
 | `RATE_LIMIT_RPM` | Global rate limit (requests/min) | `60` |
 | `HEALTH_CHECK_INTERVAL_SEC` | Channel health check interval | `60` |
-| `POLICY_CACHE_SEC` | Policy cache refresh interval | `60` |
-| `PLATFORM_API_URL` | Platform API base URL for channel snapshot sync | `http://127.0.0.1:9318` |
+| `POLICY_CACHE_SEC` | Interval (seconds) for syncing channel config from `/api/v1/internal/relay/config` | `60` |
+| `RELAY_SYNC_TIMEOUT_SEC` | Timeout (seconds) of one config sync request; on failure the last applied config is kept and sync retries with backoff | `10` |
+| `PLATFORM_API_URL` | Platform API base URL for channel config sync (must be `https` unless loopback) | `http://127.0.0.1:9318` |
+| `RELAY_SYNC_ALLOW_INSECURE_HTTP` | Set to `1` to allow plain `http` sync to a non-loopback platform API (trusted private networks only) | `0` |
+| `RELAY_DATA_KEY` | Encryption key (≥32 bytes) for upstream credentials stored in `relay-gateway.db` | falls back to `SEASAGI_DATA_KEY`; if both unset, credentials are kept in memory only |
+| `RELAY_DATA_DIR` | Relay data directory holding `relay-gateway.db` (falls back to `DATA_DIR`); changing it never moves or deletes an existing database — copy `relay-gateway.db` manually while stopped | `$HOME/.seasagi` |
 | `METRICS_TOKEN` | `/metrics` bearer token (falls back to `ADMIN_SECRET`) | — |
 | `CORS_ALLOWED_ORIGINS` | CORS allowed origins (comma-separated, exact match; `*` is rejected in production) | loopback only (`localhost` / `127.0.0.1` / `[::1]`) |
 | `RELAY_MAX_REQUEST_BODY_BYTES` | Maximum request body size in bytes (relay gateway) | `67108864` (64MB) |

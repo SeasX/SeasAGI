@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/channel"
-	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/timeutil"
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/trace"
+	"github.com/SeasAGI/SeasAGI-Server/shared/timeutil"
 	"github.com/gin-gonic/gin"
 )
 
@@ -141,7 +141,7 @@ func ChatCompletions(c *gin.Context) {
 	upstreamModel := req.Model
 
 	if channelStore != nil {
-		if ch, ok := channelStore.GetChannel(channelID); ok && ch.Enabled && !ch.ReadOnly {
+		if ch, ok := channelStore.GetChannel(channelID); ok && ch.Routable() {
 			upstreamURL = strings.TrimRight(ch.BaseURL, "/") + "/v1/chat/completions"
 			apiKey = ch.APIKey
 		} else if ch, resolvedModel := channelStore.ResolveChannel(req.Model); ch != nil {
@@ -442,7 +442,7 @@ func resolveUpstream(channelID, model, upstreamPath string) (string, string, str
 		return "", "", "", ""
 	}
 
-	if ch, ok := channelStore.GetChannel(channelID); ok && ch.Enabled && !ch.ReadOnly {
+	if ch, ok := channelStore.GetChannel(channelID); ok && ch.Routable() {
 		return strings.TrimRight(ch.BaseURL, "/") + upstreamPath, ch.APIKey, model, channelID
 	}
 	if ch, resolvedModel := channelStore.ResolveChannel(model); ch != nil {

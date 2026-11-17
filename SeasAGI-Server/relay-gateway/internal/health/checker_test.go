@@ -8,7 +8,7 @@ import (
 )
 
 func TestNewChecker_CustomInterval(t *testing.T) {
-	store := channel.NewStore()
+	store := newTestStore(t)
 	defer store.Close()
 
 	interval := 30 * time.Second
@@ -22,7 +22,7 @@ func TestNewChecker_CustomInterval(t *testing.T) {
 }
 
 func TestNewChecker_DefaultInterval(t *testing.T) {
-	store := channel.NewStore()
+	store := newTestStore(t)
 	defer store.Close()
 
 	c := NewChecker(store, 0)
@@ -35,7 +35,7 @@ func TestNewChecker_DefaultInterval(t *testing.T) {
 }
 
 func TestStartAndStop(t *testing.T) {
-	store := channel.NewStore()
+	store := newTestStore(t)
 	defer store.Close()
 
 	c := NewChecker(store, 100*time.Millisecond)
@@ -45,7 +45,7 @@ func TestStartAndStop(t *testing.T) {
 }
 
 func TestDoubleStart(t *testing.T) {
-	store := channel.NewStore()
+	store := newTestStore(t)
 	defer store.Close()
 
 	c := NewChecker(store, 100*time.Millisecond)
@@ -56,7 +56,7 @@ func TestDoubleStart(t *testing.T) {
 }
 
 func TestDoubleStop(t *testing.T) {
-	store := channel.NewStore()
+	store := newTestStore(t)
 	defer store.Close()
 
 	c := NewChecker(store, 100*time.Millisecond)
@@ -66,7 +66,7 @@ func TestDoubleStop(t *testing.T) {
 }
 
 func TestLoopStopsOnStop(t *testing.T) {
-	store := channel.NewStore()
+	store := newTestStore(t)
 	defer store.Close()
 
 	c := NewChecker(store, 100*time.Millisecond)
@@ -77,7 +77,7 @@ func TestLoopStopsOnStop(t *testing.T) {
 }
 
 func TestStructFieldsInitialized(t *testing.T) {
-	store := channel.NewStore()
+	store := newTestStore(t)
 	defer store.Close()
 
 	c := NewChecker(store, 30*time.Second)
@@ -91,4 +91,14 @@ func TestStructFieldsInitialized(t *testing.T) {
 	if c.stopCh == nil {
 		t.Error("stopCh is nil")
 	}
+}
+// newTestStore 把存储隔离到临时目录，避免测试读写开发者真实的 ~/.seasagi。
+func newTestStore(t *testing.T) *channel.Store {
+	t.Helper()
+	t.Setenv("RELAY_DATA_DIR", t.TempDir())
+	store, err := channel.NewStore()
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	return store
 }

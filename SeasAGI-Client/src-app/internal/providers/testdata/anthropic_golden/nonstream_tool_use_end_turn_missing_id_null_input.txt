@@ -1,0 +1,2 @@
+Content-Type: application/json
+{"choices":[{"finish_reason":"tool_calls","index":0,"message":{"content":"","role":"assistant","tool_calls":[{"function":{"arguments":"{}","name":"noop"},"id":"toolu_GENERATED","type":"function"}]}}],"created":0,"id":"msg_3","model":"claude-test","object":"chat.completion","usage":{"completion_tokens":1,"prompt_tokens":1,"total_tokens":2}}

@@ -1,0 +1,15 @@
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+data: {"choices":[{"delta":{"role":"assistant"},"index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"","name":""},"id":"toolu_GENERATED","index":0,"type":"function"}]},"index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{}"},"index":0}]},"index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"multi"},"index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"usage":{"completion_tokens":2,"prompt_tokens":4,"total_tokens":6}},"finish_reason":"length","index":0}],"created":0,"id":"anthropic-ID","model":"claude-test","object":"chat.completion.chunk"}
+
+data: [DONE]
+

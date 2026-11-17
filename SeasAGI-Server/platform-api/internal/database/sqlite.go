@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/timeutil"
+	"github.com/SeasAGI/SeasAGI-Server/shared/timeutil"
 )
 
 var DB *sql.DB
@@ -21,6 +21,12 @@ var dbFilePath string
 // Path returns the current database file path.
 func Path() string {
 	return dbFilePath
+}
+
+// Writer 返回当前的主（写）连接。仓储应持有该函数而非 *sql.DB，
+// 以便备份还原重新 Init 后自动使用新连接。
+func Writer() *sql.DB {
+	return DB
 }
 
 // Reader 返回读取用的连接池；未初始化读池时回退到主连接。

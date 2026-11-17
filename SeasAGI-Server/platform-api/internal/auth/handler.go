@@ -10,8 +10,8 @@ import (
 	"unicode"
 
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
-	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/i18n"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/logging"
+	"github.com/SeasAGI/SeasAGI-Server/shared/i18n"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"

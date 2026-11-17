@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/logging"
-	"github.com/SeasAGI/SeasAGI-Server/relay-gateway/internal/timeutil"
+	"github.com/SeasAGI/SeasAGI-Server/shared/timeutil"
 )
 
 type Record struct {
