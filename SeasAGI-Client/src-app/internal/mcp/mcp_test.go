@@ -75,19 +75,133 @@ func TestMCPServerSSE(t *testing.T) {
 	}
 }
 
-// CL-S9：内置工具尚未接入真实数据源时必须显式返回 unimplemented，
-// 不能返回硬编码的假健康度/假配额让外部 agent 误判。
-func TestMCPBuiltinToolsReturnUnimplemented(t *testing.T) {
+// fakeDataSource 用内存数据验证工具确实读取注入的数据源。
+type fakeDataSource struct {
+	healthCalls int
+	switched    string
+}
+
+func (f *fakeDataSource) Health() (map[string]interface{}, error) {
+	f.healthCalls++
+	return map[string]interface{}{"gateway_running": true, "active_channels": 3}, nil
+}
+
+func (f *fakeDataSource) ListCombos() ([]map[string]interface{}, error) {
+	return []map[string]interface{}{{"name": "balanced", "strategy": "fallback"}}, nil
+}
+
+func (f *fakeDataSource) ComboMetrics(comboID string) (map[string]interface{}, error) {
+	return map[string]interface{}{"combo_id": comboID, "total_requests": 42}, nil
+}
+
+func (f *fakeDataSource) SwitchCombo(comboID string) error {
+	f.switched = comboID
+	return nil
+}
+
+func (f *fakeDataSource) QuotaStatus() (map[string]interface{}, error) {
+	return map[string]interface{}{"month_cost_usd": 1.25}, nil
+}
+
+func (f *fakeDataSource) RoutePreview(model string) (map[string]interface{}, error) {
+	return map[string]interface{}{"model": model, "selected_channel": "ch-1"}, nil
+}
+
+func (f *fakeDataSource) CostReport() (map[string]interface{}, error) {
+	return map[string]interface{}{"month_cost_usd": 1.25, "days": 30}, nil
+}
+
+func (f *fakeDataSource) ModelsCatalog() ([]map[string]interface{}, error) {
+	return []map[string]interface{}{{"model": "gpt-4o", "provider": "openai"}}, nil
+}
+
+func (f *fakeDataSource) ProviderMetrics() ([]map[string]interface{}, error) {
+	return []map[string]interface{}{{"provider": "openai", "healthy": true}}, nil
+}
+
+func (f *fakeDataSource) BestComboForTask(task string) (map[string]interface{}, error) {
+	return map[string]interface{}{"task": task, "recommended": "balanced"}, nil
+}
+
+func (f *fakeDataSource) ExplainRoute(model string) (map[string]interface{}, error) {
+	return map[string]interface{}{"model": model, "reason": "lowest penalty"}, nil
+}
+
+func (f *fakeDataSource) SessionSnapshot() (map[string]interface{}, error) {
+	return map[string]interface{}{"version": "test"}, nil
+}
+
+func (f *fakeDataSource) DBHealthCheck() (map[string]interface{}, error) {
+	return map[string]interface{}{"status": "ok"}, nil
+}
+
+func (f *fakeDataSource) SetBudgetGuard(args map[string]interface{}) (map[string]interface{}, error) {
+	return map[string]interface{}{"monthly_cost_limit_usd": args["monthly_cost_limit_usd"]}, nil
+}
+
+func (f *fakeDataSource) SetRoutingStrategy(args map[string]interface{}) (map[string]interface{}, error) {
+	return map[string]interface{}{"strategy": args["strategy"]}, nil
+}
+
+func (f *fakeDataSource) SetResilienceProfile(args map[string]interface{}) (map[string]interface{}, error) {
+	return map[string]interface{}{"status": "ok"}, nil
+}
+
+func (f *fakeDataSource) TestCombo(comboID string) (map[string]interface{}, error) {
+	return map[string]interface{}{"combo_id": comboID, "reachable": true}, nil
+}
+
+func TestMCPBuiltinToolsUseDataSource(t *testing.T) {
+	server := NewGatewayServer()
+	ds := &fakeDataSource{}
+	server.SetDataSource(ds)
+
+	result, err := server.CallTool("get_health", map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("get_health 应成功: %v", err)
+	}
+	health, ok := result.(map[string]interface{})
+	if !ok || health["gateway_running"] != true {
+		t.Fatalf("get_health 应返回注入的数据，实际 %+v", result)
+	}
+	if ds.healthCalls != 1 {
+		t.Fatalf("数据源应被调用一次，实际 %d", ds.healthCalls)
+	}
+
+	if _, err := server.CallTool("route_request", map[string]interface{}{"model": "gpt-4o"}); err != nil {
+		t.Fatalf("route_request 应成功: %v", err)
+	}
+
+	if _, err := server.CallTool("switch_combo", map[string]interface{}{"combo_id": "balanced"}); err != nil {
+		t.Fatalf("switch_combo 应成功: %v", err)
+	}
+	if ds.switched != "balanced" {
+		t.Fatalf("switch_combo 应写入数据源，实际 %q", ds.switched)
+	}
+}
+
+// 未注入数据源时必须显式报错，不能返回硬编码的假数据（CL-S9）。
+func TestMCPWithoutDataSource(t *testing.T) {
 	server := NewGatewayServer()
 
-	for _, name := range []string{"route_request", "check_quota", "list_models_catalog", "get_health"} {
-		_, err := server.CallTool(name, map[string]interface{}{"model": "gpt-4o"})
+	for _, name := range []string{"get_health", "check_quota", "list_models_catalog"} {
+		_, err := server.CallTool(name, map[string]interface{}{})
 		if err == nil {
-			t.Fatalf("%s 应返回 unimplemented 错误", name)
+			t.Fatalf("%s 在未注入数据源时应返回错误", name)
 		}
-		if !strings.Contains(err.Error(), "not implemented") {
-			t.Fatalf("%s 错误信息应说明未实现，实际: %v", name, err)
+		if !strings.Contains(err.Error(), "data source not configured") {
+			t.Fatalf("%s 错误信息应说明数据源未配置，实际: %v", name, err)
 		}
+	}
+
+	// 参数校验先于数据源检查。
+	if _, err := server.CallTool("switch_combo", map[string]interface{}{}); err == nil || !strings.Contains(err.Error(), "combo_id is required") {
+		t.Fatalf("switch_combo 缺少参数时应报错，实际: %v", err)
+	}
+
+	// web_search 依赖外部服务，必须显式拒绝。
+	if _, err := server.CallTool("web_search", map[string]interface{}{"query": "x"}); err == nil || !strings.Contains(err.Error(), "external search provider") {
+		t.Fatalf("web_search 应显式拒绝，实际: %v", err)
 	}
 
 	// 未知工具仍应返回 tool not found。
@@ -100,7 +214,7 @@ func TestMCPBuiltinToolsReturnUnimplemented(t *testing.T) {
 func TestMCPAuditLog(t *testing.T) {
 	server := NewGatewayServer()
 
-	// 已注册但未实现的工具
+	// 已注册但未注入数据源的工具
 	server.CallTool("get_health", map[string]interface{}{})
 	// 未知工具
 	server.CallTool("nonexistent_tool", map[string]interface{}{})

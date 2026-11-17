@@ -40,11 +40,18 @@ func ValidateToken(tokenString string) (*Claims, error) {
 	return nil, fmt.Errorf("invalid token")
 }
 
-func GenerateToken(userID, channelID string) (string, error) {
+// GenerateToken 签发网关侧令牌。tenantID 为可选参数（变长以兼容既有两参调用），
+// 生产环境的租户身份应由 platform-api 签发并写入签名声明，不由客户端提供。
+func GenerateToken(userID, channelID string, tenantID ...string) (string, error) {
 	secret := os.Getenv("JWT_SECRET")
+	var tenant string
+	if len(tenantID) > 0 {
+		tenant = tenantID[0]
+	}
 	claims := Claims{
 		UserID:    userID,
 		ChannelID: channelID,
+		TenantID:  tenant,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

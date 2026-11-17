@@ -127,9 +127,9 @@ export function HomePage() {
 
   // P2-14：将市场资产「快捷应用」为一条含 grant:// 步骤的 Combo（弱化全局选择器的迁移路径）。
   const handleGrantToCombo = async (grantID: string) => {
-    const model = window.prompt("输入该市场资产要路由到的模型名（如 claude-sonnet-4）：");
+    const model = window.prompt(t("home.marketModelPrompt"));
     if (!model || !model.trim()) return;
-    const comboName = window.prompt("Combo 名称：", `Market-Grant-${grantID.slice(0, 8)}`);
+    const comboName = window.prompt(t("home.marketComboNamePrompt"), `Market-Grant-${grantID.slice(0, 8)}`);
     if (!comboName || !comboName.trim()) return;
     const name = comboName.trim();
     try {
@@ -142,9 +142,9 @@ export function HomePage() {
         market_priority: true,
         steps: [{ channel_id: `grant://${grantID}`, model: model.trim() }],
       });
-      window.alert(`已生成 Combo「${name}」，可在「组合」页查看与应用。`);
+      window.alert(t("home.marketComboCreated", { name }));
     } catch (e) {
-      window.alert(`生成失败：${getErrorMessage(e, "未知错误")}`);
+      window.alert(t("home.marketComboFailed", { error: getErrorMessage(e, t("mitmRouting.unknownError")) }));
     }
   };
 

@@ -139,6 +139,8 @@ func runDesktop() {
 	configioSvc := configio.NewService(configSvc)
 	optimizerSvc := optimizer.NewService(configSvc, usageSvc)
 	app := NewApp(authSvc, configSvc, gatewaySvc, logSvc, discoverySvc, mcpSvc, promptsSvc, skillsSvc, usageSvc, optimizerSvc, deeplinkMgr, presetsSvc, syncMgr, sessionsSvc, configioSvc, localTokenStore)
+	// MCP 工具读取真实的运行时/用量/路由数据，而不是占位值。
+	app.BindMCPDataSource()
 	app.SetMITMManager(mitmMgr)
 	// 拦截转发时注入本机访问令牌，保证被接管 SDK 的请求能通过网关鉴权。
 	mitmMgr.SetAccessToken(accessToken)

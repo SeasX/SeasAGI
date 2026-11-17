@@ -1792,5 +1792,12 @@
   "settings.mitmColLatency": "지연",
   "settings.mitmEnvHint": "MITM 프록시를 시작하면 CLI 환경 변수 설정 명령이 표시됩니다.",
   "settings.mitmCopy": "복사",
-  "settings.mitmUnsetHint": "중지 후 해제하려면:"
+  "settings.mitmUnsetHint": "중지 후 해제하려면:",
+  "home.marketModelPrompt": "이 마켓 자산을 라우팅할 모델 이름을 입력하세요 (예: claude-sonnet-4):",
+  "home.marketComboNamePrompt": "Combo 이름:",
+  "home.marketComboCreated": "Combo \"{{name}}\"이(가) 생성되었습니다. '조합' 페이지에서 확인하고 적용할 수 있습니다.",
+  "home.marketComboFailed": "생성 실패: {{error}}",
+  "log.mitmSourceTooltip": "소스 도구: {{tool}}｜요청 모델: {{model}}｜변환 대상: {{target}}｜규칙: {{rule}}",
+  "log.mitmDirect": "직접 연결",
+  "log.mitmDefaultAction": "기본 작업"
 }

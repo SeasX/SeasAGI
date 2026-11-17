@@ -6,10 +6,15 @@ import (
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Client/internal/config"
+	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
 )
 
 // rateLimitGlobalKey 全局限流计数键；per-channel 计数键加 channelRateKey 前缀。
 const rateLimitGlobalKey = "global"
+
+// keyQuotaSubject 本地网关只有一个访问令牌，按 key 配额以该固定主体记账，
+// 状态落盘到 ~/.seasagi/key_quotas.json，重启后不丢失。
+const keyQuotaSubject = "local-access-token"
 
 func channelRateKey(channelID string) string { return "channel:" + channelID }
 
@@ -170,6 +175,13 @@ func writeRateLimitError(w http.ResponseWriter, reason string) {
 func (s *Service) checkRateLimits(w http.ResponseWriter) (func(), bool) {
 	cfg := s.configSvc.GetRateLimitConfig()
 
+	// 按 key 的月度美元配额（持久化）；达到上限后拒绝新请求，额度重置在配额模块内按月处理。
+	if limit, used, ok := s.keyQuota.GetQuota(keyQuotaSubject); ok && limit > 0 && used >= limit {
+		writeJSONError(w, http.StatusPaymentRequired,
+			"Per-key monthly quota exceeded; raise the quota or wait for the monthly reset")
+		return nil, false
+	}
+
 	if cfg.MonthlyCostLimitUSD > 0 {
 		if svc := s.currentUsageService(); svc != nil {
 			if svc.GetUsageSummary().MonthCostUSD >= cfg.MonthlyCostLimitUSD {
@@ -214,12 +226,15 @@ func (s *Service) checkChannelRateLimit(w http.ResponseWriter, channelID string)
 
 // recordUsageAndTokens 落账用量，并把 token 消耗回填到限流器的全局与 channel 窗口。
 func (s *Service) recordUsageAndTokens(c *usageCapture, meta usageMeta) {
-	tokens := c.recordUsage(s.currentUsageService(), meta)
+	tokens, costUSD := c.recordUsage(s.currentUsageService(), meta)
 	if tokens <= 0 {
 		return
 	}
 	s.rateLimiter.addTokens(rateLimitGlobalKey, tokens)
 	if meta.ChannelID != "" {
 		s.rateLimiter.addTokens(channelRateKey(meta.ChannelID), tokens)
+	}
+	if costUSD > 0 && !s.keyQuota.Deduct(keyQuotaSubject, costUSD) {
+		logging.Warningf("gateway: key quota exceeded after recording usage (cost %.6f USD)", costUSD)
 	}
 }

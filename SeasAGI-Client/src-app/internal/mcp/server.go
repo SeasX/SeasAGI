@@ -18,9 +18,10 @@ const (
 
 // GatewayServer SeasAGI MCP Server — 提供 MCP 协议接口。
 type GatewayServer struct {
-	mu       sync.RWMutex
-	tools    map[string]MCPTool
-	auditLog []AuditEntry
+	mu         sync.RWMutex
+	tools      map[string]MCPTool
+	auditLog   []AuditEntry
+	dataSource DataSource
 }
 
 // AuditEntry 审计日志条目。
@@ -40,6 +41,13 @@ func NewGatewayServer() *GatewayServer {
 	}
 	server.registerBuiltinTools()
 	return server
+}
+
+// SetDataSource 注入桌面端真实数据源；未注入时依赖数据的工具会返回明确错误。
+func (s *GatewayServer) SetDataSource(ds DataSource) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dataSource = ds
 }
 
 // RegisterTool 注册 tool。

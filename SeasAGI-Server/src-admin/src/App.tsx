@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { AdminGate } from "./components/AdminGate";
 import { DashboardPage } from "./pages/DashboardPage";
 import { UsersPage } from "./pages/UsersPage";
 import { UsagePage } from "./pages/UsagePage";
@@ -11,18 +12,20 @@ import { I18nProvider } from "./i18n";
 export default function App() {
   return (
     <I18nProvider>
-      <BrowserRouter basename="/admin">
-        <Routes>
-          <Route element={<Layout />}>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/users" element={<UsersPage />} />
-            <Route path="/usage" element={<UsagePage />} />
-            <Route path="/relay-gateways" element={<RelayGatewaysPage />} />
-            <Route path="/channels" element={<ChannelsPage />} />
-            <Route path="/combos" element={<AdminCombosPage />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <AdminGate>
+        <BrowserRouter basename="/admin">
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/users" element={<UsersPage />} />
+              <Route path="/usage" element={<UsagePage />} />
+              <Route path="/relay-gateways" element={<RelayGatewaysPage />} />
+              <Route path="/channels" element={<ChannelsPage />} />
+              <Route path="/combos" element={<AdminCombosPage />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </AdminGate>
     </I18nProvider>
   );
 }

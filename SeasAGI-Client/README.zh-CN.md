@@ -27,7 +27,6 @@ SeasAGI-Client/
 └── src-app/
     ├── app.go
     ├── main.go
-    ├── oauth_desktop.go
     ├── wails.json
     ├── frontend/
     ├── internal/
@@ -160,7 +159,7 @@ SeasAGI-Client/
 
 ### 版本号源
 
-[`scripts/version.txt`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/scripts/version.txt) 是唯一的版本号定义文件：
+[`scripts/version.txt`](scripts/version.txt) 是唯一的版本号定义文件：
 
 ```
 0.2.5
@@ -185,7 +184,7 @@ SeasAGI-Client/
 [icon] SeasAGI  v0.2.5
 ```
 
-实现位置：[`Layout.tsx`](file:///Users/Neeke/data/www/SeasAGI/SeasAGI/SeasAGI-Client/src-app/frontend/src/components/Layout.tsx) 中使用 `import.meta.env.VITE_APP_VERSION` 渲染。
+实现位置：[`Layout.tsx`](src-app/frontend/src/components/Layout.tsx) 中使用 `import.meta.env.VITE_APP_VERSION` 渲染。
 
 ### 构建后的独立性
 

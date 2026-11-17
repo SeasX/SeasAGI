@@ -10,11 +10,15 @@ import (
 	"time"
 
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/database"
+	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/logging"
 	"github.com/SeasAGI/SeasAGI-Server/platform-api/internal/timeutil"
 	"github.com/gin-gonic/gin"
 )
 
 type UsageEvent struct {
+	// RequestID 由调用方（relay-gateway）为每次请求生成，服务端据此做幂等。
+	// 内部端点虽受服务间令牌保护，网络重试与重投仍会造成重复计数。
+	RequestID       string  `json:"request_id"`
 	UserID          string  `json:"user_id" binding:"required"`
 	DeviceID        string  `json:"device_id"`
 	ChannelID       string  `json:"channel_id" binding:"required"`
@@ -93,11 +97,23 @@ func IngestUsage(c *gin.Context) {
 		events = []UsageEvent{single}
 	}
 
-	count := 0
-	for _, e := range events {
-		if e.UserID == "" || e.ChannelID == "" || e.Model == "" {
-			continue
+	// 整批先校验再落库：缺少 request_id 的事件会造成统计无法去重，
+	// 直接拒绝比静默丢弃更容易让调用方发现问题。
+	for i, e := range events {
+		if strings.TrimSpace(e.RequestID) == "" ||
+			strings.TrimSpace(e.UserID) == "" ||
+			strings.TrimSpace(e.ChannelID) == "" ||
+			strings.TrimSpace(e.Model) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "request_id, user_id, channel_id and model are required",
+				"index": i,
+			})
+			return
 		}
+	}
+
+	count, duplicates := 0, 0
+	for _, e := range events {
 		capability := e.Capability
 		if capability == "" {
 			capability = "chat"
@@ -111,17 +127,30 @@ func IngestUsage(c *gin.Context) {
 			errCategory = ""
 		}
 
-		_, err := database.DB.Exec(
-			`INSERT INTO usage_records (user_id, device_id, channel_id, model, capability, input_tokens, output_tokens, request_count, latency_ms, status_code, is_error, error_category, recorded_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-			e.UserID, e.DeviceID, e.ChannelID, e.Model, capability, e.InputTokens, e.OutputTokens, e.LatencyMs, e.StatusCode, isError, errCategory,
+		// request_id 上的部分唯一索引 + OR IGNORE 实现幂等：
+		// 同一请求重投只保留首行，RowsAffected=0 记为 duplicate。
+		res, err := database.DB.Exec(
+			`INSERT OR IGNORE INTO usage_records
+			 (request_id, user_id, device_id, channel_id, model, capability, input_tokens, output_tokens,
+			  request_count, latency_ms, status_code, is_error, error_category, cost_usd, total_cost_usd, recorded_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+			e.RequestID, e.UserID, e.DeviceID, e.ChannelID, e.Model, capability,
+			e.InputTokens, e.OutputTokens, e.LatencyMs, e.StatusCode, isError, errCategory,
+			e.CostUSD, e.TotalCostUSD,
 		)
-		if err == nil {
-			count++
+		if err != nil {
+			logging.Errorf("usage ingest failed for request %s: %v", e.RequestID, err)
+			continue
 		}
+		affected, affectedErr := res.RowsAffected()
+		if affectedErr == nil && affected == 0 {
+			duplicates++
+			continue
+		}
+		count++
 	}
 
-	c.JSON(http.StatusOK, gin.H{"ingested": count})
+	c.JSON(http.StatusOK, gin.H{"ingested": count, "duplicates": duplicates})
 }
 
 // periodStartUTC 返回统计周期起点（UTC）。

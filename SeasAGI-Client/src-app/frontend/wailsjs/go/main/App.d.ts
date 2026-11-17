@@ -24,6 +24,8 @@ export function ApplyPromptPreset(arg1:string,arg2:string):Promise<void>;
 
 export function ApplyRecommendation(arg1:string,arg2:string):Promise<void>;
 
+export function BindMCPDataSource():Promise<void>;
+
 export function ChatCompletion(arg1:Array<Record<string, any>>,arg2:string):Promise<Record<string, any>>;
 
 export function ChatCompletionForChannel(arg1:string,arg2:Array<Record<string, any>>,arg3:string):Promise<Record<string, any>>;
@@ -113,6 +115,8 @@ export function GetDefaultComboName():Promise<string>;
 export function GetEvalScorecard(arg1:string):Promise<Record<string, any>>;
 
 export function GetIntentScenarioStats():Promise<Array<Record<string, any>>>;
+
+export function GetKeyQuotaStatus():Promise<Record<string, any>>;
 
 export function GetLocalAccessTokenStatus():Promise<Record<string, any>>;
 
@@ -266,6 +270,8 @@ export function Register(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function RegisterMarketNode(arg1:string,arg2:Array<string>,arg3:Array<string>):Promise<Record<string, any>>;
 
+export function RemoveKeyQuota():Promise<void>;
+
 export function RemoveMITMRule(arg1:string):Promise<void>;
 
 export function RenameComboTemplate(arg1:string,arg2:string):Promise<void>;
@@ -305,6 +311,8 @@ export function SetAutoLaunch(arg1:boolean):Promise<void>;
 export function SetByokPolicy(arg1:Record<string, any>):Promise<Record<string, any>>;
 
 export function SetDefaultComboName(arg1:string):Promise<void>;
+
+export function SetKeyQuota(arg1:number):Promise<void>;
 
 export function SetLocale(arg1:string):Promise<void>;
 

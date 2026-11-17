@@ -173,7 +173,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
       try {
         const status = await getRuntimeStatus();
         setRuntime(status);
-      } catch {}
+      } catch (err) {
+        console.error("layout: load runtime status failed", err);
+      }
     })();
   }, []);
 
@@ -185,7 +187,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
       try {
         const config = await getAppConfig();
         setAppConfig(config);
-      } catch {}
+      } catch (err) {
+        console.error("layout: load app config failed", err);
+      }
     })();
   }, [setAppConfig]);
 
@@ -198,7 +202,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       try {
         const billing = await getCloudBilling();
         setCloudBilling(billing);
-      } catch {
+      } catch (err) {
+        console.error("layout: load cloud billing failed", err);
         setCloudBilling(null);
       }
     })();
@@ -214,8 +219,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         if (!cancelled && Array.isArray(data) && data.length > 0) {
           useMarketStore.getState().setFreeChannelsCache(data);
         }
-      } catch {
-        // silent fail - 打开 Token 市场页面时会重试
+      } catch (err) {
+        // 打开 Token 市场页面时会重试；这里记录日志，避免完全静默。
+        console.error("layout: preload free channels failed", err);
       }
     })();
     return () => { cancelled = true; };

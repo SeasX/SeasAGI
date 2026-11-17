@@ -126,7 +126,7 @@ func ChatCompletions(c *gin.Context) {
 	}
 	var req ChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 	c.Set("request_model", req.Model)
@@ -190,7 +190,7 @@ func ChatCompletions(c *gin.Context) {
 				ConsecFail: 1,
 			})
 		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream request failed"})
 		return
 	}
 	defer resp.Body.Close()
@@ -215,11 +215,7 @@ func ChatCompletions(c *gin.Context) {
 
 	go recordTrace(traceID, tenantID, userID, deviceID, channelID, req.Model, "POST", "/v1/chat/completions", resp.StatusCode, int(duration.Milliseconds()), c.ClientIP())
 
-	for k, v := range resp.Header {
-		for _, vv := range v {
-			c.Writer.Header().Add(k, vv)
-		}
-	}
+	copyUpstreamHeaders(c.Writer.Header(), resp.Header)
 	c.Writer.WriteHeader(resp.StatusCode)
 	if flusher, ok := c.Writer.(http.Flusher); ok {
 		flusher.Flush()
@@ -341,7 +337,7 @@ func relayJSON(c *gin.Context, upstreamPath, capability string) {
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
 		updateChannelHealth(resolvedChannelID, false, 0, err.Error())
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream request failed"})
 		return
 	}
 	defer resp.Body.Close()
@@ -352,11 +348,7 @@ func relayJSON(c *gin.Context, upstreamPath, capability string) {
 
 	go recordTrace(traceID, tenantID, userID, deviceID, resolvedChannelID, req.Model, "POST", upstreamPath, resp.StatusCode, int(duration.Milliseconds()), c.ClientIP())
 
-	for k, v := range resp.Header {
-		for _, vv := range v {
-			c.Writer.Header().Add(k, vv)
-		}
-	}
+	copyUpstreamHeaders(c.Writer.Header(), resp.Header)
 	c.Writer.WriteHeader(resp.StatusCode)
 	if flusher, ok := c.Writer.(http.Flusher); ok {
 		flusher.Flush()
@@ -426,7 +418,7 @@ func relayMultipart(c *gin.Context, upstreamPath, capability string) {
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
 		updateChannelHealth(resolvedChannelID, false, 0, err.Error())
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream request failed"})
 		return
 	}
 	defer resp.Body.Close()
@@ -437,11 +429,7 @@ func relayMultipart(c *gin.Context, upstreamPath, capability string) {
 
 	go recordTrace(traceID, tenantID, userID, deviceID, resolvedChannelID, model, "POST", upstreamPath, resp.StatusCode, int(duration.Milliseconds()), c.ClientIP())
 
-	for k, v := range resp.Header {
-		for _, vv := range v {
-			c.Writer.Header().Add(k, vv)
-		}
-	}
+	copyUpstreamHeaders(c.Writer.Header(), resp.Header)
 	c.Writer.WriteHeader(resp.StatusCode)
 	if flusher, ok := c.Writer.(http.Flusher); ok {
 		flusher.Flush()

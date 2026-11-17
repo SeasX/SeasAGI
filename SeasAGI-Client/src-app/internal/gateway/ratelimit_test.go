@@ -122,7 +122,7 @@ func newRateLimitTestService(t *testing.T) (*Service, *config.Service, *usage.Se
 	t.Setenv("HOME", t.TempDir())
 	cfgSvc := config.NewService(config.AppConfig{})
 	usageSvc := usage.NewService()
-	return &Service{configSvc: cfgSvc, usageSvc: usageSvc, rateLimiter: newRateLimiter()}, cfgSvc, usageSvc
+	return &Service{configSvc: cfgSvc, usageSvc: usageSvc, rateLimiter: newRateLimiter(), keyQuota: config.NewKeyQuota()}, cfgSvc, usageSvc
 }
 
 func TestCheckRateLimitsDisabledIsPassThrough(t *testing.T) {
@@ -220,5 +220,41 @@ func TestRecordUsageAndTokensFeedsLimiter(t *testing.T) {
 
 	if global != 1 || channel != 1 {
 		t.Fatalf("expected token samples recorded for global and channel, got global=%d channel=%d", global, channel)
+	}
+}
+
+// P2-7：按 key 配额耗尽后必须拒绝新请求，且额度扣减来自真实用量成本。
+func TestCheckRateLimitsKeyQuotaBlocksWhenExhausted(t *testing.T) {
+	s, _, _ := newRateLimitTestService(t)
+	s.SetKeyQuota(1.0)
+	if !s.keyQuota.Deduct(keyQuotaSubject, 1.0) {
+		t.Fatal("deducting exactly the limit should succeed")
+	}
+
+	rec := httptest.NewRecorder()
+	if _, ok := s.checkRateLimits(rec); ok {
+		t.Fatal("exhausted key quota should block requests")
+	}
+	if rec.Code != http.StatusPaymentRequired {
+		t.Fatalf("expected 402, got %d", rec.Code)
+	}
+}
+
+func TestRecordUsageAndTokensDeductsKeyQuota(t *testing.T) {
+	s, _, _ := newRateLimitTestService(t)
+	s.SetKeyQuota(10.0)
+
+	rec := httptest.NewRecorder()
+	c := newUsageCapture(rec, false)
+	c.WriteHeader(http.StatusOK)
+	c.Write([]byte(`{"usage":{"prompt_tokens":1000,"completion_tokens":500}}`))
+	s.recordUsageAndTokens(c, usageMeta{Model: "gpt-4o", Always: true})
+
+	_, used, ok := s.keyQuota.GetQuota(keyQuotaSubject)
+	if !ok {
+		t.Fatal("expected key quota to be configured")
+	}
+	if used <= 0 {
+		t.Fatalf("expected usage cost to be deducted from key quota, got %f", used)
 	}
 }

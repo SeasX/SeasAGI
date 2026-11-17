@@ -31,6 +31,7 @@ func newWSTestBridge(t *testing.T) *WSBridge {
 		security:    newSecurityGuard(),
 		resolver:    routing.NewResolver(cfgSvc),
 		rateLimiter: newRateLimiter(),
+		keyQuota:    config.NewKeyQuota(),
 	})
 }
 

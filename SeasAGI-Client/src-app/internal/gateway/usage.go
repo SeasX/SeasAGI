@@ -132,17 +132,18 @@ type usageMeta struct {
 }
 
 // recordUsage 将采集到的用量写入记账服务；仅在成功响应（状态码 < 400）时记录。
-// 返回本次记录的输入+输出 token 数（未记录时为 0），供限流器 TPM 计量使用。
-func (c *usageCapture) recordUsage(svc *usage.Service, meta usageMeta) int64 {
+// 返回本次记录的输入+输出 token 数与美元成本（未记录时为 0），
+// 分别供限流器 TPM 计量和按 key 配额扣减使用。
+func (c *usageCapture) recordUsage(svc *usage.Service, meta usageMeta) (int64, float64) {
 	if svc == nil {
-		return 0
+		return 0, 0
 	}
 	status, ttftMs, usageObj, _ := c.usageSnapshot()
 	if status >= http.StatusBadRequest {
-		return 0
+		return 0, 0
 	}
 	if usageObj == nil && !meta.Always {
-		return 0
+		return 0, 0
 	}
 	if ttftMs < 0 {
 		ttftMs = 0
@@ -185,8 +186,8 @@ func (c *usageCapture) recordUsage(svc *usage.Service, meta usageMeta) int64 {
 	}
 
 	detail.RateLimitRemaining, detail.RateLimitLimit, detail.RateLimitReset = usage.ExtractRateLimitHeaders(meta.Headers)
-	svc.RecordUsageV2(detail)
-	return detail.InputTokens + detail.OutputTokens
+	costUSD := svc.RecordUsageV2(detail)
+	return detail.InputTokens + detail.OutputTokens, costUSD
 }
 
 // isAnthropicUsage 判断 usage 是否为 Anthropic 语义（input_tokens 不含缓存 token）。

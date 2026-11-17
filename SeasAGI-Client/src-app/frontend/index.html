@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 前端产物由 //go:embed 内嵌、不加载远程页面；CSP 作为第二道防线，
+         禁止远程脚本/对象与任意 form 提交，保留本地资源、data/blob 图片与
+         Vite 开发服务器的 WebSocket（ws/wss）。 -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <title>SeasAGI</title>
   </head>

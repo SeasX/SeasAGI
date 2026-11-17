@@ -106,9 +106,44 @@ type TokenResponse struct {
 }
 
 type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
+	UserID   string `json:"user_id"`
+	Email    string `json:"email"`
+	TenantID string `json:"tenant_id,omitempty"`
+	// TokenVersion 与 users.token_version 比对，用于注销后立即失效已签发令牌。
+	TokenVersion int `json:"token_version,omitempty"`
 	jwt.RegisteredClaims
+}
+
+// lookupTenantID 从数据库读取用户所属租户，供签发令牌时写入签名声明。
+// relay-gateway 不共享 platform-api 的数据库，租户身份只能来自服务端签名的
+// tenant_id，不能由客户端请求头提供。数据库不可用时不阻断签发，声明留空
+// 后由 Middleware 用数据库值兜底。
+func lookupTenantID(userID string) string {
+	if database.DB == nil || userID == "" {
+		return ""
+	}
+	var tenantID string
+	if err := database.DB.QueryRow(
+		`SELECT COALESCE(tenant_id, '') FROM users WHERE user_id = ?`, userID,
+	).Scan(&tenantID); err != nil {
+		return ""
+	}
+	return tenantID
+}
+
+// lookupTokenVersion 读取用户当前的令牌版本。注销时 +1，旧令牌随即失效，
+// 无需维护黑名单即可撤销已泄露的 access/refresh token（P1-9）。
+func lookupTokenVersion(userID string) int {
+	if database.DB == nil || userID == "" {
+		return 0
+	}
+	var version int
+	if err := database.DB.QueryRow(
+		`SELECT COALESCE(token_version, 0) FROM users WHERE user_id = ?`, userID,
+	).Scan(&version); err != nil {
+		return 0
+	}
+	return version
 }
 
 func Login(c *gin.Context) {
@@ -218,6 +253,12 @@ func RefreshToken(c *gin.Context) {
 		return
 	}
 
+	// 注销后 token_version 递增，旧 refresh token 同样立即失效。
+	if database.DB != nil && claims.TokenVersion != lookupTokenVersion(claims.UserID) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "token revoked"})
+		return
+	}
+
 	accessToken, err := generateAccessToken(claims.UserID, claims.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": i18n.TFromContext(c, "auth.tokenGenerationFailed")})
@@ -225,6 +266,23 @@ func RefreshToken(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"access_token": accessToken, "expires_in": 86400})
+}
+
+// Logout 递增 users.token_version，使该用户已签发的 access/refresh token 全部失效。
+func Logout(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" || database.DB == nil {
+		c.JSON(http.StatusOK, gin.H{"message": "logged out"})
+		return
+	}
+	if _, err := database.DB.Exec(
+		`UPDATE users SET token_version = COALESCE(token_version, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`,
+		userID,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke tokens"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "logged out", "tokens_revoked": true})
 }
 
 func Middleware() gin.HandlerFunc {
@@ -248,9 +306,29 @@ func Middleware() gin.HandlerFunc {
 		c.Set("email", claims.Email)
 		c.Set("device_id", c.GetHeader("X-Device-Id"))
 
-		var tenantID string
-		err = database.DB.QueryRow(`SELECT tenant_id FROM users WHERE user_id = ?`, claims.UserID).Scan(&tenantID)
-		if err == nil && tenantID != "" {
+		// 租户身份优先取数据库（本进程持有的权威数据），数据库不可用时
+		// 回退到签名令牌中的 tenant_id。任何情况下都不采信 X-Tenant-Id 等请求头。
+		tenantID := claims.TenantID
+		if database.DB != nil {
+			var dbTenantID string
+			var tokenVersion int
+			err = database.DB.QueryRow(
+				`SELECT COALESCE(tenant_id, ''), COALESCE(token_version, 0) FROM users WHERE user_id = ?`,
+				claims.UserID,
+			).Scan(&dbTenantID, &tokenVersion)
+			if err == nil {
+				// 用户已注销（版本递增）后，旧令牌立即失效。
+				if tokenVersion != claims.TokenVersion {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "token revoked"})
+					c.Abort()
+					return
+				}
+				if dbTenantID != "" {
+					tenantID = dbTenantID
+				}
+			}
+		}
+		if tenantID != "" {
 			c.Set("tenant_id", tenantID)
 		}
 
@@ -277,8 +355,10 @@ func getJWTRefreshSecret() string {
 func generateAccessToken(userID, email string) (string, error) {
 	secret := getJWTSecret()
 	claims := Claims{
-		UserID: userID,
-		Email:  email,
+		UserID:       userID,
+		Email:        email,
+		TenantID:     lookupTenantID(userID),
+		TokenVersion: lookupTokenVersion(userID),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -291,7 +371,9 @@ func generateAccessToken(userID, email string) (string, error) {
 func generateRefreshToken(userID string) (string, error) {
 	secret := getJWTRefreshSecret()
 	claims := Claims{
-		UserID: userID,
+		UserID:       userID,
+		TenantID:     lookupTenantID(userID),
+		TokenVersion: lookupTokenVersion(userID),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
