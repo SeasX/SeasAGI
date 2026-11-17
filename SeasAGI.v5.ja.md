@@ -56,7 +56,7 @@ SeasAGI はローカルに統一された OpenAI 互換エントリポイント�
 - セッションスティッキールーティング：最初のユーザーメッセージに基づく SHA1 ハッシュ、30分 TTL、会話中のモデル切り替えを防止
 - 動的 429 ペナルティ劣化：PenaltyManager、429 +3、成功 -1、2分自然減衰
 - フォールバックソートプリセット：intelligence / speed / budget ワンクリック並べ替え
-- 8 Provider Executor：OpenAI、Azure、Anthropic、Gemini、Ollama、DeepSeek、Grok、プラットフォームリレー
+- 18 Provider Executor：OpenAI、Azure、Anthropic、Gemini、DeepSeek、Grok、Mistral、OpenRouter、Vertex、Ollama、智谱 GLM、Kimi、MiniMax、MiMo、豆包、混元、通义、Relay
 - 6 フォーマットトランスレータ：OpenAI Chat/Responses、Anthropic、Gemini、Vertex AI、Passthrough
 - Key ヘルスチェック：5分周期プローブ、3連続失敗で自動不健康マーク
 - Key レベル Cooldown：Key 単位 120秒 TTL、429 で精密冷却、他の Key に影響なし
@@ -187,7 +187,7 @@ SeasAGI はローカルに統一された OpenAI 互換エントリポイント�
 - 定数時間 Key 比較（crypto/subtle）
 - マルチモーダルコンテンツフラット化
 - Playground 即時テストページ
-- 8 Provider Executor + 6 フォーマットトランスレータ
+- 18 Provider Executor + 6 フォーマットトランスレータ
 - ログフィルタリング、ソート、CSV エクスポート、構造化エラーコピー
 - RTK トークン圧縮 + トンネルリモートアクセス
 - マルチアカウントフォールトトレランス + OAuth 2.0 PKCE

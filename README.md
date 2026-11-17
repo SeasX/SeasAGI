@@ -33,7 +33,7 @@ The client can **run independently** — all local gateway features work without
 | **Session Stickiness** | SHA1 hash-based session→step mapping, 30min TTL, prevents mid-conversation model switching |
 | **Dynamic 429 Penalty Degradation** | PenaltyManager, 429 +3 (cap 10), success -1, 2min natural decay |
 | **Cost Optimization Engine** | Per-model/channel grouped analysis + task-type differentiated suggestions + four quick-strategy one-click presets |
-| **8 Executors + 6 Translators** | OpenAI / Azure / Anthropic / Gemini / Ollama / DeepSeek / Grok / Relay + automatic protocol adaptation |
+| **18 Executors + 6 Translators** | OpenAI / Azure / Anthropic / Gemini / DeepSeek / Grok / Mistral / OpenRouter / Vertex / Ollama / 智谱 GLM / Kimi / MiniMax / MiMo / 豆包 / 混元 / 通义 / Relay + automatic protocol adaptation |
 | **Full-chain Observability** | Error classification distribution / request timeline / link diagnostics / Recharts visualization / cost estimation |
 | **Auto Health-check & Fault Tolerance** | Key health check (5min probe + auto-disable) + per-key Cooldown + circuit breaker + exponential backoff |
 | **Local-first · Privacy Secure** | API Keys stored only in Keychain, constant-time comparison prevents timing attacks, requests go direct to Provider |
@@ -73,11 +73,11 @@ The client can **run independently** — all local gateway features work without
 │  │ :4318/v1 │  │Combo/    │  │Suggestions│  │Log/Diag/    │ │
 │  │ OpenAI   │  │Fallback  │  │Quick Strat│  │Chart/Cost   │ │
 │  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
-│  │8 Executor│  │6 Translator│ │ Keychain │  │ Playground  │ │
-│  │ Provider │  │Protocol  │  │Secure    │  │Instant Test │ │
-│  │          │  │Adaptation│  │Storage   │  │             │ │
-│  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ │
+│  ┌───────────┐ ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
+│  │18 Executor│ │6 Translator│ │ Keychain │  │ Playground  │ │
+│  │ Provider  │ │Protocol  │  │Secure    │  │Instant Test │ │
+│  │           │ │Adaptation│  │Storage   │  │             │ │
+│  └───────────┘ └──────────┘  └──────────┘  └─────────────┘ │
 └──────────────────────┬──────────────────────────────────────┘
                        │ API Protocol
 ┌──────────────────────┴──────────────────────────────────────┐

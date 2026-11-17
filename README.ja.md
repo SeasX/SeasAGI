@@ -33,7 +33,7 @@ SeasAGI は 3 つのサブプロジェクトから構成される階層型 AI �
 | **セッションスティッキネス** | SHA1 ハッシュベースのセッション→ステップマッピング、30分 TTL、会話中のモデル切り替えを防止 |
 | **動的 429 ペナルティ劣化** | PenaltyManager、429 +3（上限 10）、成功 -1、2分自然減衰 |
 | **コスト最適化エンジン** | モデル/チャネル別グループ分析 + タスクタイプ別差分化提案 + 4つのクイック戦略ワンクリックプリセット |
-| **8 Executor + 6 Translator** | OpenAI / Azure / Anthropic / Gemini / Ollama / DeepSeek / Grok / Relay + 自動プロトコル適応 |
+| **18 Executor + 6 Translator** | OpenAI / Azure / Anthropic / Gemini / DeepSeek / Grok / Mistral / OpenRouter / Vertex / Ollama / 智谱 GLM / Kimi / MiniMax / MiMo / 豆包 / 混元 / 通义 / Relay + 自動プロトコル適応 |
 | **フルチェーン可観測性** | エラー分類分布 / リクエストタイムライン / リンク診断 / Recharts 可視化 / コスト推定 |
 | **自動ヘルスチェック & フォールトトレランス** | Key ヘルスチェック（5分プローブ + 自動無効化） + Key 単位 Cooldown + サーキットブレーカー + 指数バックオフ |
 | **ローカルファースト · プライバシーセキュア** | API Keys は Keychain のみに保存、定数時間比較でタイミング攻撃を防止、リクエストは Provider に直接送信 |
@@ -73,11 +73,11 @@ SeasAGI は 3 つのサブプロジェクトから構成される階層型 AI �
 │  │ :4318/v1 │  │Combo/    │  │Suggestions│  │Log/Diag/    │ │
 │  │ OpenAI   │  │Fallback  │  │Quick Strat│  │Chart/Cost   │ │
 │  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
-│  │8 Executor│  │6 Translator│ │ Keychain │  │ Playground  │ │
-│  │ Provider │  │Protocol  │  │Secure    │  │Instant Test │ │
-│  │          │  │Adaptation│  │Storage   │  │             │ │
-│  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ │
+│  ┌───────────┐ ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
+│  │18 Executor│ │6 Translator│ │ Keychain │  │ Playground  │ │
+│  │ Provider  │ │Protocol  │  │Secure    │  │Instant Test │ │
+│  │           │ │Adaptation│  │Storage   │  │             │ │
+│  └───────────┘ └──────────┘  └──────────┘  └─────────────┘ │
 └──────────────────────┬──────────────────────────────────────┘
                        │ API Protocol
 ┌──────────────────────┴──────────────────────────────────────┐

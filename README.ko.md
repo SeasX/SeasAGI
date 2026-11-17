@@ -33,7 +33,7 @@ SeasAGI는 세 개의 하위 프로젝트로 구성된 계층형 AI 게이트웨
 | **세션 고착성** | SHA1 해시 기반 세션→단계 매핑, 30분 TTL, 대화 중 모델 전환 방지 |
 | **동적 429 페널티 저하** | PenaltyManager, 429 +3 (상한 10), 성공 -1, 2분 자연 감쇠 |
 | **비용 최적화 엔진** | 모델별/채널별 그룹 분석 + 작업 유형 차별화 제안 + 4가지 빠른 전략 원클릭 프리셋 |
-| **8개 실행자 + 6개 변환기** | OpenAI / Azure / Anthropic / Gemini / Ollama / DeepSeek / Grok / Relay + 자동 프로토콜 적응 |
+| **18개 실행자 + 6개 변환기** | OpenAI / Azure / Anthropic / Gemini / DeepSeek / Grok / Mistral / OpenRouter / Vertex / Ollama / 智谱 GLM / Kimi / MiniMax / MiMo / 豆包 / 混元 / 通义 / Relay + 자동 프로토콜 적응 |
 | **전체 체인 관측 가능성** | 오류 분류 분포 / 요청 타임라인 / 링크 진단 / Recharts 시각화 / 비용 추정 |
 | **자동 상태 확인 & 장애 허용** | Key 상태 확인 (5분 프로브 + 자동 비활성화) + Key별 Cooldown + 서킷 브레이커 + 지수 백오프 |
 | **로컬 우선 · 프라이버시 보안** | API Keys는 Keychain에만 저장, 상수 시간 비교로 타이밍 공격 방지, 요청은 Provider로 직접 전송 |
@@ -73,11 +73,11 @@ SeasAGI는 세 개의 하위 프로젝트로 구성된 계층형 AI 게이트웨
 │  │ :4318/v1 │  │Combo/    │  │Suggestions│  │Log/Diag/    │ │
 │  │ OpenAI   │  │Fallback  │  │Quick Strat│  │Chart/Cost   │ │
 │  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
-│  │8 Executor│  │6 Translator│ │ Keychain │  │ Playground  │ │
-│  │ Provider │  │Protocol  │  │Secure    │  │Instant Test │ │
-│  │          │  │Adaptation│  │Storage   │  │             │ │
-│  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ │
+│  ┌───────────┐ ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
+│  │18 Executor│ │6 Translator│ │ Keychain │  │ Playground  │ │
+│  │ Provider  │ │Protocol  │  │Secure    │  │Instant Test │ │
+│  │           │ │Adaptation│  │Storage   │  │             │ │
+│  └───────────┘ └──────────┘  └──────────┘  └─────────────┘ │
 └──────────────────────┬──────────────────────────────────────┘
                        │ API Protocol
 ┌──────────────────────┴──────────────────────────────────────┐

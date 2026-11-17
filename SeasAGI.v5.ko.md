@@ -56,7 +56,7 @@ SeasAGI는 로컬에 통합 OpenAI 호환 진입점을 제공하여, 모든 서�
 - 세션 고착 라우팅: 첫 사용자 메시지 기반 SHA1 해시, 30분 TTL, 대화 중 모델 전환 방지
 - 동적 429 페널티 저하: PenaltyManager, 429 +3, 성공 -1, 2분 자연 감쇠
 - Fallback 정렬 프리셋: intelligence / speed / budget 원클릭 재정렬
-- 8개 Provider 실행자: OpenAI, Azure, Anthropic, Gemini, Ollama, DeepSeek, Grok, 플랫폼 릴레이
+- 18개 Provider 실행자: OpenAI, Azure, Anthropic, Gemini, DeepSeek, Grok, Mistral, OpenRouter, Vertex, Ollama, 智谱 GLM, Kimi, MiniMax, MiMo, 豆包, 混元, 通义, Relay
 - 6개 포맷 변환기: OpenAI Chat/Responses, Anthropic, Gemini, Vertex AI, Passthrough
 - Key 상태 확인: 5분 주기 프로브, 3회 연속 실패 시 자동 불건강 마킹
 - Key 수준 Cooldown: Key별 120초 TTL, 429에 정확한 냉각, 다른 Key에 영향 없음
@@ -187,7 +187,7 @@ SeasAGI는 로컬에 통합 OpenAI 호환 진입점을 제공하여, 모든 서�
 - 상수 시간 Key 비교 (crypto/subtle)
 - 멀티모달 콘텐츠 평탄화
 - Playground 즉시 테스트 페이지
-- 8개 Provider 실행자 + 6개 포맷 변환기
+- 18개 Provider 실행자 + 6개 포맷 변환기
 - 로그 필터링, 정렬, CSV 내보내기, 구조화된 오류 복사
 - RTK 토큰 압축 + 터널 원격 접속
 - 멀티 계정 장애 허용 + OAuth 2.0 PKCE

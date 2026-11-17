@@ -94,7 +94,7 @@ The left navigation has been consolidated into a single "Combo Optimization" ent
 
 ### Provider & Fault Tolerance
 
-- 9 Provider executors: OpenAI / Azure / Anthropic / Gemini / Ollama / DeepSeek / Grok / Vertex / Platform Relay
+- 18 Provider executors: OpenAI / Azure / Anthropic / Gemini / DeepSeek / Grok / Mistral / OpenRouter / Vertex / Ollama / 智谱 GLM / Kimi / MiniMax / MiMo / 豆包 / 混元 / 通义 / Relay
 - 6 format translators: OpenAI Chat / OpenAI Responses / Anthropic / Gemini / Vertex AI / Passthrough
 - Multi-key rotation + exponential backoff + circuit breaker + 7 error rules
 - Key health check: HealthChecker, 5min periodic probe, 3 consecutive failures auto-mark unhealthy

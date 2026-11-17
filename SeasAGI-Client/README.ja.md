@@ -94,7 +94,7 @@ SeasAGI-Client/
 
 ### Provider とフォールトトレランス
 
-- 9 種類の Provider 実行エンジン：OpenAI / Azure / Anthropic / Gemini / Ollama / DeepSeek / Grok / Vertex / プラットフォームリレー
+- 18 種類の Provider 実行エンジン：OpenAI / Azure / Anthropic / Gemini / DeepSeek / Grok / Mistral / OpenRouter / Vertex / Ollama / 智谱 GLM / Kimi / MiniMax / MiMo / 豆包 / 混元 / 通义 / Relay
 - 6 種類のフォーマット変換：OpenAI Chat / OpenAI Responses / Anthropic / Gemini / Vertex AI / Passthrough
 - マルチキーローテーション + 指数バックオフ + サーキットブレーカー + 7 つのエラールール
 - Key ヘルスチェック：HealthChecker、5分間隔での定期生存確認、連続 3 回失敗で自動的に unhealthy にマーク
