@@ -213,7 +213,7 @@ func ChatCompletions(c *gin.Context) {
 		})
 	}
 
-	go recordTrace(traceID, tenantID, userID, deviceID, channelID, req.Model, "POST", "/v1/chat/completions", resp.StatusCode, int(duration.Milliseconds()), c.ClientIP())
+	recordTrace(traceID, tenantID, userID, deviceID, channelID, req.Model, "POST", "/v1/chat/completions", resp.StatusCode, int(duration.Milliseconds()), c.ClientIP())
 
 	copyUpstreamHeaders(c.Writer.Header(), resp.Header)
 	c.Writer.WriteHeader(resp.StatusCode)
@@ -346,7 +346,7 @@ func relayJSON(c *gin.Context, upstreamPath, capability string) {
 	healthy := resp.StatusCode >= 200 && resp.StatusCode < 400
 	updateChannelHealthAfterRequest(resolvedChannelID, healthy, resp.StatusCode)
 
-	go recordTrace(traceID, tenantID, userID, deviceID, resolvedChannelID, req.Model, "POST", upstreamPath, resp.StatusCode, int(duration.Milliseconds()), c.ClientIP())
+	recordTrace(traceID, tenantID, userID, deviceID, resolvedChannelID, req.Model, "POST", upstreamPath, resp.StatusCode, int(duration.Milliseconds()), c.ClientIP())
 
 	copyUpstreamHeaders(c.Writer.Header(), resp.Header)
 	c.Writer.WriteHeader(resp.StatusCode)
@@ -427,7 +427,7 @@ func relayMultipart(c *gin.Context, upstreamPath, capability string) {
 	healthy := resp.StatusCode >= 200 && resp.StatusCode < 400
 	updateChannelHealthAfterRequest(resolvedChannelID, healthy, resp.StatusCode)
 
-	go recordTrace(traceID, tenantID, userID, deviceID, resolvedChannelID, model, "POST", upstreamPath, resp.StatusCode, int(duration.Milliseconds()), c.ClientIP())
+	recordTrace(traceID, tenantID, userID, deviceID, resolvedChannelID, model, "POST", upstreamPath, resp.StatusCode, int(duration.Milliseconds()), c.ClientIP())
 
 	copyUpstreamHeaders(c.Writer.Header(), resp.Header)
 	c.Writer.WriteHeader(resp.StatusCode)
