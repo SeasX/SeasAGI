@@ -615,3 +615,30 @@ func TestGetUsageSummary_OnlyFutureRecord(t *testing.T) {
 		t.Errorf("expected 0 for last month record, got %d", summary.MonthRequests)
 	}
 }
+
+func TestLookupPricing_CurrentModelsUseListPrice(t *testing.T) {
+	// These took a shorter prefix's row ("gpt-5" at $5/$20) or a wrong one;
+	// the providers list them at these USD per 1M rates.
+	cases := []struct {
+		model         string
+		input, output float64
+	}{
+		{"gpt-5", 1.25, 10},
+		{"gpt-5.5", 5, 30},
+		{"gpt-5.4-mini", 0.75, 4.5},
+		{"claude-opus-4-6", 5, 25},
+		{"claude-sonnet-5-5-20990101", 2, 10},
+		{"gemini-2.5-flash", 0.30, 2.50},
+		{"gemini-3.1-pro-preview", 2, 12},
+	}
+	for _, c := range cases {
+		p, ok := LookupPricing(c.model)
+		if !ok || p.InputPricePer1M != c.input || p.OutputPricePer1M != c.output {
+			t.Errorf("%s: got %+v ok=%v, want %v/%v", c.model, p, ok, c.input, c.output)
+		}
+	}
+	// Models outside the three providers keep the table.
+	if p, ok := LookupPricing("kimi-2.6"); !ok || p.OutputPricePer1M != 4.0 {
+		t.Errorf("kimi-2.6: got %+v ok=%v", p, ok)
+	}
+}

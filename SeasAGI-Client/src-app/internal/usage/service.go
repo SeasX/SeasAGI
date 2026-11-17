@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	llmprices "github.com/Mattbusel/llm-prices/go"
+
 	"github.com/SeasAGI/SeasAGI-Client/internal/logging"
 )
 
@@ -286,16 +288,16 @@ type UsageSummary struct {
 var defaultPricing = []ModelPricing{
 	{Model: "gpt-4o", InputPricePer1M: 2.5, OutputPricePer1M: 10},
 	{Model: "gpt-4o-mini", InputPricePer1M: 0.15, OutputPricePer1M: 0.6},
-	{Model: "gpt-5", InputPricePer1M: 5.0, OutputPricePer1M: 20},
-	{Model: "gpt-5-mini", InputPricePer1M: 0.3, OutputPricePer1M: 1.2},
-	{Model: "gpt-5-nano", InputPricePer1M: 0.1, OutputPricePer1M: 0.4},
+	{Model: "gpt-5", InputPricePer1M: 1.25, OutputPricePer1M: 10},
+	{Model: "gpt-5-mini", InputPricePer1M: 0.25, OutputPricePer1M: 2},
+	{Model: "gpt-5-nano", InputPricePer1M: 0.05, OutputPricePer1M: 0.4},
 	{Model: "claude-sonnet-4-20250514", InputPricePer1M: 3, OutputPricePer1M: 15},
 	{Model: "claude-opus-4-20250514", InputPricePer1M: 15, OutputPricePer1M: 75},
-	{Model: "claude-4-sonnet", InputPricePer1M: 4, OutputPricePer1M: 18},
-	{Model: "claude-4-opus", InputPricePer1M: 18, OutputPricePer1M: 80},
+	{Model: "claude-4-sonnet", InputPricePer1M: 3, OutputPricePer1M: 15},
+	{Model: "claude-4-opus", InputPricePer1M: 15, OutputPricePer1M: 75},
 	{Model: "claude-haiku-3-5-20241022", InputPricePer1M: 0.8, OutputPricePer1M: 4},
 	{Model: "gemini-2.5-pro", InputPricePer1M: 1.25, OutputPricePer1M: 10},
-	{Model: "gemini-2.5-flash", InputPricePer1M: 0.15, OutputPricePer1M: 0.6},
+	{Model: "gemini-2.5-flash", InputPricePer1M: 0.30, OutputPricePer1M: 2.50},
 	{Model: "deepseek-chat", InputPricePer1M: 0.27, OutputPricePer1M: 1.1},
 	{Model: "deepseek-v4-pro", InputPricePer1M: 0.5, OutputPricePer1M: 2.0},
 	{Model: "deepseek-v4-flash", InputPricePer1M: 0.1, OutputPricePer1M: 0.4},
@@ -307,12 +309,16 @@ var defaultPricing = []ModelPricing{
 }
 
 // lookupIn finds the pricing entry for model using exact match first, then the
+// provider list price for an exact Anthropic, OpenAI or Gemini model id, then the
 // longest prefix match (so "gpt-4o-mini-2024" resolves to gpt-4o-mini, not gpt-4o).
 func lookupIn(pricing []ModelPricing, model string) (ModelPricing, bool) {
 	for _, p := range pricing {
 		if p.Model == model {
 			return p, true
 		}
+	}
+	if p, ok := listedPricing(model); ok {
+		return p, true
 	}
 	var best ModelPricing
 	bestLen := -1
@@ -326,6 +332,23 @@ func lookupIn(pricing []ModelPricing, model string) (ModelPricing, bool) {
 		return best, true
 	}
 	return ModelPricing{}, false
+}
+
+// listedPricing is the provider's list price for an exact Anthropic, OpenAI or
+// Gemini model id (dated snapshots and provider/ prefixes included) from
+// llm-prices, whose rows cite the pricing page and the date they were read. It
+// keeps "gpt-5.5" or "claude-opus-4-6" from taking a shorter prefix's price.
+func listedPricing(model string) (ModelPricing, bool) {
+	p, ok := llmprices.Lookup(model)
+	if !ok || p.Input == nil || p.Output == nil {
+		return ModelPricing{}, false
+	}
+	switch p.Provider {
+	case "anthropic", "openai", "google":
+	default:
+		return ModelPricing{}, false
+	}
+	return ModelPricing{Model: p.Model, InputPricePer1M: *p.Input, OutputPricePer1M: *p.Output}, true
 }
 
 // LookupPricing returns the canonical pricing entry for a model. It is used by
